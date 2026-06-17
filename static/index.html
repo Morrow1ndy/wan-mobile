@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0d12" />
+  <title>Wan Mobile</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Wan Mobile</h1>
+    <button id="refresh" class="ghost" title="Refresh">&#x21bb;</button>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="pods" class="active">Pod</button>
+    <button data-tab="generate">Generate</button>
+  </nav>
+
+  <!-- POD TAB -->
+  <section id="tab-pods" class="tab active">
+    <div id="pods-list" class="card-list">
+      <div class="muted">Loading pods&hellip;</div>
+    </div>
+
+    <div class="card">
+      <h2>Start a new pod</h2>
+      <label>GPU
+        <select id="gpu-select"><option>Loading&hellip;</option></select>
+      </label>
+      <button id="start-pod" class="primary">Start pod</button>
+      <p class="hint">Uses your configured template + network volume.</p>
+    </div>
+  </section>
+
+  <!-- GENERATE TAB -->
+  <section id="tab-generate" class="tab">
+    <div class="card">
+      <label>Pod
+        <select id="gen-pod"><option value="">No running pod</option></select>
+      </label>
+      <div id="pod-readiness" class="status"></div>
+    </div>
+
+    <div class="card">
+      <h2>Input image</h2>
+      <label class="filebtn">
+        <input type="file" id="image" accept="image/*" />
+        <span id="image-label">Choose / take photo</span>
+      </label>
+      <img id="preview" alt="" hidden />
+    </div>
+
+    <div class="card">
+      <h2>Parameters</h2>
+      <div id="params"></div>
+    </div>
+
+    <button id="generate" class="primary" disabled>Generate</button>
+
+    <div class="card" id="result-card" hidden>
+      <h2>Result</h2>
+      <div id="progress-wrap">
+        <div id="progress-bar"></div>
+      </div>
+      <div id="progress-text" class="muted"></div>
+      <video id="result-video" controls playsinline hidden></video>
+      <a id="download" class="primary" download hidden>Download / Save video</a>
+    </div>
+  </section>
+
+  <script src="/app.js"></script>
+</body>
+</html>

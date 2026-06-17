@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+runpod
+httpx
+websockets
+python-dotenv
+python-multipart
