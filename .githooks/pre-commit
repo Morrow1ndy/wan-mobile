@@ -1,0 +1,3 @@
+#!/bin/sh
+# Auto-stage new/modified saved videos before every commit.
+git add data/saved_videos/ 2>/dev/null || true
