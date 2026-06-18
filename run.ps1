@@ -15,6 +15,11 @@ if (-not (Test-Path ".env")) {
     exit 1
 }
 
+# Kill any existing process on port 8000 before starting
+$existing = (Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue).OwningProcess | Select-Object -Unique
+foreach ($p in $existing) { if ($p) { taskkill /F /T /PID $p 2>$null } }
+if ($existing) { Start-Sleep -Seconds 1 }
+
 Write-Host "Starting Wan Mobile on http://0.0.0.0:8000" -ForegroundColor Green
 Write-Host "On your phone (Tailscale up on both): http://<your-pc-tailscale-name>:8000" -ForegroundColor Green
 & .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
