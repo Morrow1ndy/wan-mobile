@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import comfy_client as comfy
 from . import config
+from . import persistence as ps
 from . import runpod_client as rp
 from . import workflow as wf
 
@@ -124,6 +125,41 @@ async def resume(pod_id: str):
 @app.post("/api/pods/{pod_id}/terminate")
 async def terminate(pod_id: str):
     return await rp.terminate_pod(pod_id)
+
+
+# ----- prompt templates + last params -------------------------------------
+@app.get("/api/templates")
+async def list_templates():
+    return ps.get_templates()
+
+
+@app.post("/api/templates")
+async def add_template(payload: dict = Body(default={})):
+    templates = ps.get_templates()
+    templates.append({"name": payload.get("name", "Template"),
+                      "text": payload.get("text", "")})
+    ps.save_templates(templates)
+    return templates
+
+
+@app.delete("/api/templates/{index}")
+async def delete_template(index: int):
+    templates = ps.get_templates()
+    if 0 <= index < len(templates):
+        templates.pop(index)
+        ps.save_templates(templates)
+    return templates
+
+
+@app.get("/api/last-params")
+async def get_last_params():
+    return ps.get_last_params()
+
+
+@app.post("/api/last-params")
+async def save_last_params(payload: dict = Body(default={})):
+    ps.save_last_params(payload)
+    return {"ok": True}
 
 
 # ----- generation ----------------------------------------------------------

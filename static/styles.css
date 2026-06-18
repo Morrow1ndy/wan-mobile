@@ -209,6 +209,11 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .log-line .ts { color: var(--faint); flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .log-line .msg { color: var(--text); word-break: break-word; }
 
+/* ---- prompt templates ---- */
+.tpl-select { width: 100%; margin-bottom: 10px; }
+.tpl-actions { display: flex; gap: 8px; }
+.tpl-actions button { flex: 1; }
+
 /* ---- sticky deploy bar ---- */
 .deploy-bar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;

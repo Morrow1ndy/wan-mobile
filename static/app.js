@@ -18,6 +18,11 @@ async function postJSON(url, body) {
   if (!r.ok) throw new Error((await r.text()) || r.statusText);
   return r.json();
 }
+async function deleteJSON(url) {
+  const r = await fetch(url, { method: "DELETE" });
+  if (!r.ok) throw new Error((await r.text()) || r.statusText);
+  return r.json();
+}
 function toast(msg, isErr = false) {
   const t = document.createElement("div");
   t.className = "toast" + (isErr ? " err" : "");
@@ -442,10 +447,13 @@ $("#generate").addEventListener("click", async () => {
   btn.disabled = true;
   btn.textContent = "Submitting…";
 
+  const params = collectParams();
+  postJSON("/api/last-params", params).catch(() => {});
+
   const fd = new FormData();
   fd.append("pod_id", podId);
   fd.append("image", file);
-  fd.append("params", JSON.stringify(collectParams()));
+  fd.append("params", JSON.stringify(params));
 
   try {
     const r = await fetch("/api/generate", { method: "POST", body: fd });
@@ -516,6 +524,75 @@ async function pollStatus(promptId) {
   tick();
 }
 
+// ---- prompt templates ------------------------------------------------------
+let _templates = [];
+
+async function loadTemplates() {
+  try { _templates = await getJSON("/api/templates"); } catch (_) { _templates = []; }
+  renderTemplateSelect();
+}
+
+function renderTemplateSelect() {
+  const sel = $("#tpl-select");
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = `<option value="">— select a template —</option>` +
+    _templates.map((t, i) => `<option value="${i}">${t.name}</option>`).join("");
+  if (prev && _templates[Number(prev)]) sel.value = prev;
+}
+
+$("#tpl-use").addEventListener("click", () => {
+  const sel = $("#tpl-select");
+  if (!sel || sel.value === "") return toast("Select a template first", true);
+  const tpl = _templates[Number(sel.value)];
+  if (!tpl) return;
+  const ta = document.querySelector('textarea[data-key="positive"]');
+  if (ta) { ta.value = tpl.text; toast("Template loaded"); }
+});
+
+$("#tpl-save").addEventListener("click", async () => {
+  const ta = document.querySelector('textarea[data-key="positive"]');
+  if (!ta || !ta.value.trim()) return toast("Prompt is empty", true);
+  const name = window.prompt("Template name:", "My template");
+  if (!name) return;
+  try {
+    _templates = await postJSON("/api/templates", { name, text: ta.value.trim() });
+    renderTemplateSelect();
+    toast("Template saved");
+  } catch (e) { toast(e.message, true); }
+});
+
+$("#tpl-del").addEventListener("click", async () => {
+  const sel = $("#tpl-select");
+  if (!sel || sel.value === "") return toast("Select a template first", true);
+  const idx = Number(sel.value);
+  if (!confirm(`Delete "${_templates[idx]?.name}"?`)) return;
+  try {
+    _templates = await deleteJSON(`/api/templates/${idx}`);
+    renderTemplateSelect();
+    toast("Template deleted");
+  } catch (e) { toast(e.message, true); }
+});
+
+// ---- last params -----------------------------------------------------------
+async function restoreLastParams() {
+  try {
+    const saved = await getJSON("/api/last-params");
+    if (!saved || !Object.keys(saved).length) return;
+    Object.entries(saved).forEach(([key, val]) => {
+      const el = document.querySelector(`[data-key="${key}"]`);
+      if (!el) return;
+      if (el.type === "checkbox") el.checked = Boolean(val);
+      else el.value = val;
+      if (el.type === "range") {
+        const out = $("#val-" + key);
+        if (out) out.textContent = val;
+      }
+    });
+    applyConditions();
+  } catch (_) {}
+}
+
 // ---- balance ---------------------------------------------------------------
 async function loadBalance() {
   try {
@@ -531,7 +608,7 @@ async function loadBalance() {
 $("#refresh").addEventListener("click", loadPods);
 (async function init() {
   await loadConfig();
-  await loadPods();
+  await Promise.all([loadPods(), loadTemplates(), restoreLastParams()]);
   loadBalance();
   setInterval(loadBalance, 60_000);
 })();
