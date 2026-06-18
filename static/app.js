@@ -52,12 +52,13 @@ $$(".tabs button").forEach((b) =>
     $$(".tabs button").forEach((x) => x.classList.remove("active"));
     $$(".tab").forEach((x) => x.classList.remove("active"));
     b.classList.add("active");
-    $("#tab-" + b.dataset.tab).classList.add("active");
-    const isPods = b.dataset.tab === "pods";
+    const tab = b.dataset.tab;
+    $("#tab-" + tab).classList.add("active");
     const deployBar = $("#deploy-bar");
     const genBar = $("#generate-bar");
-    if (deployBar) deployBar.style.display = isPods ? "" : "none";
-    if (genBar) genBar.style.display = isPods ? "none" : "";
+    if (deployBar) deployBar.style.display = tab === "pods" ? "" : "none";
+    if (genBar) genBar.style.display = tab === "generate" ? "" : "none";
+    if (tab === "outputs") loadOutputs();
   })
 );
 
@@ -95,14 +96,23 @@ async function loadPods() {
     });
   }
 
-  // running-pod dropdown on the Generate tab
+  // running-pod dropdowns on the Generate + Outputs tabs
   const running = pods.filter(isRunning);
-  const prev = genSel.value;
-  genSel.innerHTML = running.length
+  const opts = running.length
     ? running.map((p) => `<option value="${p.id}">${p.name || p.id}</option>`).join("")
     : `<option value="">No running pod</option>`;
+
+  const prev = genSel.value;
+  genSel.innerHTML = opts;
   if (running.some((p) => p.id === prev)) genSel.value = prev;
   onGenPodChange();
+
+  const outSel = $("#out-pod");
+  if (outSel) {
+    const outPrev = outSel.value;
+    outSel.innerHTML = opts;
+    if (running.some((p) => p.id === outPrev)) outSel.value = outPrev;
+  }
 }
 
 function renderPod(p) {
@@ -545,17 +555,31 @@ async function pollStatus(promptId) {
 
     if (job.status === "done") {
       bar.style.width = "100%";
+      btn.disabled = false; btn.textContent = "Generate";
       if (job.video) {
         const url = `/api/video/${promptId}`;
         const v = $("#result-video");
-        v.src = url; v.hidden = false;
         const dl = $("#download");
-        dl.href = url; dl.download = job.video.filename || "wan.mp4"; dl.hidden = false;
-        text.textContent = "Done ✓";
+        // Keep download hidden until the video bytes actually load — only then
+        // is the file truly fetchable from the pod.
+        v.hidden = true; dl.hidden = true;
+        text.textContent = "Loading video…";
+        v.onloadeddata = () => {
+          v.hidden = false;
+          dl.href = url;
+          dl.download = job.video.filename || "wan.mp4";
+          dl.hidden = false;
+          text.textContent = "Done ✓";
+        };
+        v.onerror = () => {
+          text.textContent = "Video generated but couldn't be loaded — tap retry.";
+          dl.hidden = true;
+        };
+        v.src = url;
+        v.load();
       } else {
         text.textContent = "Finished, but no video output was found (check OUTPUT_NODE_ID).";
       }
-      btn.disabled = false; btn.textContent = "Generate";
       return;
     }
     if (job.status === "error") {
@@ -567,6 +591,46 @@ async function pollStatus(promptId) {
   };
   tick();
 }
+
+// ---- outputs gallery -------------------------------------------------------
+async function loadOutputs() {
+  const podId = $("#out-pod").value;
+  const list = $("#out-list");
+  if (!podId) {
+    list.innerHTML = `<div class="card muted">No running pod. Start one on the Pod tab.</div>`;
+    return;
+  }
+  list.innerHTML = `<div class="card muted">Loading outputs…</div>`;
+  let items;
+  try {
+    items = await getJSON(`/api/pods/${podId}/outputs`);
+  } catch (e) {
+    list.innerHTML = `<div class="card muted">Could not load outputs: ${e.message}</div>`;
+    return;
+  }
+  if (!items.length) {
+    list.innerHTML = `<div class="card muted">No videos yet on this pod.</div>`;
+    return;
+  }
+  list.innerHTML = items.map((it) => renderOutput(podId, it)).join("");
+}
+
+function renderOutput(podId, it) {
+  const q = new URLSearchParams({
+    filename: it.filename, subfolder: it.subfolder || "", type: it.type || "output",
+  });
+  const url = `/api/pods/${podId}/view?${q}`;
+  return `<div class="out-item">
+    <video class="out-video" preload="none" controls playsinline src="${url}"></video>
+    <div class="out-meta">
+      <span class="out-name">${it.filename}</span>
+      <a class="ghost small" href="${url}" download="${it.filename}">Download</a>
+    </div>
+  </div>`;
+}
+
+$("#out-pod").addEventListener("change", loadOutputs);
+$("#out-refresh").addEventListener("click", loadOutputs);
 
 // ---- prompt templates ------------------------------------------------------
 let _templates = [];

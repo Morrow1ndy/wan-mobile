@@ -53,6 +53,14 @@ async def get_history(comfy: str, prompt_id: str) -> dict:
         return r.json()
 
 
+async def get_history_all(comfy: str, max_items: int = 64) -> dict:
+    """All prompts in ComfyUI's current-session history (chronological)."""
+    async with _client(comfy) as c:
+        r = await c.get("/history", params={"max_items": max_items})
+        r.raise_for_status()
+        return r.json()
+
+
 async def fetch_view(comfy: str, filename: str, subfolder: str = "",
                      type_: str = "output") -> bytes:
     """Download a generated file (video/image) from ComfyUI."""

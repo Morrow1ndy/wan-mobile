@@ -22,6 +22,7 @@
   <nav class="tabs">
     <button data-tab="pods" class="active">Pod</button>
     <button data-tab="generate">Generate</button>
+    <button data-tab="outputs">Outputs</button>
   </nav>
 
   <!-- POD TAB -->
@@ -73,7 +74,7 @@
       <h2>Input image</h2>
       <label class="filebtn">
         <input type="file" id="image" accept="image/*" />
-        <span id="image-label">Choose / take photo</span>
+        <span id="image-label">Photo library, camera, or files</span>
       </label>
       <img id="preview" alt="" hidden />
     </div>
@@ -109,6 +110,20 @@
   <div class="generate-bar" id="generate-bar" style="display:none">
     <button id="generate" class="primary" disabled>Generate</button>
   </div>
+
+  <!-- OUTPUTS TAB -->
+  <section id="tab-outputs" class="tab">
+    <div class="card">
+      <div class="gpu-grid-head" style="margin-top:0">
+        <label style="margin:0;flex:1">Pod
+          <select id="out-pod"><option value="">No running pod</option></select>
+        </label>
+        <button id="out-refresh" class="ghost small" title="Refresh">&#x21bb;</button>
+      </div>
+      <p class="hint">Videos generated on this pod. Tap to play; safe to close and come back.</p>
+    </div>
+    <div id="out-list" class="card-list"></div>
+  </section>
 
   <script src="/app.js"></script>
 </body>

@@ -104,7 +104,21 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   text-align: center; cursor: pointer; padding: 15px; border-radius: 10px; }
 .filebtn input { display: none; }
 
-#preview, #result-video { width: 100%; border-radius: 10px; margin-top: 12px; background: #000; border: 1px solid var(--line); }
+/* Result video: full card width but capped so tall portrait clips stay on-screen. */
+#result-video { width: 100%; max-height: 70vh; object-fit: contain; border-radius: 10px;
+  margin-top: 12px; background: #000; border: 1px solid var(--line); }
+/* Uploaded-image preview: small thumbnail, not a full-width hero. */
+#preview { width: auto; max-width: 128px; max-height: 128px; object-fit: cover;
+  border-radius: 10px; margin-top: 12px; background: #000; border: 1px solid var(--line); display: block; }
+
+/* ---- outputs gallery ---- */
+.out-item { background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  padding: 12px; margin: 14px 0; }
+.out-video { width: 100%; max-height: 60vh; object-fit: contain; border-radius: 10px;
+  background: #000; border: 1px solid var(--line); display: block; }
+.out-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.out-name { font-size: 12px; color: var(--muted); word-break: break-all; }
+.out-meta a { flex-shrink: 0; text-decoration: none; }
 
 .field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .field-row .val { min-width: 56px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }

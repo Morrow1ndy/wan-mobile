@@ -261,6 +261,38 @@ async def video(prompt_id: str):
     )
 
 
+@app.get("/api/pods/{pod_id}/outputs")
+async def pod_outputs(pod_id: str, limit: int = 30):
+    """Videos from the pod's ComfyUI history, newest first.
+
+    Reads straight from the pod (which holds the files on the network volume),
+    so it survives the browser closing or this server restarting/sleeping.
+    """
+    try:
+        hist = await comfy.get_history_all(rp.comfy_url(pod_id), max_items=limit)
+    except Exception:
+        return []
+    items = []
+    for pid, entry in hist.items():
+        vid = _find_video(entry.get("outputs") or {})
+        if vid:
+            items.append({"prompt_id": pid, **vid})
+    items.reverse()  # history is chronological -> newest first
+    return items
+
+
+@app.get("/api/pods/{pod_id}/view")
+async def pod_view(pod_id: str, filename: str, subfolder: str = "",
+                   type: str = "output"):
+    """Proxy a single output file from the pod by its ComfyUI coordinates."""
+    content = await comfy.fetch_view(rp.comfy_url(pod_id), filename, subfolder, type)
+    return Response(
+        content=content,
+        media_type=_content_type({"filename": filename}),
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
 # ----- background watcher ---------------------------------------------------
 async def _watch(url: str, client_id: str, prompt_id: str):
     """Listen on ComfyUI's websocket for progress, then resolve the output."""
@@ -286,18 +318,37 @@ async def _watch(url: str, client_id: str, prompt_id: str):
     except Exception:
         pass  # fall through to history-based resolution
 
-    try:
-        hist = await comfy.get_history(url, prompt_id)
-        outputs = hist.get(prompt_id, {}).get("outputs", {})
-        job["video"] = _find_video(outputs)
-        job["status"] = "done"
-        if job["max"]:
-            job["progress"] = job["max"]
-        log_event(job["pod_id"],
-                  "Video ready ✓" if job["video"] else "Finished (no video output)")
-    except Exception as e:
-        job["status"], job["error"] = "error", str(e)
-        log_event(job["pod_id"], f"Generation error: {e}")
+    # Resolve via history. The websocket can drop early (cold-start proxy
+    # hiccups) BEFORE the job actually finishes, so we must poll until ComfyUI
+    # reports this prompt as complete — resolving on the first (empty) reply
+    # is what made jobs wrongly show "done / no video" mid-generation.
+    deadline = time.monotonic() + 900  # up to 15 min after the ws ends
+    while True:
+        try:
+            entry = (await comfy.get_history(url, prompt_id)).get(prompt_id) or {}
+        except Exception:
+            entry = {}
+        status = entry.get("status") or {}
+        outputs = entry.get("outputs") or {}
+
+        if status.get("status_str") == "error":
+            job["status"], job["error"] = "error", status
+            log_event(job["pod_id"], "Generation error (ComfyUI)")
+            return
+        if outputs or status.get("completed"):
+            job["video"] = _find_video(outputs)
+            job["status"] = "done"
+            if job["max"]:
+                job["progress"] = job["max"]
+            log_event(job["pod_id"],
+                      "Video ready ✓" if job["video"] else "Finished (no video output)")
+            return
+        if time.monotonic() > deadline:
+            job["status"] = "error"
+            job["error"] = "Timed out waiting for ComfyUI to finish."
+            log_event(job["pod_id"], "Generation timed out")
+            return
+        await asyncio.sleep(2)
 
 
 def _find_video(outputs: dict):
