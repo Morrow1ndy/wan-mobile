@@ -136,19 +136,20 @@ def _gpu_blurb(category: str, vram, perf: int, value):
     return f"{arch} GPU · {vram}GB VRAM. {speed} performance, {tail}"
 
 
-def _gpu_availability_sync(min_memory_gb):
+def _gpu_availability_sync(min_memory_gb, cuda_versions=None):
     """Query every GPU type's live stock + price for our region/cloud/CUDA.
 
     Mirrors what the RunPod console shows: per-config price, VRAM, vCPU/RAM,
     and a stockStatus of High/Medium/Low (None => unavailable here).
     """
+    cudas_list = cuda_versions if cuda_versions is not None else config.ALLOWED_CUDA_VERSIONS
     inputs = ["gpuCount: 1", f"secureCloud: {str(_secure_cloud_flag()).lower()}"]
     if settings.data_center_id:
         inputs.append(f'dataCenterId: "{settings.data_center_id}"')
     if min_memory_gb:
         inputs.append(f"minMemoryInGb: {int(min_memory_gb)}")
-    if config.ALLOWED_CUDA_VERSIONS:
-        cudas = ", ".join(f'"{v}"' for v in config.ALLOWED_CUDA_VERSIONS)
+    if cudas_list:
+        cudas = ", ".join(f'"{v}"' for v in cudas_list)
         inputs.append(f"allowedCudaVersions: [{cudas}]")
 
     query = """
@@ -199,8 +200,9 @@ def _gpu_availability_sync(min_memory_gb):
     return out
 
 
-async def list_gpu_availability(min_memory_gb: int | None = None):
-    return await asyncio.to_thread(_gpu_availability_sync, min_memory_gb)
+async def list_gpu_availability(min_memory_gb: int | None = None,
+                                cuda_versions: list[str] | None = None):
+    return await asyncio.to_thread(_gpu_availability_sync, min_memory_gb, cuda_versions)
 
 
 def _pod_metrics_sync(pod_id: str):
@@ -239,13 +241,17 @@ async def get_pod(pod_id: str):
 
 
 async def create_pod(gpu_type_id: str | None = None, name: str | None = None,
-                     min_memory_gb: int | None = None):
+                     min_memory_gb: int | None = None,
+                     cuda_versions: list[str] | None = None):
     """Create a pod from the configured template + network volume.
 
     The network volume is region-locked, so we pin data_center_id to match.
-    Container disk is fixed tiny (models live on the network volume), and we
-    require the configured CUDA versions.
+    Container disk is fixed tiny (models live on the network volume). The
+    allowed CUDA versions matter: the image needs CUDA >= 12.8, so without
+    this filter RunPod may land the pod on an older-driver host and the
+    container fails to start.
     """
+    cudas = cuda_versions if cuda_versions else config.ALLOWED_CUDA_VERSIONS
     return await _call(
         runpod.create_pod,
         name or settings.pod_name,         # name
@@ -257,8 +263,7 @@ async def create_pod(gpu_type_id: str | None = None, name: str | None = None,
         network_volume_id=settings.network_volume_id or None,
         container_disk_in_gb=config.CONTAINER_DISK_GB,
         min_memory_in_gb=min_memory_gb or 1,
-        allowed_cuda_versions=config.ALLOWED_CUDA_VERSIONS or None,
-        ports=f"{settings.comfy_port}/http,22/tcp",
+        allowed_cuda_versions=cudas or None,
     )
 
 

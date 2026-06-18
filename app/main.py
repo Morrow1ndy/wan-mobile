@@ -65,9 +65,14 @@ async def gpus():
 
 
 @app.get("/api/gpu-availability")
-async def gpu_availability(min_memory: int | None = None):
-    """Live GPU grid (price + stock) for the configured region/cloud/CUDA."""
-    return await rp.list_gpu_availability(min_memory)
+async def gpu_availability(min_memory: int | None = None, cuda: str | None = None):
+    """Live GPU grid (price + stock) for the configured region/cloud/CUDA.
+
+    `cuda` is a comma-separated list of CUDA versions; blank/omitted falls back
+    to the configured default set.
+    """
+    cuda_versions = [c.strip() for c in cuda.split(",") if c.strip()] if cuda else None
+    return await rp.list_gpu_availability(min_memory, cuda_versions)
 
 
 @app.get("/api/pods")
@@ -102,6 +107,7 @@ async def create(payload: dict = Body(default={})):
     res = await rp.create_pod(
         gpu_type_id=payload.get("gpu_type_id"),
         min_memory_gb=payload.get("min_memory"),
+        cuda_versions=payload.get("cuda_versions"),
     )
     pod_id = (res or {}).get("id")
     if pod_id:

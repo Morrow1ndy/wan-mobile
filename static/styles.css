@@ -127,6 +127,11 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
 .chip { font-size: 13px; padding: 4px 11px; border-radius: 7px; background: var(--surface-2);
   border: 1px solid var(--line-2); color: var(--text); font-variant-numeric: tabular-nums; }
+.chip.toggle { cursor: pointer; opacity: 0.45; transition: opacity .15s, border-color .15s, background .15s; }
+.chip.toggle::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor; margin-right: 7px; vertical-align: middle; opacity: 0.5; }
+.chip.toggle.on { opacity: 1; border-color: var(--accent); background: var(--accent-weak); color: var(--text); }
+.chip.toggle.on::before { background: var(--accent); opacity: 1; }
 
 .gpu-grid-head { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 10px; }
 
@@ -142,12 +147,11 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .gpu.sel::after { content: "\2713"; position: absolute; top: 11px; right: 12px; color: var(--accent); font-size: 12px; font-weight: 700; }
 .gpu.unavail { opacity: 0.4; cursor: not-allowed; }
 .gpu-top { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-.gpu-name { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
-.gpu-vram { font-size: 28px; font-weight: 600; margin: 10px 0 0; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-.gpu-vram span { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 3px; }
-.gpu-sub { font-size: 12px; color: var(--muted); margin-top: 5px; }
-.gpu-price { font-size: 16px; font-weight: 600; margin-top: 10px; font-variant-numeric: tabular-nums; }
-.gpu-price .unit { color: var(--muted); font-size: 12px; font-weight: 400; }
+.gpu-name { font-weight: 500; font-size: 13px; letter-spacing: -0.01em; color: var(--muted); }
+.gpu-price { font-size: 26px; font-weight: 700; margin: 6px 0 0; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.gpu-price .unit { color: var(--muted); font-size: 12px; font-weight: 400; letter-spacing: 0; }
+.gpu-specs { font-size: 16px; font-weight: 600; margin-top: 7px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.gpu-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
 /* stock pill = small dot + label */
 .stock { font-size: 11px; font-weight: 500; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }

@@ -214,20 +214,46 @@ function bindPodActions() {
 }
 
 // ---- pod creation: filters + GPU availability grid -------------------------
+let selectedCuda = []; // CUDA versions currently toggled on
+
 function renderPodFilters() {
   if (CFG.data_center) {
     const b = $("#region-banner");
     b.textContent = `Region locked to ${CFG.data_center} (network volume attached) · ${CFG.cloud_type} cloud`;
     b.classList.add("show");
   }
-  $("#cuda-chips").innerHTML = (CFG.cuda_versions || [])
-    .map((v) => `<span class="chip">${v}</span>`)
-    .join("");
+  // Start with all CUDA versions selected (mirrors the default behavior).
+  selectedCuda = [...(CFG.cuda_versions || [])];
+  renderCudaChips();
   $("#ram-select").innerHTML =
     `<option value="">Any</option>` +
     (CFG.ram_options || []).map((r) => `<option value="${r}">${r} GB</option>`).join("");
   if (CFG.container_disk_gb) $("#disk-hint").textContent = CFG.container_disk_gb;
   loadGpuGrid();
+}
+
+function renderCudaChips() {
+  $("#cuda-chips").innerHTML = (CFG.cuda_versions || [])
+    .map((v) => `<span class="chip toggle${selectedCuda.includes(v) ? " on" : ""}" data-cuda="${v}">${v}</span>`)
+    .join("");
+  $$("#cuda-chips .chip").forEach((chip) =>
+    chip.addEventListener("click", () => {
+      const v = chip.dataset.cuda;
+      if (selectedCuda.includes(v)) {
+        if (selectedCuda.length === 1) return toast("Keep at least one CUDA version", true);
+        selectedCuda = selectedCuda.filter((x) => x !== v);
+      } else {
+        selectedCuda.push(v);
+      }
+      chip.classList.toggle("on");
+      loadGpuGrid();
+    })
+  );
+}
+
+// Build the ?cuda= query fragment from the current selection.
+function cudaParam() {
+  return selectedCuda.length ? `cuda=${encodeURIComponent(selectedCuda.join(","))}` : "";
 }
 
 async function loadGpuGrid() {
@@ -236,9 +262,10 @@ async function loadGpuGrid() {
   selectedGpu = null;
   $("#start-pod").disabled = true;
   const min = $("#ram-select").value;
+  const qs = [min ? `min_memory=${min}` : "", cudaParam()].filter(Boolean).join("&");
   let gpus;
   try {
-    gpus = await getJSON("/api/gpu-availability" + (min ? `?min_memory=${min}` : ""));
+    gpus = await getJSON("/api/gpu-availability" + (qs ? `?${qs}` : ""));
   } catch (e) {
     grid.innerHTML = `<div class="muted">Could not load GPUs: ${e.message}</div>`;
     return;
@@ -256,9 +283,10 @@ function renderGpu(g) {
   const stockClass = g.available ? (g.stock || "").toLowerCase() : "none";
   const stockLabel = g.available ? g.stock : "N/A";
   const price = g.price != null ? `$${g.price.toFixed(2)}` : "—";
-  const sub = g.available
-    ? `${g.vcpu} vCPU · ${g.ram}GB RAM · ${g.max_gpu_count || 1}× max`
+  const specs = g.available
+    ? `${g.vram}GB VRAM${g.ram ? ` · ${g.ram}GB RAM` : ""}`
     : "unavailable in region";
+  const sub = g.available ? `${g.vcpu} vCPU · ${g.max_gpu_count || 1}× max` : "";
   const detail = g.rating_fallback ? "" : `<div class="gpu-detail">
       <p class="gpu-blurb">${g.blurb || ""}</p>
       ${ratingRow("Performance", g.perf, "good")}
@@ -271,9 +299,9 @@ function renderGpu(g) {
       <span class="gpu-name">${g.displayName}</span>
       <span class="stock ${stockClass}">${stockLabel}</span>
     </div>
-    <div class="gpu-vram">${g.vram}<span>GB</span></div>
-    <div class="gpu-sub">${sub}</div>
     <div class="gpu-price">${price}<span class="unit">/hr</span></div>
+    <div class="gpu-specs">${specs}</div>
+    ${sub ? `<div class="gpu-sub">${sub}</div>` : ""}
     ${detail}
   </div>`;
 }
@@ -304,7 +332,8 @@ $("#start-pod").addEventListener("click", async () => {
   // Re-validate before deploying — stock can change while the grid sits stale.
   try {
     const min = $("#ram-select").value;
-    const gpus = await getJSON("/api/gpu-availability" + (min ? `?min_memory=${min}` : ""));
+    const qs = [min ? `min_memory=${min}` : "", cudaParam()].filter(Boolean).join("&");
+    const gpus = await getJSON("/api/gpu-availability" + (qs ? `?${qs}` : ""));
     const current = gpus.find((g) => g.id === selectedGpu.id);
     if (!current || !current.available) {
       toast(`${selectedGpu.label} is no longer available — grid refreshed`, true);
@@ -321,6 +350,7 @@ $("#start-pod").addEventListener("click", async () => {
       gpu_type_id: selectedGpu.id,
       gpu_label: selectedGpu.label,
       min_memory: $("#ram-select").value ? Number($("#ram-select").value) : undefined,
+      cuda_versions: selectedCuda.length ? selectedCuda : undefined,
     });
     toast("Pod deploying — it will appear above");
     setTimeout(loadPods, 2000);
