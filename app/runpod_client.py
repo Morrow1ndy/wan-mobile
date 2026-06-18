@@ -66,14 +66,31 @@ _VALUE = {5: "outstanding", 4: "strong", 3: "fair", 2: "premium", 1: "costly"}
 # Ordered longest/most-specific first to prevent prefix collisions
 # (e.g. "A100" must come before "A10", "L40S" before "L40" before "L4").
 _PERF_OVERRIDE = [
-    ("RTX A6000", 4), ("RTX A5000", 3), ("RTX A4000", 2),
-    ("RTX 4090",  4), ("RTX 4080",  3), ("RTX 4070",  3), ("RTX 4000",  2),
-    ("RTX 3090",  3), ("RTX 3080",  2), ("RTX 3070",  1),
-    ("L40S",      5), ("L40",       4), ("L4",        2),
-    ("H200",      5), ("H100",      5),
-    ("B200",      5), ("B100",      5),
-    ("A100",      5), ("A40",       4), ("A30",       3),
-    ("A10G",      3), ("A10",       3), ("A2000",     1),
+    # Ada Lovelace professional
+    ("RTX A6000",          4), ("RTX A5000", 3), ("RTX A4500", 3), ("RTX A4000", 2),
+    ("RTX 6000 Ada",       5), ("RTX 5000 Ada", 4), ("RTX 2000 Ada", 2),
+    # RTX PRO 6000 variants — specific names must precede the base pattern
+    ("RTX PRO 6000 WK",    5), ("RTX PRO 6000 MaxQ", 4), ("RTX PRO 6000", 5),
+    ("RTX PRO 5000",       4), ("RTX PRO 4500", 3), ("RTX PRO 4000", 2),
+    # MIG slices
+    ("PRO 6000 MIG 48GB",  4), ("PRO 6000 MIG 24GB", 3),
+    # Consumer
+    ("RTX 5090",           5), ("RTX 5080",  3),  # 5080 docked: only 16 GB VRAM
+    ("RTX 4090",           4), ("RTX 4080",  3), ("RTX 4070", 3), ("RTX 4000", 2),
+    ("RTX 3090",           3), ("RTX 3080",  2), ("RTX 3070", 1),
+    # Inference / pro L-series
+    ("L40S",               5), ("L40",       4), ("L4",        2),
+    # Hopper
+    ("H200",               5), ("H100",      5),
+    # Blackwell datacenter
+    ("B300",               5), ("B200",      5), ("B100",      5),
+    # Ampere datacenter
+    ("A100",               5), ("A40",       4), ("A30",       3),
+    ("A10G",               3), ("A10",       3), ("A2000",     1),
+    # AMD Instinct
+    ("MI300X",             4),  # ROCm; WAN 2.2 works but ecosystem less mature
+    # Volta (legacy)
+    ("V100 SXM2",          2), ("Tesla V100", 2),
 ]
 
 
