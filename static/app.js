@@ -457,9 +457,10 @@ function renderField(f) {
       <input type="text" inputmode="numeric" data-key="${f.key}" value="${f.default ?? 0}" /></label>`;
   } else {
     const step = f.step ?? 1;
-    inner = `<label>
-      <div class="field-row"><span>${f.label}</span>
-        <span class="val" id="val-${f.key}">${f.default}</span></div>
+    const labelRow = f.label
+      ? `<div class="field-row"><span>${f.label}</span><span class="val" id="val-${f.key}">${f.default}</span></div>`
+      : `<div class="field-row" style="justify-content:flex-end"><span class="val" id="val-${f.key}">${f.default}</span></div>`;
+    inner = `<label>${labelRow}
       <input type="range" data-key="${f.key}" min="${f.min}" max="${f.max}"
              step="${step}" value="${f.default}" /></label>`;
   }
