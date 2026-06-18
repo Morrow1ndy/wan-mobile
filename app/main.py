@@ -53,6 +53,11 @@ async def get_config():
     }
 
 
+@app.get("/api/balance")
+async def balance():
+    return {"balance": await rp.get_balance()}
+
+
 @app.get("/api/gpus")
 async def gpus():
     return await rp.list_gpus()

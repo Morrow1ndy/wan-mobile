@@ -40,6 +40,11 @@ header {
   background: rgba(11, 12, 14, 0.8); backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
 }
+.header-right { display: flex; align-items: center; gap: 10px; }
+.balance { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--muted); letter-spacing: -0.01em; }
+.balance.low { color: var(--warn); }
+.balance.critical { color: var(--red); }
 header h1 {
   font-size: 17px; margin: 0; font-weight: 600; letter-spacing: -0.01em;
   display: flex; align-items: center; gap: 10px; color: var(--text);

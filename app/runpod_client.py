@@ -204,6 +204,15 @@ async def pod_metrics(pod_id: str):
     return await asyncio.to_thread(_pod_metrics_sync, pod_id)
 
 
+def _balance_sync():
+    data = run_graphql_query("query { myself { clientBalance } }")
+    return data["data"]["myself"]["clientBalance"]
+
+
+async def get_balance():
+    return await asyncio.to_thread(_balance_sync)
+
+
 async def list_pods():
     return await _call(runpod.get_pods)
 

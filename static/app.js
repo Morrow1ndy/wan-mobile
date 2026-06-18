@@ -527,9 +527,22 @@ async function pollStatus(promptId) {
   tick();
 }
 
+// ---- balance ---------------------------------------------------------------
+async function loadBalance() {
+  try {
+    const { balance } = await getJSON("/api/balance");
+    const el = $("#balance");
+    if (!el) return;
+    el.textContent = balance != null ? `$${Number(balance).toFixed(2)}` : "—";
+    el.className = "balance" + (balance < 2 ? " critical" : balance < 5 ? " low" : "");
+  } catch (_) {}
+}
+
 // ---- boot ------------------------------------------------------------------
 $("#refresh").addEventListener("click", loadPods);
 (async function init() {
   await loadConfig();
   await loadPods();
+  loadBalance();
+  setInterval(loadBalance, 60_000);
 })();
