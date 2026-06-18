@@ -704,8 +704,9 @@ async function loadDone(podId) {
     list.innerHTML = `<div class="card muted">Could not load outputs: ${esc(e.message)}</div>`;
     return;
   }
-  list.innerHTML = items.length
-    ? items.map((it) => renderOutput(podId, it)).join("")
+  const unsaved = items.filter((it) => !it.is_saved);
+  list.innerHTML = unsaved.length
+    ? unsaved.map((it) => renderOutput(podId, it)).join("")
     : `<div class="card muted">No videos yet on this pod.</div>`;
 }
 
@@ -890,13 +891,13 @@ $("#out-list").addEventListener("click", async (e) => {
     try {
       if (starred) {
         await deleteJSON(`/api/saved/${starBtn.dataset.pid}`);
-        starBtn.classList.remove("starred"); starBtn.textContent = "☆"; starBtn.title = "Save to local";
         await loadSaved();
+        if (_outPodId) await loadDone(_outPodId);
       } else {
         await postJSON(`/api/saved/${card.dataset.pod}/${starBtn.dataset.pid}`, {
           filename: card.dataset.file, subfolder: card.dataset.sub, type: card.dataset.ftype,
         });
-        starBtn.classList.add("starred"); starBtn.textContent = "★"; starBtn.title = "Unstar";
+        card.remove();
         await loadSaved();
         toast("Saved ✓");
       }
@@ -927,11 +928,7 @@ $("#saved-list").addEventListener("click", async (e) => {
       await deleteJSON(`/api/saved/${pid}`);
       starBtn.closest(".out-card").remove();
       if (!$("#saved-list .out-card")) $("#saved-section").hidden = true;
-      const mainCard = document.querySelector(`#out-list .out-card[data-pid="${pid}"]`);
-      if (mainCard) {
-        const s = mainCard.querySelector(".star-btn");
-        if (s) { s.classList.remove("starred"); s.textContent = "☆"; s.title = "Save to local"; }
-      }
+      if (_outPodId) await loadDone(_outPodId);
       toast("Removed from saved");
     } catch (err) { toast(err.message, true); starBtn.disabled = false; }
     return;
@@ -1045,6 +1042,22 @@ $("#out-active").addEventListener("click", async (e) => {
 
 $("#out-pod").addEventListener("change", loadOutputs);
 $("#out-refresh").addEventListener("click", loadOutputs);
+
+$("#session-toggle").addEventListener("click", () => {
+  const list = $("#out-list");
+  const chevron = $("#session-toggle .section-chevron");
+  const isCollapsed = list.style.display === "none";
+  list.style.display = isCollapsed ? "" : "none";
+  chevron.textContent = isCollapsed ? "▾" : "▸";
+});
+
+$("#saved-toggle").addEventListener("click", () => {
+  const list = $("#saved-list");
+  const chevron = $("#saved-toggle .section-chevron");
+  const isCollapsed = list.style.display === "none";
+  list.style.display = isCollapsed ? "" : "none";
+  chevron.textContent = isCollapsed ? "▾" : "▸";
+});
 
 // ---- prompt templates ------------------------------------------------------
 let _templates = [];

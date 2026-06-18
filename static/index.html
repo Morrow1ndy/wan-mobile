@@ -121,11 +121,14 @@
       <p class="hint">Videos generated on this pod. Tap to play; safe to close and come back.</p>
     </div>
     <div id="saved-section" hidden>
-      <div class="section-head">⭐ Saved</div>
+      <button class="section-head" id="saved-toggle">⭐ Saved <span class="section-chevron">▾</span></button>
       <div id="saved-list" class="out-grid"></div>
     </div>
     <div id="out-active" class="card-list"></div>
-    <div id="out-list" class="out-grid"></div>
+    <div id="session-section">
+      <button class="section-head" id="session-toggle">📹 Current Session <span class="section-chevron">▾</span></button>
+      <div id="out-list" class="out-grid"></div>
+    </div>
   </section>
 
   <div id="bulk-bar" class="bulk-bar" hidden>

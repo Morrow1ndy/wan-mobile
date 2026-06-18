@@ -142,10 +142,13 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 
 /* saved section header */
 .section-head {
-  font-size: 13px; font-weight: 600; color: var(--muted);
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; background: none; border: none; cursor: pointer;
+  font-size: 13px; font-weight: 600; color: var(--muted); font-family: var(--f);
   text-transform: uppercase; letter-spacing: 0.06em;
-  padding: 6px 0 2px;
+  padding: 8px 2px; text-align: left;
 }
+.section-chevron { font-size: 11px; }
 
 /* ---- tile-video: hidden by default, shown when card is expanded ---- */
 .tile-video { display: none; }
