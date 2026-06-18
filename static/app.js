@@ -64,7 +64,7 @@ function switchTab(tab) {
   if (deployBar) deployBar.style.display = tab === "pods" ? "" : "none";
   if (genBar) genBar.style.display = tab === "generate" ? "" : "none";
   if (tab === "outputs") loadOutputs();
-  else stopOutTimer();
+  else { stopOutTimer(); if (_selectMode) exitSelectMode(); }
   if (tab === "generate") resizeTextareas();
 }
 $$(".tabs button").forEach((b) =>
@@ -575,6 +575,81 @@ function stopOutTimer() {
   if (_outTimer) { clearInterval(_outTimer); _outTimer = null; }
 }
 
+// ---- bulk selection ---------------------------------------------------------
+let _selectMode = false;
+let _selected = new Set();
+
+function enterSelectMode() {
+  _selectMode = true;
+  _selected.clear();
+  $("#out-list").classList.add("select-mode");
+  $("#bulk-bar").hidden = false;
+  _updateBulkBar();
+}
+function exitSelectMode() {
+  _selectMode = false;
+  _selected.clear();
+  $$("#out-list .out-card.selected").forEach((c) => c.classList.remove("selected"));
+  $("#out-list").classList.remove("select-mode");
+  $("#bulk-bar").hidden = true;
+}
+function _toggleSelect(card) {
+  const pid = card.dataset.pid;
+  if (_selected.has(pid)) { _selected.delete(pid); card.classList.remove("selected"); }
+  else                     { _selected.add(pid);    card.classList.add("selected"); }
+  _updateBulkBar();
+}
+function _updateBulkBar() {
+  const n = _selected.size;
+  $("#bulk-count").textContent = n ? `${n} selected` : "";
+  $("#bulk-star").disabled   = n === 0;
+  $("#bulk-delete").disabled = n === 0;
+}
+
+$("#out-select").addEventListener("click", enterSelectMode);
+$("#bulk-cancel").addEventListener("click", exitSelectMode);
+
+$("#bulk-star").addEventListener("click", async () => {
+  const btn = $("#bulk-star");
+  btn.disabled = true; btn.textContent = "Saving…";
+  let done = 0;
+  for (const pid of [..._selected]) {
+    const card = document.querySelector(`#out-list .out-card[data-pid="${pid}"]`);
+    if (!card) continue;
+    try {
+      await postJSON(`/api/saved/${card.dataset.pod}/${pid}`, {
+        filename: card.dataset.file, subfolder: card.dataset.sub, type: card.dataset.ftype,
+      });
+      const s = card.querySelector(".star-btn");
+      if (s) { s.classList.add("starred"); s.textContent = "★"; s.title = "Unstar"; }
+      done++;
+    } catch (_) {}
+  }
+  await loadSaved();
+  toast(`${done} video${done !== 1 ? "s" : ""} saved ✓`);
+  btn.textContent = "★ Save";
+  exitSelectMode();
+});
+
+$("#bulk-delete").addEventListener("click", async () => {
+  const n = _selected.size;
+  if (!confirm(`Delete ${n} video${n !== 1 ? "s" : ""}?`)) return;
+  const btn = $("#bulk-delete");
+  btn.disabled = true; btn.textContent = "Deleting…";
+  let done = 0;
+  for (const pid of [..._selected]) {
+    const card = document.querySelector(`#out-list .out-card[data-pid="${pid}"]`);
+    if (!card) continue;
+    try {
+      await deleteJSON(`/api/pods/${card.dataset.pod}/outputs/${pid}`);
+      card.remove(); done++;
+    } catch (_) {}
+  }
+  toast(`${done} video${done !== 1 ? "s" : ""} deleted`);
+  btn.textContent = "🗑 Delete";
+  exitSelectMode();
+});
+
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -583,6 +658,13 @@ function fmtElapsed(sec) {
   sec = Math.max(0, Math.floor(sec));
   const m = Math.floor(sec / 60);
   return m ? `${m}m ${String(sec % 60).padStart(2, "0")}s` : `${sec}s`;
+}
+
+function fmtDatetime(ts) {
+  if (!ts) return null;
+  const d = new Date(ts * 1000);
+  return d.toLocaleString([], { month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit" });
 }
 
 // Build a /view URL for the uploaded input image (its name may carry a subfolder).
@@ -601,6 +683,7 @@ async function loadOutputs() {
   _seenDone = new Set();
   stopOutTimer();
   $("#out-active").innerHTML = "";
+  loadSaved();
   const list = $("#out-list");
   if (!podId) {
     list.innerHTML = `<div class="card muted">No running pod. Start one on the Pod tab.</div>`;
@@ -626,6 +709,41 @@ async function loadDone(podId) {
     : `<div class="card muted">No videos yet on this pod.</div>`;
 }
 
+async function loadSaved() {
+  const section = $("#saved-section");
+  const list = $("#saved-list");
+  let items;
+  try { items = await getJSON("/api/saved"); } catch (_) { return; }
+  if (!items.length) { section.hidden = true; return; }
+  section.hidden = false;
+  list.innerHTML = items.map(renderSavedOutput).join("");
+}
+
+function renderSavedOutput(it) {
+  const url = `/api/saved/file/${encodeURIComponent(it.filename)}`;
+  const dt = fmtDatetime(it.completed_at);
+  return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
+              data-pid="${esc(it.prompt_id)}">
+    <div class="out-cover">
+      <video class="cover-img" preload="metadata" muted src="${url}#t=0.1"></video>
+      <span class="play-badge">&#9658;</span>
+      <video class="tile-video" data-src="${url}" playsinline preload="none" controls></video>
+      <button class="zoom-back" title="Zoom back">↙</button>
+      <button class="star-btn starred" data-pid="${esc(it.prompt_id)}" title="Unstar">★</button>
+    </div>
+    <div class="out-cap">
+      <div class="out-name-wrap">
+        ${dt ? `<span class="out-dt">${dt}</span>` : ""}
+        ${it.duration_secs ? `<span class="out-dur">⏱ ${fmtElapsed(it.duration_secs)}</span>` : ""}
+      </div>
+      <div class="out-actions">
+        <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}" title="Details">ⓘ</button>
+        <a class="dl" href="${url}" download="${esc(it.filename)}" title="Download">&#10515;</a>
+      </div>
+    </div>
+  </div>`;
+}
+
 function renderOutput(podId, it) {
   const q = new URLSearchParams({
     filename: it.filename, subfolder: it.subfolder || "", type: it.type || "output",
@@ -635,18 +753,27 @@ function renderOutput(podId, it) {
   const cover = thumb
     ? `<img class="cover-img" src="${thumb}" alt="" loading="lazy" />`
     : `<video class="cover-img" preload="metadata" muted src="${url}#t=0.1"></video>`;
+  const dt = fmtDatetime(it.completed_at);
+  const starred = it.is_saved;
   return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
-              data-pid="${esc(it.prompt_id)}" data-pod="${esc(_outPodId)}">
+              data-pid="${esc(it.prompt_id)}" data-pod="${esc(podId)}"
+              data-file="${esc(it.filename)}" data-sub="${esc(it.subfolder||"")}" data-ftype="${esc(it.type||"output")}">
     <div class="out-cover">
       ${cover}
       <span class="play-badge">&#9658;</span>
+      <video class="tile-video" data-src="${url}" playsinline preload="none" controls></video>
+      <button class="zoom-back" title="Zoom back">↙</button>
+      <span class="sel-check"></span>
+      <button class="star-btn${starred ? " starred" : ""}" data-pid="${esc(it.prompt_id)}"
+              title="${starred ? "Unstar" : "Save to local"}">${starred ? "★" : "☆"}</button>
     </div>
     <div class="out-cap">
       <div class="out-name-wrap">
-        <span class="out-name">${esc(it.filename)}</span>
+        ${dt ? `<span class="out-dt">${dt}</span>` : ""}
         ${it.duration_secs ? `<span class="out-dur">⏱ ${fmtElapsed(it.duration_secs)}</span>` : ""}
       </div>
       <div class="out-actions">
+        <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}" title="Details">ⓘ</button>
         <a class="dl" href="${url}" download="${esc(it.filename)}" title="Download">&#10515;</a>
         <button class="del-btn ghost small" data-pid="${esc(it.prompt_id)}" title="Delete">🗑</button>
       </div>
@@ -654,49 +781,163 @@ function renderOutput(podId, it) {
   </div>`;
 }
 
-// ---- outputs: fullscreen player (rednote-style tap to play) ----------------
-function openLightbox(url, name) {
-  const v = $("#lb-video");
-  v.src = url;
-  const dl = $("#lb-download");
-  dl.href = url;
-  dl.download = name || "wan.mp4";
-  $("#lightbox").hidden = false;
-  v.play().catch(() => {});
+// ---- in-place tile expand / collapse ----------------------------------------
+function expandTile(card) {
+  const existing = document.querySelector(".out-card.expanded");
+  if (existing && existing !== card) collapseTile(existing);
+  const video = card.querySelector(".tile-video");
+  if (video && !video.src) video.src = video.dataset.src;
+  card.classList.add("expanded");
+  document.body.style.overflow = "hidden";
+  if (video) video.play().catch(() => {});
 }
-function closeLightbox() {
-  const v = $("#lb-video");
-  v.pause();
-  v.removeAttribute("src");
-  v.load();
-  $("#lightbox").hidden = true;
+function collapseTile(card) {
+  const video = card.querySelector(".tile-video");
+  if (video) { video.pause(); }
+  card.classList.remove("expanded");
+  document.body.style.overflow = "";
 }
-$("#lb-close").addEventListener("click", closeLightbox);
-$("#lightbox").addEventListener("click", (e) => {
-  if (e.target.id === "lightbox") closeLightbox();
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    const expanded = document.querySelector(".out-card.expanded");
+    if (expanded) collapseTile(expanded);
+  }
 });
-// Tap a tile cover to play; download/delete links opt out.
+
+// ---- generation details popup -----------------------------------------------
+async function showDetails(promptId) {
+  let params;
+  try { params = await getJSON(`/api/params/${promptId}`); }
+  catch (_) { toast("No details saved for this generation", true); return; }
+
+  const fields = CFG.fields || [];
+  const entries = Object.entries(params);
+  // prompt (positive) first, then the rest
+  const sorted = [
+    ...entries.filter(([k]) => k === "positive"),
+    ...entries.filter(([k]) => k !== "positive"),
+  ];
+  const rows = sorted.map(([key, val]) => {
+    const field = fields.find((f) => f.key === key);
+    const label = field ? field.label : key.replace(/_/g, " ");
+    return `<div class="detail-row">
+      <span class="detail-key">${esc(label)}</span>
+      <span class="detail-val">${esc(String(val))}</span>
+    </div>`;
+  }).join("");
+
+  const existing = document.querySelector(".details-overlay");
+  if (existing) existing.remove();
+
+  const overlay = document.createElement("div");
+  overlay.className = "details-overlay";
+  overlay.innerHTML = `<div class="details-card">
+    <div class="details-head">
+      <span>Generation Details</span>
+      <button class="details-apply ghost small">Apply to Generate</button>
+      <button class="details-close">&times;</button>
+    </div>
+    <div class="details-body">${rows || `<div class="muted">No params recorded.</div>`}</div>
+  </div>`;
+  overlay.querySelector(".details-apply").addEventListener("click", () => {
+    overlay.remove();
+    applyParams(params);
+    switchTab("generate");
+    toast("Params applied ✓");
+  });
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay || e.target.closest(".details-close")) overlay.remove();
+  });
+  document.body.appendChild(overlay);
+}
+
+// ---- out-list: tap cover to expand; buttons in cap area are independent -----
 $("#out-list").addEventListener("click", async (e) => {
+  // in select mode every tap toggles the tile
+  if (_selectMode) {
+    const card = e.target.closest(".out-card");
+    if (card) _toggleSelect(card);
+    return;
+  }
+  // zoom-back (inside expanded cover)
+  if (e.target.closest(".zoom-back")) {
+    collapseTile(e.target.closest(".out-card"));
+    return;
+  }
   if (e.target.closest(".dl")) return;
+  // delete
   const delBtn = e.target.closest(".del-btn");
   if (delBtn) {
     if (!confirm("Delete this video from history?")) return;
     const card = delBtn.closest(".out-card");
-    const podId = card.dataset.pod;
-    const pid = card.dataset.pid;
     delBtn.disabled = true;
     try {
-      await deleteJSON(`/api/pods/${podId}/outputs/${pid}`);
+      await deleteJSON(`/api/pods/${card.dataset.pod}/outputs/${card.dataset.pid}`);
       card.remove();
       toast("Deleted");
-    } catch (err) {
-      toast(err.message, true);
-      delBtn.disabled = false;
-    }
+    } catch (err) { toast(err.message, true); delBtn.disabled = false; }
     return;
   }
-  const card = e.target.closest(".out-card");
-  if (card) openLightbox(card.dataset.url, card.dataset.name);
+  // details
+  const infoBtn = e.target.closest(".info-btn");
+  if (infoBtn) { showDetails(infoBtn.dataset.pid); return; }
+  // star
+  const starBtn = e.target.closest(".star-btn");
+  if (starBtn) {
+    const card = starBtn.closest(".out-card");
+    const starred = starBtn.classList.contains("starred");
+    starBtn.disabled = true;
+    try {
+      if (starred) {
+        await deleteJSON(`/api/saved/${starBtn.dataset.pid}`);
+        starBtn.classList.remove("starred"); starBtn.textContent = "☆"; starBtn.title = "Save to local";
+        await loadSaved();
+      } else {
+        await postJSON(`/api/saved/${card.dataset.pod}/${starBtn.dataset.pid}`, {
+          filename: card.dataset.file, subfolder: card.dataset.sub, type: card.dataset.ftype,
+        });
+        starBtn.classList.add("starred"); starBtn.textContent = "★"; starBtn.title = "Unstar";
+        await loadSaved();
+        toast("Saved ✓");
+      }
+    } catch (err) { toast(err.message, true); }
+    starBtn.disabled = false;
+    return;
+  }
+  // tap cover → expand
+  const cover = e.target.closest(".out-cover");
+  if (cover) expandTile(cover.closest(".out-card"));
+});
+
+// ---- saved-list: tap cover to expand; star to unstar -------------------------
+$("#saved-list").addEventListener("click", async (e) => {
+  if (e.target.closest(".zoom-back")) {
+    collapseTile(e.target.closest(".out-card"));
+    return;
+  }
+  if (e.target.closest(".dl")) return;
+  const infoBtn = e.target.closest(".info-btn");
+  if (infoBtn) { showDetails(infoBtn.dataset.pid); return; }
+  const starBtn = e.target.closest(".star-btn");
+  if (starBtn) {
+    if (!confirm("Remove from saved?")) return;
+    const pid = starBtn.dataset.pid;
+    starBtn.disabled = true;
+    try {
+      await deleteJSON(`/api/saved/${pid}`);
+      starBtn.closest(".out-card").remove();
+      if (!$("#saved-list .out-card")) $("#saved-section").hidden = true;
+      const mainCard = document.querySelector(`#out-list .out-card[data-pid="${pid}"]`);
+      if (mainCard) {
+        const s = mainCard.querySelector(".star-btn");
+        if (s) { s.classList.remove("starred"); s.textContent = "☆"; s.title = "Save to local"; }
+      }
+      toast("Removed from saved");
+    } catch (err) { toast(err.message, true); starBtn.disabled = false; }
+    return;
+  }
+  const cover = e.target.closest(".out-cover");
+  if (cover) expandTile(cover.closest(".out-card"));
 });
 
 // ---- outputs: in-flight generations ----------------------------------------
@@ -870,25 +1111,79 @@ $("#tpl-del").addEventListener("click", async () => {
   } catch (e) { toast(e.message, true); }
 });
 
+// ---- param helpers ---------------------------------------------------------
+function applyParams(params) {
+  Object.entries(params).forEach(([key, val]) => {
+    const el = document.querySelector(`[data-key="${key}"]`);
+    if (!el) return;
+    if (el.type === "checkbox") el.checked = Boolean(val);
+    else el.value = val;
+    if (el.type === "range") {
+      const out = $("#val-" + key);
+      if (out) out.textContent = val;
+    }
+  });
+  applyConditions();
+  resizeTextareas();
+}
+
 // ---- last params -----------------------------------------------------------
 async function restoreLastParams() {
   try {
     const saved = await getJSON("/api/last-params");
     if (!saved || !Object.keys(saved).length) return;
-    Object.entries(saved).forEach(([key, val]) => {
-      const el = document.querySelector(`[data-key="${key}"]`);
-      if (!el) return;
-      if (el.type === "checkbox") el.checked = Boolean(val);
-      else el.value = val;
-      if (el.type === "range") {
-        const out = $("#val-" + key);
-        if (out) out.textContent = val;
-      }
-    });
-    applyConditions();
-    resizeTextareas();
+    applyParams(saved);
   } catch (_) {}
 }
+
+// ---- param presets ---------------------------------------------------------
+let _presets = [];
+
+async function loadParamPresets() {
+  try { _presets = await getJSON("/api/param-presets"); } catch (_) { _presets = []; }
+  renderPresetSelect();
+}
+
+function renderPresetSelect() {
+  const sel = $("#preset-select");
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = `<option value="">— saved presets —</option>` +
+    _presets.map((p, i) => `<option value="${i}">${esc(p.name)}</option>`).join("");
+  if (prev && _presets[Number(prev)]) sel.value = prev;
+}
+
+$("#preset-apply").addEventListener("click", () => {
+  const sel = $("#preset-select");
+  if (!sel || sel.value === "") return toast("Select a preset first", true);
+  const preset = _presets[Number(sel.value)];
+  if (!preset) return;
+  applyParams(preset.params);
+  toast(`"${preset.name}" applied`);
+});
+
+$("#preset-save").addEventListener("click", async () => {
+  const name = window.prompt("Preset name:", "My preset");
+  if (!name) return;
+  try {
+    _presets = await postJSON("/api/param-presets", { name, params: collectParams() });
+    renderPresetSelect();
+    $("#preset-select").value = String(_presets.length - 1);
+    toast("Preset saved");
+  } catch (e) { toast(e.message, true); }
+});
+
+$("#preset-del").addEventListener("click", async () => {
+  const sel = $("#preset-select");
+  if (!sel || sel.value === "") return toast("Select a preset first", true);
+  const idx = Number(sel.value);
+  if (!confirm(`Delete "${_presets[idx]?.name}"?`)) return;
+  try {
+    _presets = await deleteJSON(`/api/param-presets/${idx}`);
+    renderPresetSelect();
+    toast("Preset deleted");
+  } catch (e) { toast(e.message, true); }
+});
 
 // ---- balance ---------------------------------------------------------------
 async function loadBalance() {
@@ -923,7 +1218,7 @@ $("#ram-clear").addEventListener("click", async () => {
 $("#refresh").addEventListener("click", loadPods);
 (async function init() {
   await loadConfig();
-  await Promise.all([loadPods(), loadTemplates(), restoreLastParams()]);
+  await Promise.all([loadPods(), loadTemplates(), loadParamPresets(), restoreLastParams()]);
   loadBalance();
   setInterval(loadBalance, 60_000);
 })();

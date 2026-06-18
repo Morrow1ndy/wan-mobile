@@ -94,6 +94,12 @@
 
     <div class="card">
       <h2>Parameters</h2>
+      <select id="preset-select" class="tpl-select"><option value="">— saved presets —</option></select>
+      <div class="tpl-actions">
+        <button class="ghost small" id="preset-apply">Apply</button>
+        <button class="ghost small" id="preset-save">Save current</button>
+        <button class="ghost small" id="preset-del">Delete</button>
+      </div>
       <div id="params"></div>
     </div>
   </section>
@@ -109,19 +115,25 @@
         <label style="margin:0;flex:1">Pod
           <select id="out-pod"><option value="">No running pod</option></select>
         </label>
+        <button id="out-select" class="ghost small" title="Select">Select</button>
         <button id="out-refresh" class="ghost small" title="Refresh">&#x21bb;</button>
       </div>
       <p class="hint">Videos generated on this pod. Tap to play; safe to close and come back.</p>
+    </div>
+    <div id="saved-section" hidden>
+      <div class="section-head">⭐ Saved</div>
+      <div id="saved-list" class="out-grid"></div>
     </div>
     <div id="out-active" class="card-list"></div>
     <div id="out-list" class="out-grid"></div>
   </section>
 
-  <!-- fullscreen player (tap a tile) -->
-  <div id="lightbox" class="lightbox" hidden>
-    <button class="lb-close" id="lb-close" aria-label="Close">&times;</button>
-    <video id="lb-video" controls playsinline></video>
-    <a id="lb-download" class="ghost small" download>Download</a>
+  <div id="bulk-bar" class="bulk-bar" hidden>
+    <span id="bulk-count" class="muted small"></span>
+    <div style="flex:1"></div>
+    <button id="bulk-star" class="ghost small" disabled>★ Save</button>
+    <button id="bulk-delete" class="ghost small" disabled>🗑 Delete</button>
+    <button id="bulk-cancel" class="ghost small">Cancel</button>
   </div>
 
   <script src="/app.js"></script>

@@ -208,6 +208,29 @@ async def save_last_params(payload: dict = Body(default={})):
     return {"ok": True}
 
 
+@app.get("/api/param-presets")
+async def list_param_presets():
+    return ps.get_param_presets()
+
+
+@app.post("/api/param-presets")
+async def add_param_preset(payload: dict = Body(default={})):
+    presets = ps.get_param_presets()
+    presets.append({"name": payload.get("name", "Preset"),
+                    "params": payload.get("params", {})})
+    ps.save_param_presets(presets)
+    return presets
+
+
+@app.delete("/api/param-presets/{index}")
+async def delete_param_preset(index: int):
+    presets = ps.get_param_presets()
+    if 0 <= index < len(presets):
+        presets.pop(index)
+        ps.save_param_presets(presets)
+    return presets
+
+
 # ----- generation ----------------------------------------------------------
 @app.post("/api/generate")
 async def generate(
@@ -227,6 +250,7 @@ async def generate(
     client_id = uuid.uuid4().hex
     prompt_id = await comfy.queue_prompt(url, workflow, client_id)
 
+    ps.save_params(prompt_id, values)
     JOBS[prompt_id] = {
         "status": "running", "progress": 0, "max": 0,
         "node": None, "node_title": None, "node_titles": _node_titles(workflow),
@@ -288,6 +312,14 @@ async def preview(prompt_id: str):
                     headers={"Cache-Control": "no-store"})
 
 
+@app.get("/api/params/{prompt_id}")
+async def generation_params(prompt_id: str):
+    params = ps.get_params(prompt_id)
+    if params is None:
+        raise HTTPException(404, "No params saved for this generation")
+    return params
+
+
 @app.get("/api/video/{prompt_id}")
 async def video(prompt_id: str):
     job = JOBS.get(prompt_id)
@@ -317,14 +349,19 @@ async def pod_outputs(pod_id: str, limit: int = 30):
     except Exception:
         return []
     items = []
+    all_stats = ps.get_stats()
+    saved_ids = {s["prompt_id"] for s in ps.get_saved()}
     for pid, entry in hist.items():
         vid = _find_video(entry.get("outputs") or {})
         if vid:
             job = JOBS.get(pid)
             s, f = (job or {}).get("started_at"), (job or {}).get("finished_at")
-            duration = round(f - s) if s and f else None
+            stat = all_stats.get(pid, {})
+            duration = round(f - s) if s and f else stat.get("secs")
+            completed_at = f or stat.get("at")
             items.append({"prompt_id": pid, "input_image": _input_image(entry),
-                          "duration_secs": duration, **vid})
+                          "duration_secs": duration, "completed_at": completed_at,
+                          "is_saved": pid in saved_ids, **vid})
     items.reverse()  # history is chronological -> newest first
     return items
 
@@ -384,6 +421,61 @@ async def delete_output(pod_id: str, prompt_id: str):
     await comfy.delete_history(url, prompt_id)
     log_event(pod_id, f"Output deleted: {prompt_id}")
     return {"ok": True}
+
+
+# ----- saved (starred) videos ------------------------------------------------
+@app.post("/api/saved/{pod_id}/{prompt_id}")
+async def star_video(pod_id: str, prompt_id: str, payload: dict = Body(default={})):
+    """Download a video from the pod and store it on the persistent volume."""
+    filename = payload.get("filename")
+    if not filename:
+        raise HTTPException(400, "filename required")
+    subfolder = payload.get("subfolder", "")
+    file_type = payload.get("type", "output")
+
+    content = await comfy.fetch_view(rp.comfy_url(pod_id), filename, subfolder, file_type)
+    ps.SAVED_DIR.mkdir(parents=True, exist_ok=True)
+    basename = Path(filename).name
+    local_name = f"{prompt_id[:8]}_{basename}"
+    (ps.SAVED_DIR / local_name).write_bytes(content)
+
+    stat = ps.get_stats().get(prompt_id, {})
+    meta = {
+        "prompt_id": prompt_id,
+        "filename": local_name,
+        "saved_at": round(time.time()),
+        "completed_at": stat.get("at"),
+        "duration_secs": stat.get("secs"),
+    }
+    ps.upsert_saved(meta)
+    log_event(pod_id, f"Video starred: {local_name}")
+    return meta
+
+
+@app.get("/api/saved")
+async def list_saved():
+    return ps.get_saved()
+
+
+@app.delete("/api/saved/{prompt_id}")
+async def unstar_video(prompt_id: str):
+    item = ps.remove_saved(prompt_id)
+    if item:
+        p = ps.SAVED_DIR / item["filename"]
+        if p.exists():
+            p.unlink()
+    return {"ok": True}
+
+
+@app.get("/api/saved/file/{filename}")
+async def serve_saved_file(filename: str):
+    p = ps.SAVED_DIR / filename
+    if not p.exists():
+        raise HTTPException(404, "Saved video not found")
+    content = p.read_bytes()
+    ct = _content_type({"filename": filename})
+    return Response(content=content, media_type=ct,
+                    headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
 
 # ----- RAM clear -------------------------------------------------------------
@@ -469,6 +561,10 @@ async def _watch(url: str, client_id: str, prompt_id: str):
             job["finished_at"] = time.time()
             if job["max"]:
                 job["progress"] = job["max"]
+            if job.get("started_at") and job["finished_at"]:
+                ps.save_stat(prompt_id,
+                             round(job["finished_at"] - job["started_at"]),
+                             job["finished_at"])
             log_event(job["pod_id"],
                       "Video ready ✓" if job["video"] else "Finished (no video output)")
             return
