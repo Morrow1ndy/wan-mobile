@@ -142,6 +142,18 @@ async def add_template(payload: dict = Body(default={})):
     return templates
 
 
+@app.put("/api/templates/{index}")
+async def update_template(index: int, payload: dict = Body(default={})):
+    templates = ps.get_templates()
+    if 0 <= index < len(templates):
+        templates[index] = {
+            "name": payload.get("name", templates[index]["name"]),
+            "text": payload.get("text", templates[index]["text"]),
+        }
+        ps.save_templates(templates)
+    return templates
+
+
 @app.delete("/api/templates/{index}")
 async def delete_template(index: int):
     templates = ps.get_templates()

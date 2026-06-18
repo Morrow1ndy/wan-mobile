@@ -18,6 +18,15 @@ async function postJSON(url, body) {
   if (!r.ok) throw new Error((await r.text()) || r.statusText);
   return r.json();
 }
+async function putJSON(url, body) {
+  const r = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  if (!r.ok) throw new Error((await r.text()) || r.statusText);
+  return r.json();
+}
 async function deleteJSON(url) {
   const r = await fetch(url, { method: "DELETE" });
   if (!r.ok) throw new Error((await r.text()) || r.statusText);
@@ -329,7 +338,9 @@ async function loadConfig() {
   CFG = cfg;
   FIELDS = cfg.fields || [];
   renderPodFilters();
-  $("#params").innerHTML = FIELDS.map(renderField).join("");
+  const promptField = FIELDS.find((f) => f.key === "positive");
+  $("#prompt-field").innerHTML = promptField ? renderField(promptField) : "";
+  $("#params").innerHTML = FIELDS.filter((f) => f.key !== "positive").map(renderField).join("");
   // live value labels for sliders
   $$('input[type="range"]').forEach((r) => {
     const out = $("#val-" + r.dataset.key);
@@ -550,6 +561,20 @@ $("#tpl-use").addEventListener("click", () => {
   if (ta) { ta.value = tpl.text; toast("Template loaded"); }
 });
 
+$("#tpl-update").addEventListener("click", async () => {
+  const sel = $("#tpl-select");
+  if (!sel || sel.value === "") return toast("Select a template first", true);
+  const ta = document.querySelector('textarea[data-key="positive"]');
+  if (!ta || !ta.value.trim()) return toast("Prompt is empty", true);
+  const idx = Number(sel.value);
+  try {
+    _templates = await putJSON(`/api/templates/${idx}`, { text: ta.value.trim() });
+    renderTemplateSelect();
+    sel.value = String(idx);
+    toast(`"${_templates[idx]?.name}" updated`);
+  } catch (e) { toast(e.message, true); }
+});
+
 $("#tpl-save").addEventListener("click", async () => {
   const ta = document.querySelector('textarea[data-key="positive"]');
   if (!ta || !ta.value.trim()) return toast("Prompt is empty", true);
@@ -558,6 +583,7 @@ $("#tpl-save").addEventListener("click", async () => {
   try {
     _templates = await postJSON("/api/templates", { name, text: ta.value.trim() });
     renderTemplateSelect();
+    $("#tpl-select").value = String(_templates.length - 1);
     toast("Template saved");
   } catch (e) { toast(e.message, true); }
 });
