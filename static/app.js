@@ -1045,9 +1045,11 @@ $("#out-refresh").addEventListener("click", loadOutputs);
 
 $("#session-toggle").addEventListener("click", () => {
   const list = $("#out-list");
+  const active = $("#out-active");
   const chevron = $("#session-toggle .section-chevron");
   const isCollapsed = list.style.display === "none";
   list.style.display = isCollapsed ? "" : "none";
+  active.style.display = isCollapsed ? "" : "none";
   chevron.textContent = isCollapsed ? "▾" : "▸";
 });
 
