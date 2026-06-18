@@ -43,6 +43,9 @@ $$(".tabs button").forEach((b) =>
 );
 
 // ---- pods ------------------------------------------------------------------
+let selectedGpu = null;
+const metricsTimers = {}; // pod_id -> interval id
+
 function isRunning(p) {
   return (p.desiredStatus || "").toUpperCase() === "RUNNING";
 }
@@ -58,12 +61,19 @@ async function loadPods() {
     return;
   }
 
+  // stop any metric pollers from the previous render
+  Object.values(metricsTimers).forEach(clearInterval);
+  for (const k in metricsTimers) delete metricsTimers[k];
+
   if (!pods.length) {
-    list.innerHTML = `<div class="card muted">No pods. Start one below.</div>`;
+    list.innerHTML = `<div class="card muted">No pods. Deploy one below.</div>`;
   } else {
     list.innerHTML = pods.map(renderPod).join("");
     bindPodActions();
-    pods.filter(isRunning).forEach(checkReady); // async badge update
+    pods.filter(isRunning).forEach((p) => {
+      checkReady(p);
+      startMetrics(p.id);
+    });
   }
 
   // running-pod dropdown on the Generate tab
@@ -78,7 +88,7 @@ async function loadPods() {
 
 function renderPod(p) {
   const gpu = (p.machine && p.machine.gpuDisplayName) || p.gpuTypeId || "GPU";
-  const up = p.runtime && fmtUptime(p.runtime.uptimeInSeconds);
+  const up = fmtUptime(p.uptimeSeconds);
   const running = isRunning(p);
   const statusBadge = running
     ? `<span class="badge run" id="b-${p.id}">running</span>`
@@ -88,10 +98,16 @@ function renderPod(p) {
        <button class="btn-term" data-act="terminate" data-id="${p.id}">Terminate</button>`
     : `<button class="btn-resume" data-act="resume" data-id="${p.id}">Resume</button>
        <button class="btn-term" data-act="terminate" data-id="${p.id}">Terminate</button>`;
+  const session = running
+    ? `<div class="metrics" id="m-${p.id}"></div>
+       <div class="filter-label">Session log</div>
+       <div class="log" id="log-${p.id}"><div class="muted">…</div></div>`
+    : "";
   return `<div class="pod">
     <div class="pod-head"><span class="pod-name">${p.name || p.id}</span>${statusBadge}</div>
     <div class="pod-meta">${gpu} &middot; ${fmtCost(p.costPerHr)} ${up ? "&middot; " + up : ""}</div>
     <div class="pod-actions">${actions}</div>
+    ${session}
   </div>`;
 }
 
@@ -103,6 +119,61 @@ async function checkReady(p) {
     if (s.comfy_ready) { b.textContent = "ready"; b.className = "badge ready"; }
     else { b.textContent = "warming up"; b.className = "badge warm"; }
   } catch (_) {}
+}
+
+// ---- running pod: live metrics + session log -------------------------------
+function startMetrics(podId) {
+  const tick = async () => {
+    if (!$("#m-" + podId)) { clearInterval(metricsTimers[podId]); return; }
+    try {
+      const [m, ev] = await Promise.all([
+        getJSON(`/api/pods/${podId}/metrics`),
+        getJSON(`/api/pods/${podId}/events`),
+      ]);
+      renderMetrics(podId, m);
+      renderLog(podId, ev);
+    } catch (_) {}
+  };
+  tick();
+  metricsTimers[podId] = setInterval(tick, 4000);
+}
+
+function renderMetrics(podId, m) {
+  const el = $("#m-" + podId);
+  if (!el || !m) return;
+  const gpu = (m.machine && m.machine.gpuDisplayName) || "GPU";
+  const cells = [
+    ["Status", m.desiredStatus || "—"],
+    ["Cost", fmtCost(m.costPerHr) || "—"],
+    ["Uptime", fmtUptime(m.uptimeSeconds) || "just now"],
+    ["GPU", `${m.gpuCount || 1}× ${gpu}`],
+    ["vCPU / RAM", `${m.vcpuCount ?? "?"} / ${m.memoryInGb ?? "?"}GB`],
+    ["Disk", `${m.containerDiskInGb ?? "?"}GB`],
+  ];
+  let html = cells
+    .map(([k, v]) => `<div class="metric"><div class="k">${k}</div><div class="v">${v}</div></div>`)
+    .join("");
+  const g = m.runtime && m.runtime.gpus && m.runtime.gpus[0];
+  if (g && g.gpuUtilPercent != null) {
+    html += `<div class="metric" style="grid-column:1/-1">
+      <div class="k">GPU utilization</div>
+      <div class="util-row"><div class="util-bar"><div style="width:${g.gpuUtilPercent}%"></div></div>
+      <span class="v">${g.gpuUtilPercent}%</span></div></div>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderLog(podId, events) {
+  const el = $("#log-" + podId);
+  if (!el) return;
+  if (!events || !events.length) {
+    el.innerHTML = `<div class="muted">No activity yet.</div>`;
+    return;
+  }
+  el.innerHTML = events
+    .map((e) => `<div class="log-line"><span class="ts">${e.t}</span><span class="msg">${e.msg}</span></div>`)
+    .join("");
+  el.scrollTop = el.scrollHeight;
 }
 
 function bindPodActions() {
@@ -123,40 +194,117 @@ function bindPodActions() {
   );
 }
 
-async function loadGpus() {
-  const sel = $("#gpu-select");
-  try {
-    const gpus = await getJSON("/api/gpus");
-    sel.innerHTML = gpus
-      .map((g) => `<option value="${g.id}">${g.displayName || g.id}</option>`)
-      .join("");
-  } catch (e) {
-    sel.innerHTML = `<option value="">Could not load GPUs</option>`;
+// ---- pod creation: filters + GPU availability grid -------------------------
+function renderPodFilters() {
+  if (CFG.data_center) {
+    const b = $("#region-banner");
+    b.textContent = `Region locked to ${CFG.data_center} (network volume attached) · ${CFG.cloud_type} cloud`;
+    b.classList.add("show");
   }
+  $("#cuda-chips").innerHTML = (CFG.cuda_versions || [])
+    .map((v) => `<span class="chip">${v}</span>`)
+    .join("");
+  $("#ram-select").innerHTML =
+    `<option value="">Any</option>` +
+    (CFG.ram_options || []).map((r) => `<option value="${r}">${r} GB</option>`).join("");
+  if (CFG.container_disk_gb) $("#disk-hint").textContent = CFG.container_disk_gb;
+  loadGpuGrid();
 }
 
+async function loadGpuGrid() {
+  const grid = $("#gpu-grid");
+  grid.innerHTML = `<div class="muted">Loading GPUs…</div>`;
+  selectedGpu = null;
+  $("#start-pod").disabled = true;
+  const min = $("#ram-select").value;
+  let gpus;
+  try {
+    gpus = await getJSON("/api/gpu-availability" + (min ? `?min_memory=${min}` : ""));
+  } catch (e) {
+    grid.innerHTML = `<div class="muted">Could not load GPUs: ${e.message}</div>`;
+    return;
+  }
+  grid.innerHTML = gpus.length
+    ? gpus.map(renderGpu).join("")
+    : `<div class="muted">No GPUs match.</div>`;
+  $$("#gpu-grid .gpu").forEach((card) => {
+    if (card.dataset.avail === "1") card.addEventListener("click", () => selectGpu(card));
+  });
+}
+
+function renderGpu(g) {
+  const stockClass = g.available ? (g.stock || "").toLowerCase() : "none";
+  const stockLabel = g.available ? g.stock : "N/A";
+  const price = g.price != null ? `$${g.price.toFixed(2)}` : "—";
+  const sub = g.available
+    ? `${g.vcpu} vCPU · ${g.ram}GB RAM · ${g.max_gpu_count || 1}× max`
+    : "unavailable in region";
+  const detail = `<div class="gpu-detail">
+      <p class="gpu-blurb">${g.blurb || ""}</p>
+      ${ratingRow("Performance", g.perf, "good")}
+      ${ratingRow("Value", g.value, "warn")}
+      <div class="gpu-est">estimated · relative</div>
+    </div>`;
+  return `<div class="gpu ${g.available ? "" : "unavail"}" data-avail="${g.available ? 1 : 0}"
+       data-id="${g.id}" data-label="${g.displayName}" data-ram="${g.ram || ""}">
+    <div class="gpu-top">
+      <span class="gpu-name">${g.displayName}</span>
+      <span class="stock ${stockClass}">${stockLabel}</span>
+    </div>
+    <div class="gpu-vram">${g.vram}<span>GB</span></div>
+    <div class="gpu-sub">${sub}</div>
+    <div class="gpu-price">${price}<span class="unit">/hr</span></div>
+    ${detail}
+  </div>`;
+}
+
+function ratingRow(label, score, tone) {
+  const n = score || 0;
+  let dots = "";
+  for (let i = 1; i <= 5; i++) dots += `<span class="dot${i <= n ? " on " + tone : ""}"></span>`;
+  return `<div class="rating"><span class="rlabel">${label}</span><span class="dots">${dots}</span></div>`;
+}
+
+function selectGpu(card) {
+  $$("#gpu-grid .gpu").forEach((c) => c.classList.remove("sel"));
+  card.classList.add("sel");
+  selectedGpu = { id: card.dataset.id, label: card.dataset.label, ram: card.dataset.ram };
+  $("#start-pod").disabled = false;
+}
+
+$("#ram-select").addEventListener("change", loadGpuGrid);
+$("#refresh-gpus").addEventListener("click", loadGpuGrid);
+
 $("#start-pod").addEventListener("click", async () => {
+  if (!selectedGpu) return toast("Select a GPU first", true);
   const btn = $("#start-pod");
   btn.disabled = true;
-  btn.textContent = "Starting…";
+  btn.textContent = "Deploying…";
   try {
-    await postJSON("/api/pods", { gpu_type_id: $("#gpu-select").value || undefined });
-    toast("Pod starting — it will appear above");
+    await postJSON("/api/pods", {
+      gpu_type_id: selectedGpu.id,
+      gpu_label: selectedGpu.label,
+      min_memory: $("#ram-select").value ? Number($("#ram-select").value) : undefined,
+    });
+    toast("Pod deploying — it will appear above");
     setTimeout(loadPods, 2000);
   } catch (e) {
     toast(e.message, true);
   } finally {
     btn.disabled = false;
-    btn.textContent = "Start pod";
+    btn.textContent = "Deploy selected GPU";
   }
 });
 
 // ---- generate: params form -------------------------------------------------
 let FIELDS = [];
+let CFG = {};
 
 async function loadConfig() {
   const cfg = await getJSON("/api/config");
+  CFG = cfg;
   FIELDS = cfg.fields || [];
+  renderPodFilters();
   $("#params").innerHTML = FIELDS.map(renderField).join("");
   // live value labels for sliders
   $$('input[type="range"]').forEach((r) => {
@@ -352,6 +500,6 @@ async function pollStatus(promptId) {
 // ---- boot ------------------------------------------------------------------
 $("#refresh").addEventListener("click", loadPods);
 (async function init() {
-  await Promise.all([loadConfig(), loadGpus()]);
+  await loadConfig();
   await loadPods();
 })();

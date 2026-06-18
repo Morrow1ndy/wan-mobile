@@ -1,7 +1,7 @@
-fastapi
-uvicorn[standard]
-runpod
-httpx
-websockets
-python-dotenv
-python-multipart
+fastapi>=0.100.0,<1.0
+uvicorn[standard]>=0.20.0
+runpod>=1.0.0
+httpx>=0.24.0
+websockets>=11.0
+python-dotenv>=1.0.0
+python-multipart>=0.0.9

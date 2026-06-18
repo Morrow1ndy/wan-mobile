@@ -6,6 +6,7 @@ this server (reached over your Tailscale network).
 
 import asyncio
 import json
+import time
 import uuid
 from pathlib import Path
 
@@ -26,17 +27,41 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 # In-memory job tracking (good enough for a single user). Restarting the
 # server forgets in-flight jobs; finished videos still live on the pod.
 JOBS: dict[str, dict] = {}
+_TASKS: set[asyncio.Task] = set()  # keeps watcher tasks alive until done
+
+# Per-pod activity log + last-known ComfyUI readiness (app-level, in memory).
+POD_EVENTS: dict[str, list[dict]] = {}
+POD_READY: dict[str, bool] = {}
+
+
+def log_event(pod_id: str, msg: str):
+    """Append a timestamped line to a pod's session activity log."""
+    POD_EVENTS.setdefault(pod_id, []).append(
+        {"t": time.strftime("%H:%M:%S"), "msg": msg})
 
 
 # ----- config / pods -------------------------------------------------------
 @app.get("/api/config")
 async def get_config():
-    return {"fields": config.PARAM_FIELDS}
+    return {
+        "fields": config.PARAM_FIELDS,
+        "cuda_versions": config.ALLOWED_CUDA_VERSIONS,
+        "ram_options": config.RAM_OPTIONS,
+        "data_center": config.settings.data_center_id,
+        "cloud_type": config.settings.cloud_type,
+        "container_disk_gb": config.CONTAINER_DISK_GB,
+    }
 
 
 @app.get("/api/gpus")
 async def gpus():
     return await rp.list_gpus()
+
+
+@app.get("/api/gpu-availability")
+async def gpu_availability(min_memory: int | None = None):
+    """Live GPU grid (price + stock) for the configured region/cloud/CUDA."""
+    return await rp.list_gpu_availability(min_memory)
 
 
 @app.get("/api/pods")
@@ -49,12 +74,36 @@ async def pods():
 async def pod_status(pod_id: str):
     pod = await rp.get_pod(pod_id)
     url = rp.comfy_url(pod_id)
-    return {"pod": pod, "comfy_url": url, "comfy_ready": await comfy.is_ready(url)}
+    ready = await comfy.is_ready(url)
+    if ready and not POD_READY.get(pod_id):
+        POD_READY[pod_id] = True
+        log_event(pod_id, "ComfyUI ready ✓")
+    return {"pod": pod, "comfy_url": url, "comfy_ready": ready}
+
+
+@app.get("/api/pods/{pod_id}/metrics")
+async def pod_metrics(pod_id: str):
+    return await rp.pod_metrics(pod_id)
+
+
+@app.get("/api/pods/{pod_id}/events")
+async def pod_events(pod_id: str):
+    return POD_EVENTS.get(pod_id, [])
 
 
 @app.post("/api/pods")
 async def create(payload: dict = Body(default={})):
-    return await rp.create_pod(gpu_type_id=payload.get("gpu_type_id"))
+    res = await rp.create_pod(
+        gpu_type_id=payload.get("gpu_type_id"),
+        min_memory_gb=payload.get("min_memory"),
+    )
+    pod_id = (res or {}).get("id")
+    if pod_id:
+        gpu = payload.get("gpu_label") or payload.get("gpu_type_id") or "GPU"
+        POD_READY[pod_id] = False
+        log_event(pod_id, f"Pod created ({gpu}, {config.settings.data_center_id})")
+        log_event(pod_id, "Waiting for ComfyUI…")
+    return res
 
 
 @app.post("/api/pods/{pod_id}/stop")
@@ -93,7 +142,10 @@ async def generate(
 
     JOBS[prompt_id] = {"status": "running", "progress": 0, "max": 0,
                        "node": None, "pod_id": pod_id, "video": None}
-    asyncio.create_task(_watch(url, client_id, prompt_id))
+    log_event(pod_id, "Generation queued")
+    task = asyncio.create_task(_watch(url, client_id, prompt_id))
+    _TASKS.add(task)
+    task.add_done_callback(_TASKS.discard)
     return {"prompt_id": prompt_id}
 
 
@@ -142,6 +194,7 @@ async def _watch(url: str, client_id: str, prompt_id: str):
                         break  # this prompt finished executing
                 elif mtype == "execution_error" and d.get("prompt_id") == prompt_id:
                     job["status"], job["error"] = "error", d
+                    log_event(job["pod_id"], "Generation error (ComfyUI)")
                     return
     except Exception:
         pass  # fall through to history-based resolution
@@ -153,8 +206,11 @@ async def _watch(url: str, client_id: str, prompt_id: str):
         job["status"] = "done"
         if job["max"]:
             job["progress"] = job["max"]
+        log_event(job["pod_id"],
+                  "Video ready ✓" if job["video"] else "Finished (no video output)")
     except Exception as e:
         job["status"], job["error"] = "error", str(e)
+        log_event(job["pod_id"], f"Generation error: {e}")
 
 
 def _find_video(outputs: dict):

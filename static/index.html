@@ -3,13 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0d12" />
+  <meta name="theme-color" content="#0b0c0e" />
   <title>Wan Mobile</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <header>
-    <h1>Wan Mobile</h1>
+    <h1><span class="seal"></span>Wan Mobile</h1>
     <button id="refresh" class="ghost" title="Refresh">&#x21bb;</button>
   </header>
 
@@ -26,11 +29,29 @@
 
     <div class="card">
       <h2>Start a new pod</h2>
-      <label>GPU
-        <select id="gpu-select"><option>Loading&hellip;</option></select>
-      </label>
-      <button id="start-pod" class="primary">Start pod</button>
-      <p class="hint">Uses your configured template + network volume.</p>
+
+      <div id="region-banner" class="banner"></div>
+
+      <div class="filters">
+        <div class="filter-block">
+          <span class="filter-label">CUDA versions</span>
+          <div id="cuda-chips" class="chips"></div>
+        </div>
+        <label>RAM / GPU
+          <select id="ram-select"><option value="">Any</option></select>
+        </label>
+      </div>
+
+      <div class="gpu-grid-head">
+        <span class="filter-label">Select a GPU</span>
+        <button id="refresh-gpus" class="ghost small" title="Refresh">&#x21bb;</button>
+      </div>
+      <div id="gpu-grid" class="gpu-grid">
+        <div class="muted">Loading GPUs&hellip;</div>
+      </div>
+
+      <button id="start-pod" class="primary" disabled>Deploy selected GPU</button>
+      <p class="hint">Container disk is fixed at <span id="disk-hint">3</span>GB — your models live on the network volume.</p>
     </div>
   </section>
 

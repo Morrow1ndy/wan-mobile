@@ -22,6 +22,23 @@ def _int(name: str, default: int) -> int:
         return default
 
 
+def _csv(name: str, default: str) -> list[str]:
+    raw = os.getenv(name, "") or default
+    return [v.strip() for v in raw.split(",") if v.strip()]
+
+
+# CUDA versions to require when querying availability + deploying a pod.
+# Override with RUNPOD_ALLOWED_CUDA_VERSIONS="12.8,12.9" in .env if needed.
+ALLOWED_CUDA_VERSIONS = _csv("RUNPOD_ALLOWED_CUDA_VERSIONS", "12.8,12.9,13.0")
+
+# System-RAM-per-GPU choices shown in the pod filter (GB), mirrors RunPod's UI.
+RAM_OPTIONS = [8, 16, 24, 48, 80, 100]
+
+# Container (scratch) disk is always tiny — the models live on the network
+# volume, so the pod only needs a few GB of temp space.
+CONTAINER_DISK_GB = 3
+
+
 @dataclass
 class Settings:
     runpod_api_key: str = os.getenv("RUNPOD_API_KEY", "")
