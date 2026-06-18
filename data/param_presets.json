@@ -1,1 +1,42 @@
-[]
+[
+  {
+    "name": "1",
+    "params": {
+      "positive": "nsfwsks, looking directly at the camera, innocent yet seductive pure desire style, shy eyes always staring at the lens,\n\nshe actively uses her own hands to slowly unfasten, open, pull aside or remove her upper garment/top, deliberately revealing her bare breasts,\n\nonly after her breasts are fully exposed does she use both hands to gently pinch and tease her sensitive nipples,\n\nexpression of innocent lust, heavy breathing, soft moaning, upper body slightly trembling, delicate realistic skin, eyes fixed on the camera, breasts fully visible and exposed",
+      "seconds": "6",
+      "shift": "5",
+      "lightx2v": true,
+      "lx_high": "2",
+      "lx_low": "1",
+      "steps_on": "10",
+      "last_on": "5",
+      "steps_off": "30",
+      "last_off": "15",
+      "cfg_off": "3.5",
+      "lora_h_1": false,
+      "dr34m_high": "0.7",
+      "lora_l_1": false,
+      "dr34m_low": "0.7",
+      "lora_h_2": false,
+      "nsfw_high": "0.7",
+      "lora_l_2": false,
+      "nsfw_low": "0.7",
+      "lora_h_3": false,
+      "hjbj_high": "0.7",
+      "lora_l_3": false,
+      "hjbj_low": "0.7",
+      "lora_h_4": false,
+      "pen1s_high": "0.7",
+      "lora_l_4": false,
+      "pen1s_low": "0.7",
+      "lora_h_5": false,
+      "sh00tz_high": "0.7",
+      "lora_l_6": false,
+      "sh00tz_low": "0.7",
+      "sampler_high": "euler",
+      "scheduler_high": "beta57",
+      "sampler_low": "euler",
+      "scheduler_low": "beta57"
+    }
+  }
+]
