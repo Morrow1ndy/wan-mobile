@@ -58,18 +58,40 @@ def _gpu_generation(display: str, gid: str):
 
 
 # Derived (estimated) ratings — RunPod's API exposes no benchmark data, so we
-# approximate from architecture + VRAM (performance) and price (value), 1-5.
+# approximate from per-model lookup (falling back to architecture rank) for
+# performance, and price tiers for value. Both are 1–5.
 _SPEED = {5: "Exceptional", 4: "Fast", 3: "Capable", 2: "Modest", 1: "Entry-level"}
 _VALUE = {5: "outstanding", 4: "strong", 3: "fair", 2: "premium", 1: "costly"}
 
+# Ordered longest/most-specific first to prevent prefix collisions
+# (e.g. "A100" must come before "A10", "L40S" before "L40" before "L4").
+_PERF_OVERRIDE = [
+    ("RTX A6000", 4), ("RTX A5000", 3), ("RTX A4000", 2),
+    ("RTX 4090",  4), ("RTX 4080",  3), ("RTX 4070",  3), ("RTX 4000",  2),
+    ("RTX 3090",  3), ("RTX 3080",  2), ("RTX 3070",  1),
+    ("L40S",      5), ("L40",       4), ("L4",        2),
+    ("H200",      5), ("H100",      5),
+    ("B200",      5), ("B100",      5),
+    ("A100",      5), ("A40",       4), ("A30",       3),
+    ("A10G",      3), ("A10",       3), ("A2000",     1),
+]
 
-def _gpu_ratings(rank: int, vram, price):
-    base = {6: 5, 5: 5, 4: 4, 3: 3}.get(rank, 2)
-    if vram and vram <= 16 and base > 1:
-        base -= 1
-    if vram and vram >= 80 and base < 5:
-        base += 1
-    perf = max(1, min(5, base))
+
+def _gpu_ratings(rank: int, vram, price, name: str = ""):
+    uname = name.upper()
+    perf = None
+    for pat, score in _PERF_OVERRIDE:
+        if pat.upper() in uname:
+            perf = score
+            break
+    if perf is None:
+        # Unknown model: fall back to architecture rank + VRAM nudges.
+        base = {6: 5, 5: 5, 4: 4, 3: 3}.get(rank, 2)
+        if vram and vram <= 16 and base > 1:
+            base -= 1
+        if vram and vram >= 80 and base < 5:
+            base += 1
+        perf = max(1, min(5, base))
     if price is None:
         value = None
     elif price <= 0.40:
@@ -137,7 +159,7 @@ def _gpu_availability_sync(min_memory_gb):
         vram = g.get("memoryInGb")
         price = lp.get("uninterruptablePrice")
         category, rank = _gpu_generation(name, g["id"])
-        perf, value = _gpu_ratings(rank, vram, price)
+        perf, value = _gpu_ratings(rank, vram, price, name)
         out.append({
             "id": g["id"],
             "displayName": name,
