@@ -36,14 +36,15 @@ Fill in `.env`:
 
 ## 2. Point it at your real workflow
 
+`workflows/YAW_2.2.json` is a real working workflow and is ready to use
+out of the box. If you want to swap in a different workflow:
+
 1. In ComfyUI: Settings → enable **Dev mode**, then **Save (API Format)**.
-2. Replace `workflows/wan22_i2v.json` with that exported file.
+2. Replace `workflows/YAW_2.2.json` with that exported file (or set
+   `WORKFLOW_FILE=your_file.json` in `.env` to point at a different name).
 3. Edit `app/config.py` → `PARAM_FIELDS` and `IMAGE_NODE` so each `node_id`
    matches your workflow's node ids (open the JSON and find them). Optionally
    set `OUTPUT_NODE_ID` to your video-output node (e.g. VHS_VideoCombine).
-
-> The placeholder `wan22_i2v.json` shipped here is fake — the app will run but
-> generation won't work until you swap in your real workflow.
 
 ## 3. Run
 
@@ -84,6 +85,6 @@ app/runpod_client.py RunPod SDK wrapper (start/stop/terminate/list)
 app/comfy_client.py  ComfyUI API (upload, queue, history, view, ws)
 app/workflow.py      patch the API-format workflow with your params
 app/config.py        env settings + PARAM_FIELDS map  <-- edit this
-workflows/           your API-format workflow json    <-- replace this
+workflows/           API-format workflow json (YAW_2.2.json included)
 static/              mobile UI (no build step, vanilla JS)
 ```
