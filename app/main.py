@@ -231,7 +231,7 @@ async def generate(
         "status": "running", "progress": 0, "max": 0,
         "node": None, "node_title": None, "node_titles": _node_titles(workflow),
         "pod_id": pod_id, "video": None,
-        "started_at": time.time(), "finished_at": None,
+        "started_at": None, "finished_at": None,
         "input_image": image_name,
         "preview": None, "preview_ct": None,
     }
@@ -320,8 +320,11 @@ async def pod_outputs(pod_id: str, limit: int = 30):
     for pid, entry in hist.items():
         vid = _find_video(entry.get("outputs") or {})
         if vid:
-            items.append({"prompt_id": pid,
-                          "input_image": _input_image(entry), **vid})
+            job = JOBS.get(pid)
+            s, f = (job or {}).get("started_at"), (job or {}).get("finished_at")
+            duration = round(f - s) if s and f else None
+            items.append({"prompt_id": pid, "input_image": _input_image(entry),
+                          "duration_secs": duration, **vid})
     items.reverse()  # history is chronological -> newest first
     return items
 
@@ -355,6 +358,32 @@ async def pod_view(pod_id: str, filename: str, subfolder: str = "",
         media_type=_content_type({"filename": filename}),
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
+
+
+# ----- cancel / delete -------------------------------------------------------
+@app.post("/api/pods/{pod_id}/cancel/{prompt_id}")
+async def cancel_job(pod_id: str, prompt_id: str):
+    url = rp.comfy_url(pod_id)
+    job = JOBS.get(prompt_id)
+    if job and job.get("started_at") is None:
+        await comfy.cancel_queued(url, prompt_id)
+        log_event(pod_id, "Generation cancelled (was queued)")
+    else:
+        await comfy.interrupt(url)
+        log_event(pod_id, "Generation interrupted")
+    if job:
+        job["status"] = "error"
+        job["error"] = "Cancelled"
+        job["finished_at"] = time.time()
+    return {"ok": True}
+
+
+@app.delete("/api/pods/{pod_id}/outputs/{prompt_id}")
+async def delete_output(pod_id: str, prompt_id: str):
+    url = rp.comfy_url(pod_id)
+    await comfy.delete_history(url, prompt_id)
+    log_event(pod_id, f"Output deleted: {prompt_id}")
+    return {"ok": True}
 
 
 # ----- RAM clear -------------------------------------------------------------
@@ -392,10 +421,17 @@ async def _watch(url: str, client_id: str, prompt_id: str):
                     continue
                 msg = json.loads(raw)
                 mtype, d = msg.get("type"), msg.get("data", {})
-                if mtype == "progress":
+                if mtype == "execution_start":
+                    if d.get("prompt_id") == prompt_id and job["started_at"] is None:
+                        job["started_at"] = time.time()
+                elif mtype == "progress":
+                    if job["started_at"] is None:
+                        job["started_at"] = time.time()
                     job["progress"], job["max"] = d.get("value", 0), d.get("max", 0)
                 elif mtype == "executing":
                     node = d.get("node")
+                    if node is not None and job["started_at"] is None:
+                        job["started_at"] = time.time()
                     job["node"] = node
                     job["node_title"] = (job["node_titles"].get(str(node))
                                          if node is not None else None)

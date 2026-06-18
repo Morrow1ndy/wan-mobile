@@ -1,7 +1,7 @@
 {
   "106": {
     "inputs": {
-      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "clip_name": "umt5_xxl_fp16.safetensors",
       "type": "wan",
       "device": "default"
     },
@@ -44,7 +44,7 @@
   },
   "117": {
     "inputs": {
-      "vae_name": "Wan2_2_VAE_bf16.safetensors"
+      "vae_name": "wan_2.1_vae.safetensors"
     },
     "class_type": "VAELoader",
     "_meta": {
@@ -297,7 +297,7 @@
     "inputs": {
       "frame_rate": 16,
       "loop_count": 0,
-      "filename_prefix": "WANT2V/2026-06-18/203133_",
+      "filename_prefix": "WANT2V/2026-06-18/210821_",
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 19,
@@ -322,7 +322,7 @@
         0
       ],
       "loop_count": 0,
-      "filename_prefix": "output_2026-06-18/203133_IN",
+      "filename_prefix": "output_2026-06-18/210821_IN",
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 19,

@@ -61,6 +61,27 @@ async def get_history_all(comfy: str, max_items: int = 64) -> dict:
         return r.json()
 
 
+async def cancel_queued(comfy: str, prompt_id: str):
+    """Remove a not-yet-running prompt from ComfyUI's pending queue."""
+    async with _client(comfy) as c:
+        r = await c.post("/queue", json={"delete": [prompt_id]})
+        r.raise_for_status()
+
+
+async def interrupt(comfy: str):
+    """Interrupt the currently executing prompt."""
+    async with _client(comfy) as c:
+        r = await c.post("/interrupt", json={})
+        r.raise_for_status()
+
+
+async def delete_history(comfy: str, prompt_id: str):
+    """Remove a prompt from ComfyUI's history (hides it from outputs list)."""
+    async with _client(comfy) as c:
+        r = await c.post("/history", json={"delete": [prompt_id]})
+        r.raise_for_status()
+
+
 async def fetch_view(comfy: str, filename: str, subfolder: str = "",
                      type_: str = "output") -> bytes:
     """Download a generated file (video/image) from ComfyUI."""

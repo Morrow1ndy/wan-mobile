@@ -46,6 +46,14 @@ function fmtUptime(s) {
   return h ? `${h}h ${m % 60}m up` : `${m}m up`;
 }
 
+// ---- textarea auto-expand --------------------------------------------------
+function resizeTextareas() {
+  $$("textarea").forEach((ta) => {
+    ta.style.height = "0";
+    ta.style.height = ta.scrollHeight + "px";
+  });
+}
+
 // ---- tabs ------------------------------------------------------------------
 function switchTab(tab) {
   $$(".tabs button").forEach((x) => x.classList.toggle("active", x.dataset.tab === tab));
@@ -57,6 +65,7 @@ function switchTab(tab) {
   if (genBar) genBar.style.display = tab === "generate" ? "" : "none";
   if (tab === "outputs") loadOutputs();
   else stopOutTimer();
+  if (tab === "generate") resizeTextareas();
 }
 $$(".tabs button").forEach((b) =>
   b.addEventListener("click", () => switchTab(b.dataset.tab))
@@ -421,6 +430,10 @@ async function loadConfig() {
     c.addEventListener("change", applyConditions)
   );
   applyConditions();
+  // auto-expand textareas as content grows
+  $$("textarea").forEach((ta) =>
+    ta.addEventListener("input", resizeTextareas)
+  );
 }
 
 function renderField(f) {
@@ -622,14 +635,21 @@ function renderOutput(podId, it) {
   const cover = thumb
     ? `<img class="cover-img" src="${thumb}" alt="" loading="lazy" />`
     : `<video class="cover-img" preload="metadata" muted src="${url}#t=0.1"></video>`;
-  return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}">
+  return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
+              data-pid="${esc(it.prompt_id)}" data-pod="${esc(_outPodId)}">
     <div class="out-cover">
       ${cover}
       <span class="play-badge">&#9658;</span>
     </div>
     <div class="out-cap">
-      <span class="out-name">${esc(it.filename)}</span>
-      <a class="dl" href="${url}" download="${esc(it.filename)}" title="Download">&#10515;</a>
+      <div class="out-name-wrap">
+        <span class="out-name">${esc(it.filename)}</span>
+        ${it.duration_secs ? `<span class="out-dur">⏱ ${fmtElapsed(it.duration_secs)}</span>` : ""}
+      </div>
+      <div class="out-actions">
+        <a class="dl" href="${url}" download="${esc(it.filename)}" title="Download">&#10515;</a>
+        <button class="del-btn ghost small" data-pid="${esc(it.prompt_id)}" title="Delete">🗑</button>
+      </div>
     </div>
   </div>`;
 }
@@ -655,9 +675,26 @@ $("#lb-close").addEventListener("click", closeLightbox);
 $("#lightbox").addEventListener("click", (e) => {
   if (e.target.id === "lightbox") closeLightbox();
 });
-// Tap a tile cover to play; the download link inside opts out.
-$("#out-list").addEventListener("click", (e) => {
+// Tap a tile cover to play; download/delete links opt out.
+$("#out-list").addEventListener("click", async (e) => {
   if (e.target.closest(".dl")) return;
+  const delBtn = e.target.closest(".del-btn");
+  if (delBtn) {
+    if (!confirm("Delete this video from history?")) return;
+    const card = delBtn.closest(".out-card");
+    const podId = card.dataset.pod;
+    const pid = card.dataset.pid;
+    delBtn.disabled = true;
+    try {
+      await deleteJSON(`/api/pods/${podId}/outputs/${pid}`);
+      card.remove();
+      toast("Deleted");
+    } catch (err) {
+      toast(err.message, true);
+      delBtn.disabled = false;
+    }
+    return;
+  }
   const card = e.target.closest(".out-card");
   if (card) openLightbox(card.dataset.url, card.dataset.name);
 });
@@ -698,32 +735,48 @@ function upsertActiveCard(podId, j) {
     const thumb = inputThumbUrl(podId, j.input_image);
     $("#out-active").insertAdjacentHTML("afterbegin", `
       <div class="out-item active" id="${activeCardId(j.prompt_id)}"
-           data-pid="${esc(j.prompt_id)}" data-started="${j.started_at || 0}">
+           data-pid="${esc(j.prompt_id)}">
         <div class="active-media">
           <img class="active-img" alt="generating"
                src="${thumb || ""}" data-fallback="${thumb || ""}" />
-          <span class="gen-badge">generating</span>
+          <span class="gen-badge">queued</span>
         </div>
         <div class="active-body">
           <div class="active-row">
-            <span class="elapsed">0s</span>
+            <span class="elapsed muted">queued</span>
             <span class="step muted"></span>
           </div>
           <div class="progress-wrap"><div class="progress-bar"></div></div>
-          <div class="node muted"></div>
+          <div class="active-footer">
+            <div class="node muted"></div>
+            <button class="ghost small stop-btn" data-pid="${esc(j.prompt_id)}" data-pod="${esc(podId)}">✕ Stop</button>
+          </div>
         </div>
       </div>`);
     card = document.getElementById(activeCardId(j.prompt_id));
   }
 
-  const elapsed = j.started_at ? (Date.now() / 1000 - j.started_at) : 0;
-  card.querySelector(".elapsed").textContent = fmtElapsed(elapsed);
+  const started = j.started_at;
+  const elapsed = started ? (Date.now() / 1000 - started) : null;
+  const badge = card.querySelector(".gen-badge");
+  const elapsedEl = card.querySelector(".elapsed");
+
+  if (elapsed !== null) {
+    badge.textContent = "generating";
+    elapsedEl.textContent = fmtElapsed(elapsed);
+    elapsedEl.classList.remove("muted");
+  } else {
+    badge.textContent = "queued";
+    elapsedEl.textContent = "queued";
+    elapsedEl.classList.add("muted");
+  }
+
   card.querySelector(".step").textContent =
-    j.max ? `step ${j.progress} / ${j.max}` : "starting…";
+    elapsed !== null && j.max ? `step ${j.progress} / ${j.max}` : "";
   card.querySelector(".progress-bar").style.width =
     j.max ? Math.round((j.progress / j.max) * 100) + "%" : "0%";
   card.querySelector(".node").textContent =
-    j.node_title ? `▶ ${j.node_title}` : "queued…";
+    elapsed !== null && j.node_title ? `▶ ${j.node_title}` : "";
 
   // Prefer the live sampling preview; fall back to the input image.
   const img = card.querySelector(".active-img");
@@ -733,6 +786,21 @@ function upsertActiveCard(podId, j) {
     img.src = img.dataset.fallback;
   }
 }
+
+// Stop button on active cards (delegated).
+$("#out-active").addEventListener("click", async (e) => {
+  const btn = e.target.closest(".stop-btn");
+  if (!btn) return;
+  if (!confirm("Stop this generation?")) return;
+  btn.disabled = true;
+  try {
+    await postJSON(`/api/pods/${btn.dataset.pod}/cancel/${btn.dataset.pid}`, {});
+    toast("Stopped");
+  } catch (err) {
+    toast(err.message, true);
+    btn.disabled = false;
+  }
+});
 
 $("#out-pod").addEventListener("change", loadOutputs);
 $("#out-refresh").addEventListener("click", loadOutputs);
@@ -760,7 +828,7 @@ $("#tpl-use").addEventListener("click", () => {
   const tpl = _templates[Number(sel.value)];
   if (!tpl) return;
   const ta = document.querySelector('textarea[data-key="positive"]');
-  if (ta) { ta.value = tpl.text; toast("Template loaded"); }
+  if (ta) { ta.value = tpl.text; resizeTextareas(); toast("Template loaded"); }
 });
 
 $("#tpl-update").addEventListener("click", async () => {
@@ -818,6 +886,7 @@ async function restoreLastParams() {
       }
     });
     applyConditions();
+    resizeTextareas();
   } catch (_) {}
 }
 
