@@ -152,14 +152,59 @@ PARAM_FIELDS = [
      "when": {"key": "lightx2v", "is": False},
      "targets": [{"node_id": "233", "input": "strength_model"}]},
 
-    # ---- NSFW-22 LoRA strength (nested in the rgthree Power Lora Loaders) ----
-    {"key": "nsfw_high", "label": "NSFW-22 strength (High)", "type": "slider",
+    # ---- LoRA (High) toggles — node 141 ----
+    {"key": "lora_h_1", "label": "dr34ml4y (High)", "type": "toggle", "fmt": "bool",
+     "default": False,
+     "targets": [{"node_id": "141", "path": ["lora_1", "on"]}]},
+
+    {"key": "lora_h_2", "label": "NSFW-22 (High)", "type": "toggle", "fmt": "bool",
+     "default": True,
+     "targets": [{"node_id": "141", "path": ["lora_2", "on"]}]},
+    {"key": "nsfw_high", "label": "  NSFW-22 strength (High)", "type": "slider",
      "fmt": "float", "min": 0, "max": 2, "step": 0.05, "default": 0.7,
+     "when": {"key": "lora_h_2", "is": True},
      "targets": [{"node_id": "141", "path": ["lora_2", "strength"]}]},
 
-    {"key": "nsfw_low", "label": "NSFW-22 strength (Low)", "type": "slider",
+    {"key": "lora_h_3", "label": "HJBJCombo (High)", "type": "toggle", "fmt": "bool",
+     "default": False,
+     "targets": [{"node_id": "141", "path": ["lora_3", "on"]}]},
+
+    {"key": "lora_h_4", "label": "pen1s (High)", "type": "toggle", "fmt": "bool",
+     "default": False,
+     "targets": [{"node_id": "141", "path": ["lora_4", "on"]}]},
+
+    {"key": "lora_h_5", "label": "sh00tz (High)", "type": "toggle", "fmt": "bool",
+     "default": False,
+     "targets": [{"node_id": "141", "path": ["lora_5", "on"]}]},
+
+    # ---- LoRA (Low) toggles — node 142 ----
+    {"key": "lora_l_1", "label": "dr34ml4y (Low)", "type": "toggle", "fmt": "bool",
+     "default": False,
+     "targets": [{"node_id": "142", "path": ["lora_1", "on"]}]},
+
+    {"key": "lora_l_2", "label": "NSFW-22 (Low)", "type": "toggle", "fmt": "bool",
+     "default": True,
+     "targets": [{"node_id": "142", "path": ["lora_2", "on"]}]},
+    {"key": "nsfw_low", "label": "  NSFW-22 strength (Low)", "type": "slider",
      "fmt": "float", "min": 0, "max": 2, "step": 0.05, "default": 0.3,
+     "when": {"key": "lora_l_2", "is": True},
      "targets": [{"node_id": "142", "path": ["lora_2", "strength"]}]},
+
+    {"key": "lora_l_3", "label": "HJBJCombo (Low)", "type": "toggle", "fmt": "bool",
+     "default": False,
+     "targets": [{"node_id": "142", "path": ["lora_3", "on"]}]},
+
+    {"key": "lora_l_4", "label": "pen1s (Low)", "type": "toggle", "fmt": "bool",
+     "default": False,
+     "targets": [{"node_id": "142", "path": ["lora_4", "on"]}]},
+
+    {"key": "lora_l_5", "label": "Deepthroat", "type": "toggle", "fmt": "bool",
+     "default": False,
+     "targets": [{"node_id": "142", "path": ["lora_5", "on"]}]},
+
+    {"key": "lora_l_6", "label": "sh00tz (Low)", "type": "toggle", "fmt": "bool",
+     "default": False,
+     "targets": [{"node_id": "142", "path": ["lora_6", "on"]}]},
 
     # ---- sampler / scheduler — High KSampler (node 128) ----
     {"key": "sampler_high", "label": "Sampler (High)", "type": "select", "fmt": "str",

@@ -1,1 +1,23 @@
-[]
+[
+  {
+    "prompt_id": "5a4900bd-6f93-44f8-b278-ec02c05d9797",
+    "filename": "5a4900bd_210821_IN_00020.mp4",
+    "saved_at": 1781791785,
+    "completed_at": 1781791760,
+    "duration_secs": 78
+  },
+  {
+    "prompt_id": "2bc3e23b-519e-4f65-842b-6557b3331ea6",
+    "filename": "2bc3e23b_210821_IN_00017.mp4",
+    "saved_at": 1781791395,
+    "completed_at": 1781791087,
+    "duration_secs": 75
+  },
+  {
+    "prompt_id": "9c56a864-899e-4900-865e-311de3bd083d",
+    "filename": "9c56a864_210821_IN_00016.mp4",
+    "saved_at": 1781791112,
+    "completed_at": null,
+    "duration_secs": null
+  }
+]

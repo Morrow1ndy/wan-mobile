@@ -61,8 +61,8 @@ def build_workflow(values: dict, image_name: str) -> dict:
             toggles[f["key"]] = _as_bool(values.get(f["key"], f.get("default", True)))
 
     for field in config.PARAM_FIELDS:
-        if field.get("type") == "toggle":
-            continue                       # drives conditions; no node to write
+        if field.get("type") == "toggle" and not field.get("targets"):
+            continue                       # pure condition driver; no node to write
         if not _passes(field, toggles):
             continue
 
