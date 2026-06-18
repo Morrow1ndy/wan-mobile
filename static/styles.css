@@ -108,32 +108,33 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 #preview { width: auto; max-width: 128px; max-height: 128px; object-fit: cover;
   border-radius: 10px; margin-top: 12px; background: #000; border: 1px solid var(--line); display: block; }
 
-/* ---- outputs gallery (rednote-style 2-col tile feed) ---- */
-.out-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start;
+/* ---- outputs gallery (3-col compact tile feed) ---- */
+.out-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; align-items: start;
   margin: 14px 0; }
 .out-grid > .card { grid-column: 1 / -1; }            /* loading / empty messages span both */
-.out-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+.out-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
   overflow: hidden; }
-.out-cover { position: relative; cursor: pointer; line-height: 0; background: #000; }
-.cover-img { width: 100%; display: block; object-fit: cover; }
-.play-badge { position: absolute; inset: 0; margin: auto; width: 44px; height: 44px;
+.out-cover { position: relative; cursor: pointer; line-height: 0; background: #000;
+  aspect-ratio: 9/16; overflow: hidden; }
+.cover-img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.play-badge { position: absolute; inset: 0; margin: auto; width: 34px; height: 34px;
   display: flex; align-items: center; justify-content: center; border-radius: 50%;
-  background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 16px; padding-left: 3px;
+  background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 13px; padding-left: 2px;
   backdrop-filter: blur(2px); }
-.out-cap { display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 8px 10px; line-height: 1.3; }
-.out-name-wrap { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.out-name { font-size: 11px; color: var(--muted); word-break: break-all; }
-.out-dur { font-size: 11px; color: var(--accent); font-variant-numeric: tabular-nums; }
-.out-cap .dl { flex-shrink: 0; text-decoration: none; color: var(--accent); font-size: 16px; }
-.out-dt { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.out-cap { display: flex; align-items: center; justify-content: space-between; gap: 4px;
+  padding: 5px 6px; line-height: 1.3; }
+.out-name-wrap { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.out-name { font-size: 9px; color: var(--muted); word-break: break-all; }
+.out-dur { font-size: 9px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.out-cap .dl { flex-shrink: 0; text-decoration: none; color: var(--accent); font-size: 13px; }
+.out-dt { font-size: 9px; color: var(--faint); font-variant-numeric: tabular-nums; }
 
 /* star / save button */
 .star-btn {
-  position: absolute; top: 7px; right: 7px;
-  width: 32px; height: 32px; padding: 0; border: none; border-radius: 50%;
+  position: absolute; top: 5px; right: 5px;
+  width: 26px; height: 26px; padding: 0; border: none; border-radius: 50%;
   background: rgba(0,0,0,0.5); color: var(--faint);
-  font-size: 16px; line-height: 1; cursor: pointer; display: flex;
+  font-size: 13px; line-height: 1; cursor: pointer; display: flex;
   align-items: center; justify-content: center;
   backdrop-filter: blur(3px); transition: color .15s, background .15s;
 }
@@ -233,8 +234,8 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 /* ---- bulk selection ---- */
 .sel-check {
   display: none;
-  position: absolute; top: 8px; left: 8px;
-  width: 26px; height: 26px; border-radius: 50%;
+  position: absolute; top: 5px; left: 5px;
+  width: 22px; height: 22px; border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.65);
   background: rgba(0,0,0,0.45);
   align-items: center; justify-content: center;
@@ -246,7 +247,7 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   background: var(--accent); border-color: var(--accent);
 }
 .out-card.selected .sel-check::after {
-  content: "✓"; color: #fff; font-size: 13px; font-weight: 700;
+  content: "✓"; color: #fff; font-size: 11px; font-weight: 700;
 }
 .out-card.selected { border-color: var(--accent); }
 
