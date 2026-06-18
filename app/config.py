@@ -198,10 +198,6 @@ PARAM_FIELDS = [
      "default": False,
      "targets": [{"node_id": "142", "path": ["lora_4", "on"]}]},
 
-    {"key": "lora_l_5", "label": "Deepthroat", "type": "toggle", "fmt": "bool",
-     "default": False,
-     "targets": [{"node_id": "142", "path": ["lora_5", "on"]}]},
-
     {"key": "lora_l_6", "label": "sh00tz (Low)", "type": "toggle", "fmt": "bool",
      "default": False,
      "targets": [{"node_id": "142", "path": ["lora_6", "on"]}]},
