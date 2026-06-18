@@ -126,7 +126,8 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .gpu-grid-head { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 10px; }
 
 /* ---- GPU tiles ---- */
-.gpu-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; align-items: start; }
+.gpu-grid { display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; }
+@media (min-width: 480px) { .gpu-grid { grid-template-columns: repeat(2, 1fr); } }
 .gpu {
   position: relative; border: 1px solid var(--line); border-radius: 12px; padding: 14px;
   background: var(--surface); cursor: pointer; transition: border-color .15s, background .15s;
@@ -151,12 +152,8 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .stock.low { color: var(--low); }
 .stock.none { color: var(--faint); }
 
-/* hover / selected detail panel */
-.gpu-detail { max-height: 0; opacity: 0; overflow: hidden; margin-top: 0;
-  transition: max-height .25s ease, opacity .2s ease, margin-top .25s ease, padding-top .25s ease;
-  border-top: 1px solid transparent; }
-.gpu:hover .gpu-detail, .gpu.sel .gpu-detail {
-  max-height: 220px; opacity: 1; margin-top: 13px; padding-top: 13px; border-top-color: var(--line); }
+/* detail panel: always visible */
+.gpu-detail { margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--line); }
 .gpu-blurb { margin: 0 0 11px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 .rating { display: flex; align-items: center; justify-content: space-between; margin-top: 7px; }
 .rlabel { font-size: 12px; color: var(--muted); }
