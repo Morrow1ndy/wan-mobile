@@ -1,0 +1,12 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+*.log
+outputs/
+.fly/
+README.md
+run.ps1
+run.sh

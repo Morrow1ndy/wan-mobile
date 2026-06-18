@@ -1,17 +1,21 @@
 """FastAPI app: serves the mobile UI and proxies RunPod + ComfyUI.
 
 The RunPod API key never leaves this process; the phone only ever talks to
-this server (reached over your Tailscale network).
+this server (reached over Tailscale locally, or a password-protected public
+URL when hosted on Fly.io).
 """
 
 import asyncio
+import base64
 import json
+import os
+import secrets
 import time
 import uuid
 from pathlib import Path
 
 import websockets
-from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
@@ -24,6 +28,30 @@ from . import workflow as wf
 app = FastAPI(title="Wan Mobile")
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+# ----- optional HTTP Basic Auth -------------------------------------------
+# When WAN_AUTH_USER + WAN_AUTH_PASS are set (e.g. on a public Fly.io URL),
+# every request must carry matching Basic credentials. Unset => open (local).
+_AUTH_USER = os.getenv("WAN_AUTH_USER", "")
+_AUTH_PASS = os.getenv("WAN_AUTH_PASS", "")
+
+
+@app.middleware("http")
+async def basic_auth(request: Request, call_next):
+    if _AUTH_USER and _AUTH_PASS:
+        header = request.headers.get("authorization", "")
+        ok = False
+        if header.startswith("Basic "):
+            try:
+                user, _, pw = base64.b64decode(header[6:]).decode().partition(":")
+                ok = (secrets.compare_digest(user, _AUTH_USER)
+                      and secrets.compare_digest(pw, _AUTH_PASS))
+            except Exception:
+                ok = False
+        if not ok:
+            return Response(status_code=401, headers={
+                "WWW-Authenticate": 'Basic realm="Wan Mobile"'})
+    return await call_next(request)
 
 # In-memory job tracking (good enough for a single user). Restarting the
 # server forgets in-flight jobs; finished videos still live on the pod.

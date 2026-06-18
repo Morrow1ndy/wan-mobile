@@ -1,1 +1,19 @@
-{}
+{
+  "positive": "smile seductively",
+  "seconds": "5",
+  "shift": "8",
+  "lightx2v": true,
+  "lx_high": "2",
+  "lx_low": "1",
+  "steps_on": "10",
+  "last_on": "5",
+  "steps_off": "30",
+  "last_off": "15",
+  "cfg_off": "3.5",
+  "nsfw_high": "0.7",
+  "nsfw_low": "0.3",
+  "sampler_high": "euler",
+  "scheduler_high": "beta57",
+  "sampler_low": "euler",
+  "scheduler_low": "beta57"
+}

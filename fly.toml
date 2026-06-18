@@ -1,0 +1,24 @@
+# Fly.io config for the wan-mobile control panel.
+# `app` must be globally unique — `fly launch` will set/adjust it for you.
+app = "wan-mobile"
+primary_region = "ams"   # Amsterdam (near EU-RO-1). Change to one close to you.
+
+[build]
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Sleep when idle, wake on the next request (~1-2s). Saves money since this
+  # is a personal panel. Set min_machines_running = 1 for zero-cold-start.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+# Persist prompt templates + last-used params across deploys.
+[mounts]
+  source = "wan_data"
+  destination = "/app/data"

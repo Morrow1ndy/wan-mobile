@@ -44,6 +44,10 @@ class Settings:
     runpod_api_key: str = os.getenv("RUNPOD_API_KEY", "")
     template_id: str = os.getenv("RUNPOD_TEMPLATE_ID", "")
     network_volume_id: str = os.getenv("RUNPOD_NETWORK_VOLUME_ID", "")
+    # Where the network volume mounts. The Next Diffusion ComfyUI template ships
+    # its venv (torch, ComfyUI) on the volume at /workspace; the SDK otherwise
+    # defaults to /runpod-volume, which leaves torch unimportable.
+    volume_mount_path: str = os.getenv("RUNPOD_VOLUME_MOUNT_PATH", "/workspace")
     data_center_id: str = os.getenv("RUNPOD_DATA_CENTER_ID", "")
     gpu_type_id: str = os.getenv("RUNPOD_GPU_TYPE_ID", "NVIDIA GeForce RTX 4090")
     cloud_type: str = os.getenv("RUNPOD_CLOUD_TYPE", "SECURE")

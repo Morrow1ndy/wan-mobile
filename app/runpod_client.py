@@ -264,6 +264,7 @@ async def create_pod(gpu_type_id: str | None = None, name: str | None = None,
         container_disk_in_gb=config.CONTAINER_DISK_GB,
         min_memory_in_gb=min_memory_gb or 1,
         allowed_cuda_versions=cudas or None,
+        volume_mount_path=settings.volume_mount_path,
     )
 
 
