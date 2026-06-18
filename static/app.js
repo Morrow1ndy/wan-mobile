@@ -230,17 +230,6 @@ async function loadGpuGrid() {
     ? gpus.map(renderGpu).join("")
     : `<div class="muted">No GPUs match.</div>`;
 
-  const unrated = gpus.filter((g) => g.rating_fallback).map((g) => g.displayName);
-  const notice = $("#gpu-unrated-notice");
-  if (unrated.length) {
-    const names = unrated.join(", ");
-    if (notice) {
-      notice.textContent = `Dev: ${unrated.length} GPU(s) not in _PERF_OVERRIDE — add to runpod_client.py: ${names}`;
-      notice.hidden = false;
-    }
-  } else if (notice) {
-    notice.hidden = true;
-  }
   $$("#gpu-grid .gpu").forEach((card) => {
     if (card.dataset.avail === "1") card.addEventListener("click", () => selectGpu(card));
   });
@@ -253,7 +242,7 @@ function renderGpu(g) {
   const sub = g.available
     ? `${g.vcpu} vCPU · ${g.ram}GB RAM · ${g.max_gpu_count || 1}× max`
     : "unavailable in region";
-  const detail = `<div class="gpu-detail">
+  const detail = g.rating_fallback ? "" : `<div class="gpu-detail">
       <p class="gpu-blurb">${g.blurb || ""}</p>
       ${ratingRow("Performance", g.perf, "good")}
       ${ratingRow("Value", g.value, "warn")}

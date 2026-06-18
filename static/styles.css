@@ -129,9 +129,6 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   border: 1px solid var(--line-2); color: var(--text); font-variant-numeric: tabular-nums; }
 
 .gpu-grid-head { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 10px; }
-.dev-notice { font-size: 11px; color: var(--warn); background: rgba(245,179,74,.08);
-  border: 1px solid rgba(245,179,74,.25); border-radius: 8px; padding: 8px 11px;
-  margin-bottom: 10px; line-height: 1.5; }
 
 /* ---- GPU tiles ---- */
 .gpu-grid { display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; }
