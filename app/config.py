@@ -157,22 +157,35 @@ PARAM_FIELDS = [
      "fmt": "float", "min": 0, "max": 2, "step": 0.05, "default": 0.3,
      "targets": [{"node_id": "142", "path": ["lora_2", "strength"]}]},
 
-    # ---- sampler (both KSamplers) ----
-    {"key": "sampler_name", "label": "Sampler", "type": "select", "fmt": "str",
+    # ---- sampler / scheduler — High KSampler (node 128) ----
+    {"key": "sampler_high", "label": "Sampler (High)", "type": "select", "fmt": "str",
      "choices": ["euler", "euler_ancestral", "dpmpp_2m", "dpmpp_2m_sde",
                  "dpmpp_3m_sde", "dpmpp_sde", "dpmpp_2s_ancestral", "uni_pc",
                  "uni_pc_bh2", "res_multistep", "heun", "ddim", "lcm"],
      "default": "euler",
-     "targets": [{"node_id": "128", "input": "sampler_name"},
-                 {"node_id": "129", "input": "sampler_name"}]},
+     "targets": [{"node_id": "128", "input": "sampler_name"}]},
 
-    {"key": "scheduler", "label": "Scheduler", "type": "select", "fmt": "str",
+    {"key": "scheduler_high", "label": "Scheduler (High)", "type": "select", "fmt": "str",
      "choices": ["beta57", "beta", "normal", "karras", "exponential",
                  "sgm_uniform", "simple", "ddim_uniform", "kl_optimal",
                  "linear_quadratic"],
      "default": "beta57",
-     "targets": [{"node_id": "128", "input": "scheduler"},
-                 {"node_id": "129", "input": "scheduler"}]},
+     "targets": [{"node_id": "128", "input": "scheduler"}]},
+
+    # ---- sampler / scheduler — Low KSampler (node 129) ----
+    {"key": "sampler_low", "label": "Sampler (Low)", "type": "select", "fmt": "str",
+     "choices": ["euler", "euler_ancestral", "dpmpp_2m", "dpmpp_2m_sde",
+                 "dpmpp_3m_sde", "dpmpp_sde", "dpmpp_2s_ancestral", "uni_pc",
+                 "uni_pc_bh2", "res_multistep", "heun", "ddim", "lcm"],
+     "default": "euler",
+     "targets": [{"node_id": "129", "input": "sampler_name"}]},
+
+    {"key": "scheduler_low", "label": "Scheduler (Low)", "type": "select", "fmt": "str",
+     "choices": ["beta57", "beta", "normal", "karras", "exponential",
+                 "sgm_uniform", "simple", "ddim_uniform", "kl_optimal",
+                 "linear_quadratic"],
+     "default": "beta57",
+     "targets": [{"node_id": "129", "input": "scheduler"}]},
 
     # ---- seed: auto-randomized every run, no UI control ----
     {"key": "_seed", "type": "const", "fmt": "seed", "value": 0,
