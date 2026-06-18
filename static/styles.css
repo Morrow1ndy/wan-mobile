@@ -104,21 +104,53 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   text-align: center; cursor: pointer; padding: 15px; border-radius: 10px; }
 .filebtn input { display: none; }
 
-/* Result video: full card width but capped so tall portrait clips stay on-screen. */
-#result-video { width: 100%; max-height: 70vh; object-fit: contain; border-radius: 10px;
-  margin-top: 12px; background: #000; border: 1px solid var(--line); }
 /* Uploaded-image preview: small thumbnail, not a full-width hero. */
 #preview { width: auto; max-width: 128px; max-height: 128px; object-fit: cover;
   border-radius: 10px; margin-top: 12px; background: #000; border: 1px solid var(--line); display: block; }
 
-/* ---- outputs gallery ---- */
+/* ---- outputs gallery (rednote-style 2-col tile feed) ---- */
+.out-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start;
+  margin: 14px 0; }
+.out-grid > .card { grid-column: 1 / -1; }            /* loading / empty messages span both */
+.out-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  overflow: hidden; }
+.out-cover { position: relative; cursor: pointer; line-height: 0; background: #000; }
+.cover-img { width: 100%; display: block; object-fit: cover; }
+.play-badge { position: absolute; inset: 0; margin: auto; width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center; border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 16px; padding-left: 3px;
+  backdrop-filter: blur(2px); }
+.out-cap { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; line-height: 1.3; }
+.out-name { font-size: 11px; color: var(--muted); word-break: break-all; }
+.out-cap .dl { flex-shrink: 0; text-decoration: none; color: var(--accent); font-size: 16px; }
+
+/* fullscreen player */
+.lightbox { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 14px; padding: 16px;
+  background: rgba(0, 0, 0, 0.92); }
+.lightbox[hidden] { display: none; }
+#lb-video { max-width: 100%; max-height: 82vh; border-radius: 10px; background: #000; }
+.lb-close { position: absolute; top: max(14px, env(safe-area-inset-top)); right: 16px;
+  width: 40px; height: 40px; border: none; border-radius: 50%; background: rgba(255,255,255,0.12);
+  color: #fff; font-size: 22px; line-height: 1; cursor: pointer; }
+#lb-download { text-decoration: none; }
+
+/* In-progress generation card (lives above the finished clips). */
 .out-item { background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
   padding: 12px; margin: 14px 0; }
-.out-video { width: 100%; max-height: 60vh; object-fit: contain; border-radius: 10px;
+.out-item.active { border-color: var(--accent); }
+.active-media { position: relative; }
+.active-img { width: 100%; max-height: 60vh; object-fit: contain; border-radius: 10px;
   background: #000; border: 1px solid var(--line); display: block; }
-.out-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
-.out-name { font-size: 12px; color: var(--muted); word-break: break-all; }
-.out-meta a { flex-shrink: 0; text-decoration: none; }
+.gen-badge { position: absolute; top: 10px; left: 10px; font-size: 11px; font-weight: 600;
+  padding: 4px 10px; border-radius: 999px; color: var(--accent);
+  background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(4px); }
+.active-body { margin-top: 10px; }
+.active-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.active-row .elapsed { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
+.active-row .step { font-size: 12px; }
+.active-body .node { font-size: 12px; margin-top: 6px; word-break: break-word; }
 
 .field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .field-row .val { min-width: 56px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -207,8 +239,8 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .status.err { color: var(--red); }
 
 /* ---- progress ---- */
-#progress-wrap { height: 6px; background: var(--solid); border-radius: 6px; overflow: hidden; margin: 8px 0; }
-#progress-bar { height: 100%; width: 0; background: var(--accent); border-radius: 6px; transition: width .3s; }
+.progress-wrap { height: 6px; background: var(--solid); border-radius: 6px; overflow: hidden; margin: 8px 0; }
+.progress-bar { height: 100%; width: 0; background: var(--accent); border-radius: 6px; transition: width .3s; }
 
 /* ---- metrics ---- */
 .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0; }

@@ -47,24 +47,25 @@ function fmtUptime(s) {
 }
 
 // ---- tabs ------------------------------------------------------------------
+function switchTab(tab) {
+  $$(".tabs button").forEach((x) => x.classList.toggle("active", x.dataset.tab === tab));
+  $$(".tab").forEach((x) => x.classList.remove("active"));
+  $("#tab-" + tab).classList.add("active");
+  const deployBar = $("#deploy-bar");
+  const genBar = $("#generate-bar");
+  if (deployBar) deployBar.style.display = tab === "pods" ? "" : "none";
+  if (genBar) genBar.style.display = tab === "generate" ? "" : "none";
+  if (tab === "outputs") loadOutputs();
+  else stopOutTimer();
+}
 $$(".tabs button").forEach((b) =>
-  b.addEventListener("click", () => {
-    $$(".tabs button").forEach((x) => x.classList.remove("active"));
-    $$(".tab").forEach((x) => x.classList.remove("active"));
-    b.classList.add("active");
-    const tab = b.dataset.tab;
-    $("#tab-" + tab).classList.add("active");
-    const deployBar = $("#deploy-bar");
-    const genBar = $("#generate-bar");
-    if (deployBar) deployBar.style.display = tab === "pods" ? "" : "none";
-    if (genBar) genBar.style.display = tab === "generate" ? "" : "none";
-    if (tab === "outputs") loadOutputs();
-  })
+  b.addEventListener("click", () => switchTab(b.dataset.tab))
 );
 
 // ---- pods ------------------------------------------------------------------
 let selectedGpu = null;
 const metricsTimers = {}; // pod_id -> interval id
+const uptimeBase = {};    // pod_id -> { secs, at } — base snapshot for live ticking
 
 function isRunning(p) {
   return (p.desiredStatus || "").toUpperCase() === "RUNNING";
@@ -112,6 +113,13 @@ async function loadPods() {
     const outPrev = outSel.value;
     outSel.innerHTML = opts;
     if (running.some((p) => p.id === outPrev)) outSel.value = outPrev;
+  }
+
+  // Show RAM-clear button only when at least one pod is running.
+  const ramBtn = $("#ram-clear");
+  if (ramBtn) {
+    ramBtn.hidden = running.length === 0;
+    ramBtn.dataset.podId = running.length ? running[0].id : "";
   }
 }
 
@@ -165,16 +173,27 @@ function startMetrics(podId) {
   };
   tick();
   metricsTimers[podId] = setInterval(tick, 4000);
+  // Tick the session-time display every second without re-fetching.
+  setInterval(() => {
+    const base = uptimeBase[podId];
+    const el = $("#up-" + podId);
+    if (!base || !el) return;
+    const live = Math.round(base.secs + (Date.now() - base.at) / 1000);
+    el.textContent = fmtUptime(live) || "just now";
+  }, 1000);
 }
 
 function renderMetrics(podId, m) {
   const el = $("#m-" + podId);
   if (!el || !m) return;
   const gpu = (m.machine && m.machine.gpuDisplayName) || "GPU";
+  // runtime.uptimeInSeconds matches what RunPod's pod-details page shows.
+  const runtimeSecs = m.runtime && m.runtime.uptimeInSeconds;
+  if (runtimeSecs != null) uptimeBase[podId] = { secs: runtimeSecs, at: Date.now() };
   const cells = [
     ["Status", m.desiredStatus || "—"],
     ["Cost", fmtCost(m.costPerHr) || "—"],
-    ["Uptime", fmtUptime(m.uptimeSeconds) || "just now"],
+    ["Session time", `<span id="up-${podId}">${fmtUptime(runtimeSecs) || "just now"}</span>`],
     ["GPU", `${m.gpuCount || 1}× ${gpu}`],
     ["vCPU / RAM", `${m.vcpuCount ?? "?"} / ${m.memoryInGb ?? "?"}GB`],
     ["Disk", `${m.containerDiskInGb ?? "?"}GB`],
@@ -188,6 +207,14 @@ function renderMetrics(podId, m) {
       <div class="k">GPU utilization</div>
       <div class="util-row"><div class="util-bar"><div style="width:${g.gpuUtilPercent}%"></div></div>
       <span class="v">${g.gpuUtilPercent}%</span></div></div>`;
+  }
+  const c = m.runtime && m.runtime.container;
+  if (c && c.memoryPercent != null) {
+    const ramGb = m.memoryInGb ? ` (${(m.memoryInGb * c.memoryPercent / 100).toFixed(1)} / ${m.memoryInGb}GB)` : "";
+    html += `<div class="metric" style="grid-column:1/-1">
+      <div class="k">RAM utilization${ramGb}</div>
+      <div class="util-row"><div class="util-bar"><div style="width:${c.memoryPercent}%"></div></div>
+      <span class="v">${c.memoryPercent}%</span></div></div>`;
   }
   el.innerHTML = html;
 }
@@ -512,107 +539,78 @@ $("#generate").addEventListener("click", async () => {
   try {
     const r = await fetch("/api/generate", { method: "POST", body: fd });
     if (!r.ok) throw new Error((await r.text()) || r.statusText);
-    const { prompt_id } = await r.json();
-    showResultCard();
-    pollStatus(prompt_id);
+    await r.json();
+    toast("Generation queued");
+    // Jump to Outputs, where the in-flight job now shows live progress.
+    const outSel = $("#out-pod");
+    if (outSel) outSel.value = podId;
+    switchTab("outputs");
   } catch (e) {
     toast(e.message, true);
+  } finally {
     btn.disabled = false;
     btn.textContent = "Generate";
   }
 });
 
-function showResultCard() {
-  $("#result-card").hidden = false;
-  $("#result-video").hidden = true;
-  $("#download").hidden = true;
-  $("#progress-bar").style.width = "0%";
-  $("#progress-text").textContent = "Queued…";
-  $("#result-card").scrollIntoView({ behavior: "smooth" });
-}
-
-async function pollStatus(promptId) {
-  const bar = $("#progress-bar");
-  const text = $("#progress-text");
-  const btn = $("#generate");
-
-  const tick = async () => {
-    let job;
-    try {
-      job = await getJSON(`/api/status/${promptId}`);
-    } catch (e) {
-      text.textContent = "Lost track of job: " + e.message;
-      btn.disabled = false; btn.textContent = "Generate";
-      return;
-    }
-
-    if (job.max) {
-      bar.style.width = Math.round((job.progress / job.max) * 100) + "%";
-      text.textContent = `Step ${job.progress} / ${job.max}`;
-    } else if (job.status === "running") {
-      text.textContent = "Working…";
-    }
-
-    if (job.status === "done") {
-      bar.style.width = "100%";
-      btn.disabled = false; btn.textContent = "Generate";
-      if (job.video) {
-        const url = `/api/video/${promptId}`;
-        const v = $("#result-video");
-        const dl = $("#download");
-        // Keep download hidden until the video bytes actually load — only then
-        // is the file truly fetchable from the pod.
-        v.hidden = true; dl.hidden = true;
-        text.textContent = "Loading video…";
-        v.onloadeddata = () => {
-          v.hidden = false;
-          dl.href = url;
-          dl.download = job.video.filename || "wan.mp4";
-          dl.hidden = false;
-          text.textContent = "Done ✓";
-        };
-        v.onerror = () => {
-          text.textContent = "Video generated but couldn't be loaded — tap retry.";
-          dl.hidden = true;
-        };
-        v.src = url;
-        v.load();
-      } else {
-        text.textContent = "Finished, but no video output was found (check OUTPUT_NODE_ID).";
-      }
-      return;
-    }
-    if (job.status === "error") {
-      text.textContent = "Error: " + (typeof job.error === "string" ? job.error : JSON.stringify(job.error));
-      btn.disabled = false; btn.textContent = "Generate";
-      return;
-    }
-    setTimeout(tick, 1500);
-  };
-  tick();
-}
-
 // ---- outputs gallery -------------------------------------------------------
+let _outPodId = null;
+let _outTimer = null;
+let _seenDone = new Set(); // jobs we've already dropped into the done list
+
+function stopOutTimer() {
+  if (_outTimer) { clearInterval(_outTimer); _outTimer = null; }
+}
+
+const esc = (s) =>
+  String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function fmtElapsed(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const m = Math.floor(sec / 60);
+  return m ? `${m}m ${String(sec % 60).padStart(2, "0")}s` : `${sec}s`;
+}
+
+// Build a /view URL for the uploaded input image (its name may carry a subfolder).
+function inputThumbUrl(podId, inputImage) {
+  if (!inputImage) return null;
+  const i = inputImage.lastIndexOf("/");
+  const subfolder = i >= 0 ? inputImage.slice(0, i) : "";
+  const filename = i >= 0 ? inputImage.slice(i + 1) : inputImage;
+  const q = new URLSearchParams({ filename, subfolder, type: "input" });
+  return `/api/pods/${podId}/view?${q}`;
+}
+
 async function loadOutputs() {
   const podId = $("#out-pod").value;
+  _outPodId = podId;
+  _seenDone = new Set();
+  stopOutTimer();
+  $("#out-active").innerHTML = "";
   const list = $("#out-list");
   if (!podId) {
     list.innerHTML = `<div class="card muted">No running pod. Start one on the Pod tab.</div>`;
     return;
   }
   list.innerHTML = `<div class="card muted">Loading outputs…</div>`;
+  await loadDone(podId);
+  await tickActive();
+  _outTimer = setInterval(tickActive, 1000);
+}
+
+async function loadDone(podId) {
+  const list = $("#out-list");
   let items;
   try {
     items = await getJSON(`/api/pods/${podId}/outputs`);
   } catch (e) {
-    list.innerHTML = `<div class="card muted">Could not load outputs: ${e.message}</div>`;
+    list.innerHTML = `<div class="card muted">Could not load outputs: ${esc(e.message)}</div>`;
     return;
   }
-  if (!items.length) {
-    list.innerHTML = `<div class="card muted">No videos yet on this pod.</div>`;
-    return;
-  }
-  list.innerHTML = items.map((it) => renderOutput(podId, it)).join("");
+  list.innerHTML = items.length
+    ? items.map((it) => renderOutput(podId, it)).join("")
+    : `<div class="card muted">No videos yet on this pod.</div>`;
 }
 
 function renderOutput(podId, it) {
@@ -620,13 +618,120 @@ function renderOutput(podId, it) {
     filename: it.filename, subfolder: it.subfolder || "", type: it.type || "output",
   });
   const url = `/api/pods/${podId}/view?${q}`;
-  return `<div class="out-item">
-    <video class="out-video" preload="none" controls playsinline src="${url}"></video>
-    <div class="out-meta">
-      <span class="out-name">${it.filename}</span>
-      <a class="ghost small" href="${url}" download="${it.filename}">Download</a>
+  const thumb = inputThumbUrl(podId, it.input_image);
+  const cover = thumb
+    ? `<img class="cover-img" src="${thumb}" alt="" loading="lazy" />`
+    : `<video class="cover-img" preload="metadata" muted src="${url}#t=0.1"></video>`;
+  return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}">
+    <div class="out-cover">
+      ${cover}
+      <span class="play-badge">&#9658;</span>
+    </div>
+    <div class="out-cap">
+      <span class="out-name">${esc(it.filename)}</span>
+      <a class="dl" href="${url}" download="${esc(it.filename)}" title="Download">&#10515;</a>
     </div>
   </div>`;
+}
+
+// ---- outputs: fullscreen player (rednote-style tap to play) ----------------
+function openLightbox(url, name) {
+  const v = $("#lb-video");
+  v.src = url;
+  const dl = $("#lb-download");
+  dl.href = url;
+  dl.download = name || "wan.mp4";
+  $("#lightbox").hidden = false;
+  v.play().catch(() => {});
+}
+function closeLightbox() {
+  const v = $("#lb-video");
+  v.pause();
+  v.removeAttribute("src");
+  v.load();
+  $("#lightbox").hidden = true;
+}
+$("#lb-close").addEventListener("click", closeLightbox);
+$("#lightbox").addEventListener("click", (e) => {
+  if (e.target.id === "lightbox") closeLightbox();
+});
+// Tap a tile cover to play; the download link inside opts out.
+$("#out-list").addEventListener("click", (e) => {
+  if (e.target.closest(".dl")) return;
+  const card = e.target.closest(".out-card");
+  if (card) openLightbox(card.dataset.url, card.dataset.name);
+});
+
+// ---- outputs: in-flight generations ----------------------------------------
+const activeCardId = (pid) => "act-" + pid.replace(/[^a-zA-Z0-9_-]/g, "");
+
+async function tickActive() {
+  const podId = _outPodId;
+  if (!podId) return;
+  let jobs;
+  try { jobs = await getJSON(`/api/pods/${podId}/jobs`); }
+  catch (_) { return; }
+
+  const live = new Set();
+  for (const j of jobs) {
+    if (j.status === "done") {
+      if (!_seenDone.has(j.prompt_id)) { _seenDone.add(j.prompt_id); loadDone(podId); }
+      continue; // the finished clip belongs in the done list below
+    }
+    if (j.status === "error") {
+      if (!_seenDone.has(j.prompt_id)) { _seenDone.add(j.prompt_id); toast("Generation failed", true); }
+      continue;
+    }
+    live.add(j.prompt_id);
+    upsertActiveCard(podId, j);
+  }
+
+  // Drop cards for jobs no longer running.
+  $$("#out-active .out-item").forEach((card) => {
+    if (!live.has(card.dataset.pid)) card.remove();
+  });
+}
+
+function upsertActiveCard(podId, j) {
+  let card = document.getElementById(activeCardId(j.prompt_id));
+  if (!card) {
+    const thumb = inputThumbUrl(podId, j.input_image);
+    $("#out-active").insertAdjacentHTML("afterbegin", `
+      <div class="out-item active" id="${activeCardId(j.prompt_id)}"
+           data-pid="${esc(j.prompt_id)}" data-started="${j.started_at || 0}">
+        <div class="active-media">
+          <img class="active-img" alt="generating"
+               src="${thumb || ""}" data-fallback="${thumb || ""}" />
+          <span class="gen-badge">generating</span>
+        </div>
+        <div class="active-body">
+          <div class="active-row">
+            <span class="elapsed">0s</span>
+            <span class="step muted"></span>
+          </div>
+          <div class="progress-wrap"><div class="progress-bar"></div></div>
+          <div class="node muted"></div>
+        </div>
+      </div>`);
+    card = document.getElementById(activeCardId(j.prompt_id));
+  }
+
+  const elapsed = j.started_at ? (Date.now() / 1000 - j.started_at) : 0;
+  card.querySelector(".elapsed").textContent = fmtElapsed(elapsed);
+  card.querySelector(".step").textContent =
+    j.max ? `step ${j.progress} / ${j.max}` : "starting…";
+  card.querySelector(".progress-bar").style.width =
+    j.max ? Math.round((j.progress / j.max) * 100) + "%" : "0%";
+  card.querySelector(".node").textContent =
+    j.node_title ? `▶ ${j.node_title}` : "queued…";
+
+  // Prefer the live sampling preview; fall back to the input image.
+  const img = card.querySelector(".active-img");
+  if (j.has_preview) {
+    img.src = `/api/preview/${j.prompt_id}?t=${Math.floor(Date.now() / 1000)}`;
+  } else if (img.dataset.fallback && img.src !== location.origin + img.dataset.fallback) {
+    img.src = img.dataset.fallback;
+  }
 }
 
 $("#out-pod").addEventListener("change", loadOutputs);
@@ -726,6 +831,24 @@ async function loadBalance() {
     el.className = "balance" + (balance < 2 ? " critical" : balance < 5 ? " low" : "");
   } catch (_) {}
 }
+
+// ---- RAM clear -------------------------------------------------------------
+$("#ram-clear").addEventListener("click", async () => {
+  const btn = $("#ram-clear");
+  const podId = btn.dataset.podId;
+  if (!podId) return toast("No active pod", true);
+  btn.disabled = true;
+  btn.textContent = "Clearing…";
+  try {
+    await postJSON(`/api/pods/${podId}/ram-clear`, {});
+    toast("RAM clear queued ✓");
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🎈 RAM";
+  }
+});
 
 // ---- boot ------------------------------------------------------------------
 $("#refresh").addEventListener("click", loadPods);

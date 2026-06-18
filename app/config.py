@@ -55,7 +55,7 @@ class Settings:
     container_disk_gb: int = _int("RUNPOD_CONTAINER_DISK_GB", 20)
     comfy_port: int = _int("COMFY_PORT", 8188)
     pod_name: str = os.getenv("POD_NAME", "wan22-i2v")
-    workflow_file: str = os.getenv("WORKFLOW_FILE", "YAW_2.2.json")
+    workflow_file: str = os.getenv("WORKFLOW_FILE", "YAW_2.2_bf16.json")
 
 
 settings = Settings()
@@ -197,7 +197,7 @@ PARAM_FIELDS = [
 ]
 
 # The LoadImage node that receives the uploaded image.
-IMAGE_NODE = {"node_id": "361", "input": "image"}
+IMAGE_NODE = {"node_id": "166", "input": "image"}
 
 # The node that produces the final saved video (VHS_VideoCombine, save_output).
 OUTPUT_NODE_ID = "145"

@@ -15,6 +15,7 @@
     <h1><span class="seal"></span>Wan Mobile</h1>
     <div class="header-right">
       <span id="balance" class="balance" title="RunPod credit balance">—</span>
+      <button id="ram-clear" class="ghost small" title="Clear RAM on active pod" hidden>🎈 RAM</button>
       <button id="refresh" class="ghost" title="Refresh">&#x21bb;</button>
     </div>
   </header>
@@ -95,16 +96,6 @@
       <h2>Parameters</h2>
       <div id="params"></div>
     </div>
-
-    <div class="card" id="result-card" hidden>
-      <h2>Result</h2>
-      <div id="progress-wrap">
-        <div id="progress-bar"></div>
-      </div>
-      <div id="progress-text" class="muted"></div>
-      <video id="result-video" controls playsinline hidden></video>
-      <a id="download" class="primary" download hidden>Download / Save video</a>
-    </div>
   </section>
 
   <div class="generate-bar" id="generate-bar" style="display:none">
@@ -122,8 +113,16 @@
       </div>
       <p class="hint">Videos generated on this pod. Tap to play; safe to close and come back.</p>
     </div>
-    <div id="out-list" class="card-list"></div>
+    <div id="out-active" class="card-list"></div>
+    <div id="out-list" class="out-grid"></div>
   </section>
+
+  <!-- fullscreen player (tap a tile) -->
+  <div id="lightbox" class="lightbox" hidden>
+    <button class="lb-close" id="lb-close" aria-label="Close">&times;</button>
+    <video id="lb-video" controls playsinline></video>
+    <a id="lb-download" class="ghost small" download>Download</a>
+  </div>
 
   <script src="/app.js"></script>
 </body>

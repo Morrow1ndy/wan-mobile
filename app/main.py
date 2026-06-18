@@ -227,8 +227,14 @@ async def generate(
     client_id = uuid.uuid4().hex
     prompt_id = await comfy.queue_prompt(url, workflow, client_id)
 
-    JOBS[prompt_id] = {"status": "running", "progress": 0, "max": 0,
-                       "node": None, "pod_id": pod_id, "video": None}
+    JOBS[prompt_id] = {
+        "status": "running", "progress": 0, "max": 0,
+        "node": None, "node_title": None, "node_titles": _node_titles(workflow),
+        "pod_id": pod_id, "video": None,
+        "started_at": time.time(), "finished_at": None,
+        "input_image": image_name,
+        "preview": None, "preview_ct": None,
+    }
     log_event(pod_id, "Generation queued")
     task = asyncio.create_task(_watch(url, client_id, prompt_id))
     _TASKS.add(task)
@@ -236,12 +242,50 @@ async def generate(
     return {"prompt_id": prompt_id}
 
 
+def _node_titles(workflow: dict) -> dict:
+    """node_id -> human label, from the API-format workflow's _meta.title."""
+    titles = {}
+    for nid, node in workflow.items():
+        if not isinstance(node, dict):
+            continue
+        meta = node.get("_meta") or {}
+        titles[str(nid)] = meta.get("title") or node.get("class_type") or str(nid)
+    return titles
+
+
+def _job_public(prompt_id: str, job: dict) -> dict:
+    """JSON-safe view of a job (omits raw preview bytes + the titles map)."""
+    return {
+        "prompt_id": prompt_id,
+        "status": job.get("status"),
+        "progress": job.get("progress", 0),
+        "max": job.get("max", 0),
+        "node_title": job.get("node_title"),
+        "started_at": job.get("started_at"),
+        "input_image": job.get("input_image"),
+        "has_preview": job.get("preview") is not None,
+        "video": job.get("video"),
+        "error": job.get("error"),
+    }
+
+
 @app.get("/api/status/{prompt_id}")
 async def status(prompt_id: str):
     job = JOBS.get(prompt_id)
     if not job:
         raise HTTPException(404, "unknown job")
-    return job
+    return _job_public(prompt_id, job)
+
+
+@app.get("/api/preview/{prompt_id}")
+async def preview(prompt_id: str):
+    """Latest live sampling-preview frame for an in-flight job, if any."""
+    job = JOBS.get(prompt_id)
+    if not job or not job.get("preview"):
+        raise HTTPException(404, "no preview")
+    return Response(content=job["preview"],
+                    media_type=job.get("preview_ct", "image/jpeg"),
+                    headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/video/{prompt_id}")
@@ -276,9 +320,29 @@ async def pod_outputs(pod_id: str, limit: int = 30):
     for pid, entry in hist.items():
         vid = _find_video(entry.get("outputs") or {})
         if vid:
-            items.append({"prompt_id": pid, **vid})
+            items.append({"prompt_id": pid,
+                          "input_image": _input_image(entry), **vid})
     items.reverse()  # history is chronological -> newest first
     return items
+
+
+@app.get("/api/pods/{pod_id}/jobs")
+async def pod_jobs(pod_id: str):
+    """In-flight (and just-finished) generations for this pod, newest first.
+
+    Kept around for ~10s after finishing so the UI can show the terminal
+    state before the clip drops into the completed list below it.
+    """
+    now = time.time()
+    out = []
+    for pid, job in JOBS.items():
+        if job.get("pod_id") != pod_id:
+            continue
+        fin = job.get("finished_at")
+        if job.get("status") == "running" or (fin and now - fin < 10):
+            out.append(_job_public(pid, job))
+    out.sort(key=lambda j: j.get("started_at") or 0, reverse=True)
+    return out
 
 
 @app.get("/api/pods/{pod_id}/view")
@@ -293,6 +357,23 @@ async def pod_view(pod_id: str, filename: str, subfolder: str = "",
     )
 
 
+# ----- RAM clear -------------------------------------------------------------
+_RAM_CLEAR_WF = Path(__file__).resolve().parent.parent / "workflows" / "ram_clear.json"
+
+
+@app.post("/api/pods/{pod_id}/ram-clear")
+async def ram_clear(pod_id: str):
+    url = rp.comfy_url(pod_id)
+    if not await comfy.is_ready(url):
+        raise HTTPException(409, "ComfyUI is not ready on this pod.")
+    with open(_RAM_CLEAR_WF, "r", encoding="utf-8") as f:
+        workflow = json.load(f)
+    client_id = uuid.uuid4().hex
+    prompt_id = await comfy.queue_prompt(url, workflow, client_id)
+    log_event(pod_id, "RAM clear queued")
+    return {"prompt_id": prompt_id}
+
+
 # ----- background watcher ---------------------------------------------------
 async def _watch(url: str, client_id: str, prompt_id: str):
     """Listen on ComfyUI's websocket for progress, then resolve the output."""
@@ -301,18 +382,28 @@ async def _watch(url: str, client_id: str, prompt_id: str):
         async with websockets.connect(comfy.ws_url(url, client_id),
                                        max_size=None) as ws:
             async for raw in ws:
-                if isinstance(raw, bytes):  # binary = live preview, ignore
+                if isinstance(raw, bytes):  # binary = live sampling preview
+                    # Layout: 4-byte event (1 = preview image), 4-byte image
+                    # type (1 = JPEG, 2 = PNG), then the raw image bytes.
+                    if len(raw) > 8 and int.from_bytes(raw[0:4], "big") == 1:
+                        job["preview"] = raw[8:]
+                        job["preview_ct"] = ("image/png"
+                            if int.from_bytes(raw[4:8], "big") == 2 else "image/jpeg")
                     continue
                 msg = json.loads(raw)
                 mtype, d = msg.get("type"), msg.get("data", {})
                 if mtype == "progress":
                     job["progress"], job["max"] = d.get("value", 0), d.get("max", 0)
                 elif mtype == "executing":
-                    job["node"] = d.get("node")
-                    if d.get("node") is None and d.get("prompt_id") == prompt_id:
+                    node = d.get("node")
+                    job["node"] = node
+                    job["node_title"] = (job["node_titles"].get(str(node))
+                                         if node is not None else None)
+                    if node is None and d.get("prompt_id") == prompt_id:
                         break  # this prompt finished executing
                 elif mtype == "execution_error" and d.get("prompt_id") == prompt_id:
                     job["status"], job["error"] = "error", d
+                    job["finished_at"] = time.time()
                     log_event(job["pod_id"], "Generation error (ComfyUI)")
                     return
     except Exception:
@@ -333,11 +424,13 @@ async def _watch(url: str, client_id: str, prompt_id: str):
 
         if status.get("status_str") == "error":
             job["status"], job["error"] = "error", status
+            job["finished_at"] = time.time()
             log_event(job["pod_id"], "Generation error (ComfyUI)")
             return
         if outputs or status.get("completed"):
             job["video"] = _find_video(outputs)
             job["status"] = "done"
+            job["finished_at"] = time.time()
             if job["max"]:
                 job["progress"] = job["max"]
             log_event(job["pod_id"],
@@ -346,6 +439,7 @@ async def _watch(url: str, client_id: str, prompt_id: str):
         if time.monotonic() > deadline:
             job["status"] = "error"
             job["error"] = "Timed out waiting for ComfyUI to finish."
+            job["finished_at"] = time.time()
             log_event(job["pod_id"], "Generation timed out")
             return
         await asyncio.sleep(2)
@@ -367,11 +461,29 @@ def _find_video(outputs: dict):
     return None
 
 
+def _input_image(entry: dict):
+    """The uploaded image fed to this generation, from its stored workflow.
+
+    History stores the queued prompt as [number, prompt_id, workflow, ...];
+    we read the LoadImage node's `image` input so the UI can show it as a
+    thumbnail for the resulting clip.
+    """
+    prompt = entry.get("prompt")
+    wf = prompt[2] if isinstance(prompt, list) and len(prompt) >= 3 else prompt
+    if not isinstance(wf, dict):
+        return None
+    node = wf.get(str(config.IMAGE_NODE["node_id"])) or {}
+    img = (node.get("inputs") or {}).get(config.IMAGE_NODE["input"])
+    return img if isinstance(img, str) else None
+
+
 def _content_type(item: dict) -> str:
     fmt = item.get("format", "")
     name = item.get("filename", "")
     for needle, ctype in (("mp4", "video/mp4"), ("webm", "video/webm"),
-                          ("webp", "image/webp"), ("gif", "image/gif")):
+                          ("webp", "image/webp"), ("gif", "image/gif"),
+                          ("png", "image/png"), ("jpeg", "image/jpeg"),
+                          ("jpg", "image/jpeg")):
         if needle in fmt or name.endswith("." + needle):
             return ctype
     return "application/octet-stream"
