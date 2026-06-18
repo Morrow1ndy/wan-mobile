@@ -214,6 +214,14 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .tpl-actions { display: flex; gap: 8px; }
 .tpl-actions button { flex: 1; }
 
+/* ---- sticky generate bar ---- */
+.generate-bar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+  padding: 12px 18px max(12px, env(safe-area-inset-bottom));
+  background: rgba(11, 12, 14, 0.92); backdrop-filter: blur(14px);
+  border-top: 1px solid var(--line);
+}
+
 /* ---- sticky deploy bar ---- */
 .deploy-bar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;

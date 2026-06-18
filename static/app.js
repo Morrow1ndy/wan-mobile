@@ -53,8 +53,11 @@ $$(".tabs button").forEach((b) =>
     $$(".tab").forEach((x) => x.classList.remove("active"));
     b.classList.add("active");
     $("#tab-" + b.dataset.tab).classList.add("active");
-    const bar = $("#deploy-bar");
-    if (bar) bar.style.display = b.dataset.tab === "pods" ? "" : "none";
+    const isPods = b.dataset.tab === "pods";
+    const deployBar = $("#deploy-bar");
+    const genBar = $("#generate-bar");
+    if (deployBar) deployBar.style.display = isPods ? "" : "none";
+    if (genBar) genBar.style.display = isPods ? "none" : "";
   })
 );
 
