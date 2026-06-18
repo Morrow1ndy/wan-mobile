@@ -281,6 +281,22 @@ $("#start-pod").addEventListener("click", async () => {
   if (!selectedGpu) return toast("Select a GPU first", true);
   const btn = $("#start-pod");
   btn.disabled = true;
+  btn.textContent = "Checking availability…";
+
+  // Re-validate before deploying — stock can change while the grid sits stale.
+  try {
+    const min = $("#ram-select").value;
+    const gpus = await getJSON("/api/gpu-availability" + (min ? `?min_memory=${min}` : ""));
+    const current = gpus.find((g) => g.id === selectedGpu.id);
+    if (!current || !current.available) {
+      toast(`${selectedGpu.label} is no longer available — grid refreshed`, true);
+      loadGpuGrid();
+      return;
+    }
+  } catch (_) {
+    // Availability check failed — proceed and let RunPod reject if needed.
+  }
+
   btn.textContent = "Deploying…";
   try {
     await postJSON("/api/pods", {
