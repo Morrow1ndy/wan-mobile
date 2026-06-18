@@ -229,6 +229,18 @@ async function loadGpuGrid() {
   grid.innerHTML = gpus.length
     ? gpus.map(renderGpu).join("")
     : `<div class="muted">No GPUs match.</div>`;
+
+  const unrated = gpus.filter((g) => g.rating_fallback).map((g) => g.displayName);
+  const notice = $("#gpu-unrated-notice");
+  if (unrated.length) {
+    const names = unrated.join(", ");
+    if (notice) {
+      notice.textContent = `Dev: ${unrated.length} GPU(s) not in _PERF_OVERRIDE — add to runpod_client.py: ${names}`;
+      notice.hidden = false;
+    }
+  } else if (notice) {
+    notice.hidden = true;
+  }
   $$("#gpu-grid .gpu").forEach((card) => {
     if (card.dataset.avail === "1") card.addEventListener("click", () => selectGpu(card));
   });

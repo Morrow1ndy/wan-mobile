@@ -80,9 +80,11 @@ _PERF_OVERRIDE = [
 def _gpu_ratings(rank: int, vram, price, name: str = ""):
     uname = name.upper()
     perf = None
+    rating_fallback = True
     for pat, score in _PERF_OVERRIDE:
         if pat.upper() in uname:
             perf = score
+            rating_fallback = False
             break
     if perf is None:
         # Unknown model: fall back to architecture rank + VRAM nudges.
@@ -104,7 +106,7 @@ def _gpu_ratings(rank: int, vram, price, name: str = ""):
         value = 2
     else:
         value = 1
-    return perf, value
+    return perf, value, rating_fallback
 
 
 def _gpu_blurb(category: str, vram, perf: int, value):
@@ -159,7 +161,7 @@ def _gpu_availability_sync(min_memory_gb):
         vram = g.get("memoryInGb")
         price = lp.get("uninterruptablePrice")
         category, rank = _gpu_generation(name, g["id"])
-        perf, value = _gpu_ratings(rank, vram, price, name)
+        perf, value, rating_fallback = _gpu_ratings(rank, vram, price, name)
         out.append({
             "id": g["id"],
             "displayName": name,
@@ -172,6 +174,7 @@ def _gpu_availability_sync(min_memory_gb):
             "available": lp.get("stockStatus") is not None,
             "perf": perf,
             "value": value,
+            "rating_fallback": rating_fallback,
             "blurb": _gpu_blurb(category, vram, perf, value),
         })
     # available first, then by price high -> low
