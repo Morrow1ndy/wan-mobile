@@ -39,6 +39,8 @@ $$(".tabs button").forEach((b) =>
     $$(".tab").forEach((x) => x.classList.remove("active"));
     b.classList.add("active");
     $("#tab-" + b.dataset.tab).classList.add("active");
+    const bar = $("#deploy-bar");
+    if (bar) bar.style.display = b.dataset.tab === "pods" ? "" : "none";
   })
 );
 

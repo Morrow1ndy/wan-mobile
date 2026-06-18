@@ -56,7 +56,7 @@ header h1 {
 }
 .tabs button.active { color: var(--text); background: var(--surface-2); border-color: var(--line); }
 
-.tab { display: none; padding: 12px 18px 48px; }
+.tab { display: none; padding: 12px 18px 120px; }
 .tab.active { display: block; animation: fade .25s ease; }
 @keyframes fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 
@@ -203,6 +203,15 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .log-line { display: flex; gap: 10px; padding: 2px 0; line-height: 1.5; }
 .log-line .ts { color: var(--faint); flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .log-line .msg { color: var(--text); word-break: break-word; }
+
+/* ---- sticky deploy bar ---- */
+.deploy-bar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+  padding: 12px 18px max(12px, env(safe-area-inset-bottom));
+  background: rgba(11, 12, 14, 0.92); backdrop-filter: blur(14px);
+  border-top: 1px solid var(--line);
+}
+.deploy-bar .hint { margin: 0 0 10px; }
 
 /* ---- toast ---- */
 .toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);

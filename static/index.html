@@ -49,11 +49,13 @@
       <div id="gpu-grid" class="gpu-grid">
         <div class="muted">Loading GPUs&hellip;</div>
       </div>
-
-      <button id="start-pod" class="primary" disabled>Deploy selected GPU</button>
-      <p class="hint">Container disk is fixed at <span id="disk-hint">3</span>GB — your models live on the network volume.</p>
     </div>
   </section>
+
+  <div class="deploy-bar" id="deploy-bar">
+    <p class="hint">Container disk fixed at <span id="disk-hint">3</span>GB — models live on the network volume.</p>
+    <button id="start-pod" class="primary" disabled>Deploy selected GPU</button>
+  </div>
 
   <!-- GENERATE TAB -->
   <section id="tab-generate" class="tab">
