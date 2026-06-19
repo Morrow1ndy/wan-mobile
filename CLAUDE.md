@@ -1,7 +1,7 @@
 # Wan Mobile — Agent Context
 
 **Project type:** FastAPI + Vanilla JS mobile web app deployed on Fly.io.
-**Purpose:** Mobile control panel for running Wan 2.1 video generation on RunPod ComfyUI pods. One user (the owner), accessed from an iOS browser.
+**Purpose:** Mobile control panel for running **Wan 2.2 image-to-video (i2v)** generation on RunPod ComfyUI pods. One user (the owner), accessed from an iOS browser.
 **Live URL:** https://wan-mobile.fly.dev/
 **GitHub:** https://github.com/Morrow1ndy/wan-mobile
 **Deploy command:** `fly deploy` (from project root, requires `flyctl` authenticated)
@@ -34,11 +34,19 @@ wan-mobile/
 │   ├── generation_durations.json
 │   └── last_params.json
 ├── workflows/
-│   └── ram_clear.json   # ComfyUI workflow for clearing VRAM
+│   ├── YAW_2.2.json       # Wan 2.2 i2v workflow (ComfyUI API format)
+│   ├── YAW_2.2_bf16.json  # bf16 variant — the ACTIVE one (WORKFLOW_FILE default)
+│   └── ram_clear.json     # ComfyUI workflow for clearing VRAM
+├── .env                 # ⚠️ local config — CURRENTLY COMMITTED (see Security)
+├── .env.example         # template for .env
 ├── fly.toml             # Fly.io config (512MB RAM, sin region, auto-stop)
 ├── Dockerfile
 └── requirements.txt
 ```
+
+**Dependencies** (`requirements.txt`): fastapi, uvicorn[standard], runpod, httpx,
+websockets, python-dotenv, python-multipart, google-cloud-storage. No frontend
+build step — `static/` is served as-is.
 
 **Fly.io volume:** `wan_data` mounted at `/app/data`. Persists across restarts. The Dockerfile CMD conditionally seeds JSON files on first boot only.
 
@@ -51,15 +59,56 @@ wan-mobile/
 
 ---
 
-## Key Environment Variables / Fly Secrets
+## Configuration (env vars)
 
-| Secret | Purpose |
-|--------|---------|
-| `RUNPOD_API_KEY` | RunPod GraphQL API |
-| `WAN_AUTH_USER` | Login username |
-| `WAN_AUTH_PASS` | Login password |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | Full GCS service account JSON (stringified) |
+Config is read by `config.py` via `python-dotenv`'s `load_dotenv()`. **Locally**
+these come from `.env` (in repo root). **On Fly** they're set as Fly secrets
+(injected as env vars). `load_dotenv()` does not override already-set env vars, so
+Fly secrets win over the baked-in `.env` when both exist.
+
+**Auth + cloud storage:**
+
+| Var | Purpose |
+|-----|---------|
+| `RUNPOD_API_KEY` | RunPod GraphQL API key (**secret**) |
+| `WAN_AUTH_USER` / `WAN_AUTH_PASS` | Login credentials; blank = open (local only) |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Full GCS service account JSON, stringified (**secret**) |
 | `GOOGLE_GCS_BUCKET` | `wan-mobile-videos` |
+
+**RunPod / ComfyUI pod config** (needed to actually deploy pods — see `config.py`):
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `RUNPOD_TEMPLATE_ID` | — | RunPod template the pod boots from |
+| `RUNPOD_NETWORK_VOLUME_ID` | — | Network volume holding the models + venv |
+| `RUNPOD_DATA_CENTER_ID` | — | Must match the network volume's data center |
+| `RUNPOD_VOLUME_MOUNT_PATH` | `/workspace` | Where the volume mounts (template ships venv here) |
+| `RUNPOD_GPU_TYPE_ID` | `NVIDIA GeForce RTX 4090` | Default GPU |
+| `RUNPOD_CLOUD_TYPE` | `SECURE` | SECURE or COMMUNITY |
+| `RUNPOD_IMAGE_NAME` | — | Container image (if not using template's) |
+| `RUNPOD_CONTAINER_DISK_GB` | `20` | Scratch disk |
+| `RUNPOD_ALLOWED_CUDA_VERSIONS` | `12.8,12.9,13.0` | CUDA filter for availability/deploy |
+| `COMFY_PORT` | `8188` | ComfyUI port on the pod |
+| `POD_NAME` | `wan22-i2v` | Name for created pods |
+| `WORKFLOW_FILE` | `YAW_2.2_bf16.json` | Which workflow in `workflows/` to use |
+
+---
+
+## Workflow ↔ UI parameter map (FRAGILE — read before editing generation)
+
+`config.py` `PARAM_FIELDS` maps each UI control to specific **node IDs** inside
+`workflows/YAW_2.2_bf16.json` (ComfyUI API format). Key bindings:
+- `IMAGE_NODE` = node `166` (LoadImage — receives the uploaded image)
+- `OUTPUT_NODE_ID` = node `145` (VHS_VideoCombine — the saved video)
+- Steps/CFG/Last-Step write to **two** source nodes each (an in-graph switch),
+  so values apply whichever way the switch is flipped.
+- The `lightx2v` toggle (distill LoRA) selects between two value sets and
+  enables/disables the LoRA by setting strength (0 = off). CFG is forced to 1 when on.
+- Seed is auto-randomized every run (hidden `_seed` const → node `158`).
+
+⚠️ **If you re-export the workflow from ComfyUI, node IDs change** and every
+`node_id` in `PARAM_FIELDS` (plus `IMAGE_NODE` / `OUTPUT_NODE_ID`) must be updated
+or generation silently breaks. `workflow.py` builds the final prompt from this map.
 
 ---
 
@@ -165,6 +214,20 @@ _libSelectMode     // bulk select for image library
 
 ---
 
+## Security
+
+- **⚠️ `.env` is currently committed to git** (tracked, not in `.gitignore`). It
+  contains `RUNPOD_API_KEY`, `WAN_AUTH_USER`, `WAN_AUTH_PASS`, and RunPod IDs.
+  This is convenient for the 2-machine workflow (config travels with the repo)
+  but exposes secrets to anyone with repo access and leaves them in git history.
+  If hardening: `git rm --cached .env`, add `.env` to `.gitignore`, **rotate the
+  RunPod key + login**, and rely on Fly secrets (already set on the server) +
+  `.env.example` for onboarding. Until then, **keep the repo private**.
+- Service account key (`*.json.key`) IS gitignored; it lives in the
+  `GOOGLE_SERVICE_ACCOUNT_JSON` Fly secret.
+
+---
+
 ## Known Remaining Issues
 
 - **`active_jobs.json` on stale pod**: if a pod was terminated mid-generation, the restored watcher polls for 15 min before erroring out. Low priority.
@@ -191,9 +254,8 @@ fly secrets list
 # Restart machine
 fly machine restart
 
-# Run locally (no GCS, no auth)
-cd app && uvicorn main:app --reload --port 8000
-# or from project root:
+# Run locally — MUST run from project root (main.py uses relative imports;
+# `cd app && uvicorn main:app` will fail with an ImportError)
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
@@ -202,7 +264,13 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Workflow Notes
 
 - **Pushing code changes**: `git add -A && git commit -m "..." && git push && fly deploy`
-- **Pulling on new machine**: `git pull` then check if Fly secrets are already set (they live in Fly, not git)
-- **Data files** (`data/*.json`, `data/saved_videos/*.mp4`) are gitignored — they live only on the Fly volume and GCS
-- **active_jobs.json** is gitignored (runtime state)
-- **Service account key** (`*.json.key`) is gitignored — it's stored as the `GOOGLE_SERVICE_ACCOUNT_JSON` Fly secret
+- **Pulling on new machine**: `git pull`. Fly secrets live on Fly (not git), so the
+  server is unaffected; `.env` currently travels with the repo (see Security).
+- **`data/*.json`** (templates, presets, saved_videos.json, last_params, etc.) ARE
+  **committed** — they're the seed data the Dockerfile copies onto the volume on
+  first boot. Editing them in git changes the seed for fresh volumes.
+- **Gitignored** (NOT in repo): `data/saved_videos/*.mp4` (live in GCS + volume),
+  `data/active_jobs.json` (runtime state), `*.json.key` (the GCS service-account
+  key → stored as the `GOOGLE_SERVICE_ACCOUNT_JSON` Fly secret).
+- **`saved_videos.json` is committed seed data but also the GCS source of truth** is
+  `wan_saved_videos.json` — on startup the GCS copy overwrites the local one.
