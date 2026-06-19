@@ -569,10 +569,14 @@ async def cancel_job(pod_id: str, prompt_id: str):
         await comfy.interrupt(url)
         log_event(pod_id, "Generation interrupted")
     if job:
-        job["status"] = "error"
-        job["error"] = "Cancelled"
-        job["finished_at"] = time.time()
-        _persist_jobs()
+        # Don't overwrite a job that already completed successfully — this
+        # happens when the browser was backgrounded, the generation finished,
+        # and the user taps Stop on the ghost active card that's still showing.
+        if job.get("status") != "done":
+            job["status"] = "error"
+            job["error"] = "Cancelled"
+            job["finished_at"] = time.time()
+            _persist_jobs()
     return {"ok": True}
 
 

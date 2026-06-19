@@ -1120,10 +1120,16 @@ async function tickActive() {
     upsertActiveCard(podId, j);
   }
 
-  // Drop cards for jobs no longer running.
-  $$("#out-active .out-item").forEach((card) => {
-    if (!live.has(card.dataset.pid)) card.remove();
-  });
+  // Drop cards for jobs no longer tracked by the server.
+  // If any cards are removed it means a job finished while the browser was
+  // backgrounded and the 10s "recently done" window already expired — the
+  // done→removed transition was never caught above, so loadDone() was never
+  // called. Refresh the completed list now so the video appears.
+  const orphaned = [...$$("#out-active .out-item")].filter(
+    (c) => !live.has(c.dataset.pid)
+  );
+  orphaned.forEach((c) => c.remove());
+  if (orphaned.length > 0) loadDone(podId);
 }
 
 function upsertActiveCard(podId, j) {
@@ -1781,8 +1787,18 @@ function stopRamPoll() {
   if (_ramTimer) { clearInterval(_ramTimer); _ramTimer = null; }
 }
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) stopRamPoll();
-  else startRamPoll();
+  if (document.hidden) {
+    stopRamPoll();
+  } else {
+    startRamPoll();
+    // iOS backgrounds/throttles JS timers. When the user comes back, the
+    // generation may have finished without tickActive() ever seeing the
+    // done transition. Proactively refresh so the video appears.
+    if ($("#tab-outputs").classList.contains("active") && _outPodId) {
+      loadDone(_outPodId);
+      tickActive();
+    }
+  }
 });
 
 // ---- Fly.io storage meter ---------------------------------------------------
