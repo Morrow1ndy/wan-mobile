@@ -196,43 +196,6 @@ _libSelectMode     // bulk select for image library
 
 ---
 
-## What Was Built This Session (2026-06-19)
-
-### Features added
-1. **Input image cloud library** — Upload/Library tab toggle in Generate card. Library browsing with virtual folder navigation (breadcrumb), `max-height` scroll, select mode + bulk delete (synced to GCS), save-temp-upload flow with folder picker + create folder.
-
-2. **Saved video bulk unstar** — Select mode on saved videos section (via "Select" button), bulk unstar removes from GCS + local.
-
-3. **Custom login overlay** — Styled in-app login replacing browser native Basic Auth dialog. Credentials in sessionStorage, re-injected on every API call.
-
-4. **Custom confirm/prompt modals** — All 8 `confirm()` and 2 `window.prompt()` calls replaced with `showConfirm()` / `showPrompt()`.
-
-5. **Storage meter** — In Generate + Outputs tabs: Fly volume used/total with colour-coded bar (accent → amber at 75% → red at 90%).
-
-6. **Live RAM chip** — Header chip showing `RAM N%` from cgroup, polled every 5s while tab is visible. Pauses on `visibilitychange` to not keep machine alive.
-
-7. **Undo system** — 10-step undo for prompt + params, captured at key automated changes.
-
-8. **Param preset Update** — New `PUT /api/param-presets/{index}` endpoint + "Update" button in params tpl-actions (mirrors template Update flow).
-
-9. **Output card redesign** — Grid tiles: thumbnail only, duration/datetime as gradient overlay. Expanded: solid bottom panel with "← Back" + text-labelled action buttons. SVG play icon replacing `▶` unicode.
-
-### Bugs fixed
-- **OOM crash**: 256MB → 512MB Fly machine; GCS client cached; serve_saved_file streams via FileResponse; image thumbnails streamed in chunks.
-- **Startup blocks health check**: GCS sync moved to background task.
-- **iOS sticky bars drifting**: removed `backdrop-filter` from all `position:fixed` bars.
-- **Library photos stacked on iOS**: `padding-bottom: 100%` trick for grid squares.
-- **Tile text overlap**: tile-foot changed to `flex-direction: column`.
-- **Library path encoding**: `encPath()` helper encodes segments but preserves `/` for FastAPI `{path:path}` params (not `encodeURIComponent` which encodes `/` to `%2F`).
-
-### Security hardened
-- `serve_saved_file`: path traversal guard (reject filenames with `/`).
-- `delete_image_folder`: rejects empty/`..` paths at both endpoint and GCS client.
-- `saved_lock`: serializes star/unstar to prevent lost-update race.
-- GCS: 60s timeout on all operations.
-
----
-
 ## Security
 
 - **⚠️ `.env` is currently committed to git** (tracked, not in `.gitignore`). It
