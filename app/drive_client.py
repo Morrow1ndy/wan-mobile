@@ -17,14 +17,21 @@ def _enabled() -> bool:
                 os.getenv("GOOGLE_GCS_BUCKET"))
 
 
+_gcs_bucket_cache = None
+
+
 def _bucket():
+    global _gcs_bucket_cache
+    if _gcs_bucket_cache is not None:
+        return _gcs_bucket_cache
     from google.cloud import storage
     from google.oauth2 import service_account
     info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
     creds = service_account.Credentials.from_service_account_info(
         info, scopes=["https://www.googleapis.com/auth/cloud-platform"])
     client = storage.Client(credentials=creds, project=info["project_id"])
-    return client.bucket(os.environ["GOOGLE_GCS_BUCKET"])
+    _gcs_bucket_cache = client.bucket(os.environ["GOOGLE_GCS_BUCKET"])
+    return _gcs_bucket_cache
 
 
 def upload_video(filename: str, data: bytes):
@@ -38,6 +45,11 @@ def upload_video(filename: str, data: bytes):
 def download_video(filename: str) -> bytes:
     """Download a video from GCS by its filename."""
     return _bucket().blob(_VIDEO_PREFIX + filename).download_as_bytes()
+
+
+def download_video_to_file(filename: str, dest_path) -> None:
+    """Stream a video from GCS directly to a file path (avoids RAM buffering)."""
+    _bucket().blob(_VIDEO_PREFIX + filename).download_to_filename(str(dest_path))
 
 
 def delete_video(filename: str):

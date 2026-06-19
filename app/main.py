@@ -59,8 +59,7 @@ def _drive_startup_sync():
         local_file = ps.SAVED_DIR / item["filename"]
         if not local_file.exists():
             try:
-                data = drive.download_video(item["filename"])
-                local_file.write_bytes(data)
+                drive.download_video_to_file(item["filename"], local_file)
                 downloaded += 1
             except Exception as e:
                 print(f"[GCS] failed to download {item['filename']}: {e}")
