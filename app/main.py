@@ -542,6 +542,61 @@ async def serve_saved_file(filename: str):
                     headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
 
+# ----- input image cloud library --------------------------------------------
+@app.get("/api/images/browse")
+async def browse_images(prefix: str = ""):
+    return await asyncio.to_thread(drive.list_image_prefix, prefix)
+
+
+@app.get("/api/images/file/{path:path}")
+async def serve_image_file(path: str):
+    try:
+        data = await asyncio.to_thread(drive.download_image, path)
+    except Exception:
+        raise HTTPException(404, "Image not found")
+    return Response(
+        content=data,
+        media_type=_content_type({"filename": path}),
+        headers={
+            "Content-Disposition": f'inline; filename="{Path(path).name}"',
+            "Cache-Control": "private, max-age=300",
+        },
+    )
+
+
+@app.post("/api/images/save")
+async def save_image_to_cloud(
+    file: UploadFile = File(...),
+    path: str = Form(...),
+):
+    data = await file.read()
+    await asyncio.to_thread(
+        drive.upload_image, path, data, file.content_type or "image/jpeg"
+    )
+    return {"ok": True, "path": path}
+
+
+@app.delete("/api/images/file/{path:path}")
+async def delete_image_file(path: str):
+    await asyncio.to_thread(drive.delete_image, path)
+    return {"ok": True}
+
+
+@app.delete("/api/images/folder/{path:path}")
+async def delete_image_folder(path: str):
+    await asyncio.to_thread(drive.delete_image_folder, path)
+    return {"ok": True}
+
+
+@app.post("/api/images/folder")
+async def create_image_folder(payload: dict = Body(default={})):
+    path = payload.get("path", "").strip("/")
+    if not path:
+        raise HTTPException(400, "path required")
+    await asyncio.to_thread(drive.create_image_folder, path + "/")
+    return {"ok": True}
+
+
 # ----- RAM clear -------------------------------------------------------------
 _RAM_CLEAR_WF = Path(__file__).resolve().parent.parent / "workflows" / "ram_clear.json"
 

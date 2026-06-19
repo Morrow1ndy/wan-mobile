@@ -70,3 +70,76 @@ def download_metadata() -> list | None:
     if not blob.exists():
         return None
     return json.loads(blob.download_as_bytes())
+
+
+# ---------- input image library ----------
+
+_IMAGE_PREFIX = "input_images/"
+
+
+def list_image_prefix(prefix: str = "") -> dict:
+    """List subfolders and image files at a prefix under input_images/.
+
+    Returns {"folders": [...], "files": [...]} where each entry has
+    {"name": str, "path": str} (path is relative to input_images/).
+    """
+    if not _enabled():
+        return {"folders": [], "files": []}
+    bkt = _bucket()
+    full_prefix = _IMAGE_PREFIX + prefix
+    iterator = bkt.list_blobs(prefix=full_prefix, delimiter="/")
+    blobs = list(iterator)
+    files = []
+    for blob in blobs:
+        rel = blob.name[len(full_prefix):]
+        if rel and rel != ".keep":
+            files.append({"name": rel, "path": prefix + rel})
+    folders = []
+    for p in iterator.prefixes or []:
+        name = p[len(full_prefix):].rstrip("/")
+        if name:
+            folders.append({"name": name, "path": prefix + name + "/"})
+    return {
+        "folders": sorted(folders, key=lambda x: x["name"]),
+        "files": sorted(files, key=lambda x: x["name"]),
+    }
+
+
+def upload_image(path: str, data: bytes, content_type: str = "image/jpeg"):
+    if not _enabled():
+        return
+    _bucket().blob(_IMAGE_PREFIX + path).upload_from_string(
+        data, content_type=content_type)
+
+
+def download_image(path: str) -> bytes:
+    return _bucket().blob(_IMAGE_PREFIX + path).download_as_bytes()
+
+
+def delete_image(path: str):
+    if not _enabled():
+        return
+    try:
+        _bucket().blob(_IMAGE_PREFIX + path).delete()
+    except Exception:
+        pass
+
+
+def delete_image_folder(prefix: str):
+    """Delete every object under input_images/{prefix}."""
+    if not _enabled():
+        return
+    bkt = _bucket()
+    for blob in list(bkt.list_blobs(prefix=_IMAGE_PREFIX + prefix)):
+        try:
+            blob.delete()
+        except Exception:
+            pass
+
+
+def create_image_folder(path: str):
+    """Create a virtual folder via a zero-byte .keep placeholder."""
+    if not _enabled():
+        return
+    _bucket().blob(_IMAGE_PREFIX + path + ".keep").upload_from_string(
+        b"", content_type="application/octet-stream")

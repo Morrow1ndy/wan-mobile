@@ -73,11 +73,44 @@
 
     <div class="card">
       <h2>Input image</h2>
-      <label class="filebtn">
-        <input type="file" id="image" accept="image/*" />
-        <span id="image-label">Photo library, camera, or files</span>
-      </label>
-      <img id="preview" alt="" hidden />
+      <div class="img-mode-tabs">
+        <button class="img-mode-tab active" data-mode="upload">Upload</button>
+        <button class="img-mode-tab" data-mode="library">Library</button>
+      </div>
+
+      <div id="img-upload-panel">
+        <label class="filebtn" id="img-filebtn">
+          <input type="file" id="image" accept="image/*" />
+          <span id="image-label">Photo library, camera, or files</span>
+        </label>
+        <div id="img-preview-wrap" hidden>
+          <img id="preview" alt="" />
+          <button id="img-star-btn" class="img-cloud-save">☆ Save to cloud</button>
+        </div>
+      </div>
+
+      <div id="img-library-panel" hidden>
+        <div id="lib-breadcrumb" class="lib-breadcrumb"></div>
+        <div id="lib-contents" class="lib-contents"></div>
+        <div id="lib-empty" class="muted" style="font-size:13px;padding:12px 0;text-align:center" hidden>No images here yet.</div>
+        <div id="lib-selection" class="lib-selection" hidden></div>
+      </div>
+
+      <div id="img-save-panel" class="img-save-panel" hidden>
+        <div class="img-save-head">
+          <span class="save-panel-title">Save to folder</span>
+          <button id="img-save-cancel" class="ghost small">Cancel</button>
+        </div>
+        <div id="save-breadcrumb" class="lib-breadcrumb"></div>
+        <div id="save-folder-list"></div>
+        <div id="save-new-folder-row" class="new-folder-row" hidden>
+          <input type="text" id="save-new-folder-name" placeholder="Folder name" />
+          <button id="save-new-folder-confirm" class="ghost small">Create</button>
+          <button id="save-new-folder-cancel" class="ghost small">✕</button>
+        </div>
+        <button id="save-new-folder-btn" class="ghost small new-folder-btn">+ New folder</button>
+        <button id="save-here-btn" class="primary" style="margin-top:10px">Save here</button>
+      </div>
     </div>
 
     <div class="card">
@@ -121,7 +154,10 @@
       <p class="hint">Videos generated on this pod. Tap to play; safe to close and come back.</p>
     </div>
     <div id="saved-section" hidden>
-      <button class="section-head" id="saved-toggle">⭐ Saved <span class="section-chevron">▾</span></button>
+      <div class="section-head-row">
+        <button class="section-head" id="saved-toggle">⭐ Saved <span class="section-chevron">▾</span></button>
+        <button id="saved-select" class="ghost small">Select</button>
+      </div>
       <div id="saved-list" class="out-grid"></div>
     </div>
     <div id="session-section">
@@ -137,6 +173,20 @@
     <button id="bulk-star" class="ghost small" disabled>★ Save</button>
     <button id="bulk-delete" class="ghost small" disabled>🗑 Delete</button>
     <button id="bulk-cancel" class="ghost small">Cancel</button>
+  </div>
+
+  <div id="saved-bulk-bar" class="bulk-bar" hidden>
+    <span id="saved-bulk-count" class="muted small"></span>
+    <div style="flex:1"></div>
+    <button id="saved-bulk-unstar" class="ghost small" disabled>☆ Unstar</button>
+    <button id="saved-bulk-cancel" class="ghost small">Cancel</button>
+  </div>
+
+  <div id="lib-bulk-bar" class="bulk-bar" hidden>
+    <span id="lib-bulk-count" class="muted small"></span>
+    <div style="flex:1"></div>
+    <button id="lib-bulk-delete" class="ghost small" disabled>🗑 Delete</button>
+    <button id="lib-bulk-cancel" class="ghost small">Cancel</button>
   </div>
 
   <script src="/app.js"></script>

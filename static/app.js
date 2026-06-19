@@ -521,20 +521,22 @@ async function onGenPodChange() {
 }
 $("#gen-pod").addEventListener("change", onGenPodChange);
 
-// ---- generate: image preview ----------------------------------------------
+// ---- generate: image upload -------------------------------------------------
+let _currentImageFile = null;
+
 $("#image").addEventListener("change", (e) => {
   const f = e.target.files[0];
   if (!f) return;
+  _currentImageFile = f;
   $("#image-label").textContent = f.name;
-  const img = $("#preview");
-  img.src = URL.createObjectURL(f);
-  img.hidden = false;
+  $("#preview").src = URL.createObjectURL(f);
+  $("#img-preview-wrap").hidden = false;
 });
 
 // ---- generate: run ---------------------------------------------------------
 $("#generate").addEventListener("click", async () => {
   const podId = $("#gen-pod").value;
-  const file = $("#image").files[0];
+  const file = _currentImageFile;
   if (!podId) return toast("No pod selected", true);
   if (!file) return toast("Choose an input image first", true);
 
@@ -654,6 +656,8 @@ $("#bulk-delete").addEventListener("click", async () => {
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// encode each path segment but preserve slashes for {path:path} FastAPI params
+const encPath = (p) => String(p ?? "").split("/").map(encodeURIComponent).join("/");
 
 function fmtElapsed(sec) {
   sec = Math.max(0, Math.floor(sec));
@@ -731,6 +735,7 @@ function renderSavedOutput(it) {
       <span class="play-badge">&#9658;</span>
       <video class="tile-video" data-src="${url}" playsinline preload="none" controls></video>
       <button class="zoom-back" title="Zoom back">↙</button>
+      <span class="sel-check"></span>
       <button class="star-btn starred" data-pid="${esc(it.prompt_id)}" title="Unstar">★</button>
     </div>
     <div class="out-cap">
@@ -913,6 +918,11 @@ $("#out-list").addEventListener("click", async (e) => {
 
 // ---- saved-list: tap cover to expand; star to unstar -------------------------
 $("#saved-list").addEventListener("click", async (e) => {
+  if (_savedSelectMode) {
+    const card = e.target.closest(".out-card");
+    if (card) _toggleSavedSelect(card);
+    return;
+  }
   if (e.target.closest(".zoom-back")) {
     collapseTile(e.target.closest(".out-card"));
     return;
@@ -1228,6 +1238,319 @@ $("#ram-clear").addEventListener("click", async () => {
     btn.disabled = false;
     btn.textContent = "🎈 RAM";
   }
+});
+
+// ---- image mode tabs --------------------------------------------------------
+$$(".img-mode-tab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    $$(".img-mode-tab").forEach((b) => b.classList.toggle("active", b === btn));
+    const mode = btn.dataset.mode;
+    $("#img-upload-panel").hidden = mode !== "upload";
+    $("#img-library-panel").hidden = mode !== "library";
+    if (mode === "library") loadLibrary(_libPrefix);
+  });
+});
+
+// ---- image library state ----------------------------------------------------
+let _libPrefix = "";
+let _libSelectMode = false;
+let _libSelected = new Set();
+let _savePanelPrefix = "";
+let _savedSelectMode = false;
+let _savedSelected = new Set();
+
+// ---- library browse ---------------------------------------------------------
+async function loadLibrary(prefix) {
+  _libPrefix = prefix;
+  let data;
+  try {
+    data = await getJSON(`/api/images/browse?prefix=${encodeURIComponent(prefix)}`);
+  } catch (e) {
+    toast("Could not load library: " + e.message, true);
+    return;
+  }
+  renderLibBreadcrumb(prefix);
+  renderLibContents(data);
+  renderLibSelection();
+}
+
+function renderLibBreadcrumb(prefix) {
+  const el = $("#lib-breadcrumb");
+  const parts = prefix ? prefix.split("/").filter(Boolean) : [];
+  let built = "";
+  let html = `<button class="lib-crumb" data-prefix="">Home</button>`;
+  for (const p of parts) {
+    built += p + "/";
+    html += `<span class="lib-crumb-sep">/</span><button class="lib-crumb" data-prefix="${esc(built)}">${esc(p)}</button>`;
+  }
+  el.innerHTML = html;
+  el.querySelectorAll(".lib-crumb").forEach((b) =>
+    b.addEventListener("click", () => { exitLibSelectMode(); loadLibrary(b.dataset.prefix); })
+  );
+}
+
+function renderLibContents(data) {
+  const cont = $("#lib-contents");
+  const emptyEl = $("#lib-empty");
+  const folders = data.folders || [];
+  const files = data.files || [];
+  if (!folders.length && !files.length) {
+    cont.innerHTML = "";
+    emptyEl.hidden = false;
+    return;
+  }
+  emptyEl.hidden = true;
+  if (_libSelectMode) cont.classList.add("lib-select-mode");
+  cont.innerHTML = [
+    ...folders.map((f) => `<div class="lib-folder-tile" data-prefix="${esc(f.path)}">
+      <span class="lib-folder-icon">📁</span><span>${esc(f.name)}</span>
+    </div>`),
+    ...files.map((f) => `<div class="lib-file-tile${_libSelected.has(f.path) ? " selected" : ""}" data-path="${esc(f.path)}">
+      <img src="/api/images/file/${encPath(f.path)}" alt="${esc(f.name)}" loading="lazy" />
+      <button class="lib-use-btn">Use</button>
+    </div>`),
+  ].join("");
+  cont.querySelectorAll(".lib-folder-tile").forEach((tile) =>
+    tile.addEventListener("click", () => { exitLibSelectMode(); loadLibrary(tile.dataset.prefix); })
+  );
+  cont.querySelectorAll(".lib-file-tile").forEach((tile) =>
+    tile.addEventListener("click", () => {
+      if (_libSelectMode) { toggleLibSelect(tile); return; }
+      useLibraryImage(tile.dataset.path);
+    })
+  );
+}
+
+function renderLibSelection() {
+  const el = $("#lib-selection");
+  const n = _libSelected.size;
+  if (_libSelectMode) {
+    el.innerHTML = `<span style="font-size:13px;color:var(--muted)">${n} selected</span>
+      <div style="flex:1"></div>
+      <button id="lib-sel-cancel" class="ghost small">Cancel</button>`;
+    el.hidden = false;
+    el.querySelector("#lib-sel-cancel").addEventListener("click", exitLibSelectMode);
+    const bar = $("#lib-bulk-bar");
+    bar.hidden = n === 0;
+    $("#lib-bulk-count").textContent = n ? `${n} selected` : "";
+    $("#lib-bulk-delete").disabled = n === 0;
+  } else {
+    el.innerHTML = `<div style="flex:1"></div><button id="lib-sel-btn" class="ghost small">Select</button>`;
+    el.hidden = false;
+    el.querySelector("#lib-sel-btn").addEventListener("click", enterLibSelectMode);
+    $("#lib-bulk-bar").hidden = true;
+  }
+}
+
+async function useLibraryImage(path) {
+  try {
+    const r = await fetch(`/api/images/file/${encPath(path)}`);
+    if (!r.ok) throw new Error(r.statusText);
+    const blob = await r.blob();
+    const name = path.split("/").pop();
+    _currentImageFile = new File([blob], name, { type: blob.type || "image/jpeg" });
+    $("#preview").src = URL.createObjectURL(_currentImageFile);
+    $("#img-preview-wrap").hidden = false;
+    $$(".img-mode-tab").forEach((b) => b.classList.toggle("active", b.dataset.mode === "upload"));
+    $("#img-upload-panel").hidden = false;
+    $("#img-library-panel").hidden = true;
+    $("#image-label").textContent = name;
+    toast("Image selected ✓");
+  } catch (e) {
+    toast("Could not load image: " + e.message, true);
+  }
+}
+
+// ---- library select mode ----------------------------------------------------
+function enterLibSelectMode() {
+  _libSelectMode = true;
+  _libSelected.clear();
+  $("#lib-contents").classList.add("lib-select-mode");
+  renderLibSelection();
+}
+
+function exitLibSelectMode() {
+  _libSelectMode = false;
+  _libSelected.clear();
+  $$("#lib-contents .lib-file-tile").forEach((t) => t.classList.remove("selected"));
+  $("#lib-contents").classList.remove("lib-select-mode");
+  renderLibSelection();
+}
+
+function toggleLibSelect(tile) {
+  const path = tile.dataset.path;
+  if (_libSelected.has(path)) { _libSelected.delete(path); tile.classList.remove("selected"); }
+  else                         { _libSelected.add(path);    tile.classList.add("selected"); }
+  renderLibSelection();
+}
+
+// ---- library bulk delete ----------------------------------------------------
+$("#lib-bulk-delete").addEventListener("click", async () => {
+  const n = _libSelected.size;
+  if (!confirm(`Delete ${n} image${n !== 1 ? "s" : ""}?`)) return;
+  const btn = $("#lib-bulk-delete");
+  btn.disabled = true; btn.textContent = "Deleting…";
+  let done = 0;
+  for (const path of [..._libSelected]) {
+    try {
+      const r = await fetch(`/api/images/file/${encPath(path)}`, { method: "DELETE" });
+      if (r.ok) done++;
+    } catch (_) {}
+  }
+  toast(`${done} image${done !== 1 ? "s" : ""} deleted`);
+  btn.textContent = "🗑 Delete";
+  exitLibSelectMode();
+  loadLibrary(_libPrefix);
+});
+$("#lib-bulk-cancel").addEventListener("click", exitLibSelectMode);
+
+// ---- save-to-cloud panel ----------------------------------------------------
+$("#img-star-btn").addEventListener("click", () => {
+  if (!_currentImageFile) return toast("No image to save", true);
+  _savePanelPrefix = "";
+  $("#img-save-panel").hidden = false;
+  loadSavePanel("");
+});
+
+$("#img-save-cancel").addEventListener("click", () => {
+  $("#img-save-panel").hidden = true;
+});
+
+async function loadSavePanel(prefix) {
+  _savePanelPrefix = prefix;
+  let data;
+  try {
+    data = await getJSON(`/api/images/browse?prefix=${encodeURIComponent(prefix)}`);
+  } catch (e) {
+    toast("Could not load folders: " + e.message, true);
+    return;
+  }
+  renderSaveBreadcrumb(prefix);
+  renderSaveFolders(data.folders || []);
+}
+
+function renderSaveBreadcrumb(prefix) {
+  const el = $("#save-breadcrumb");
+  const parts = prefix ? prefix.split("/").filter(Boolean) : [];
+  let built = "";
+  let html = `<button class="lib-crumb" data-prefix="">Home</button>`;
+  for (const p of parts) {
+    built += p + "/";
+    html += `<span class="lib-crumb-sep">/</span><button class="lib-crumb" data-prefix="${esc(built)}">${esc(p)}</button>`;
+  }
+  el.innerHTML = html;
+  el.querySelectorAll(".lib-crumb").forEach((b) =>
+    b.addEventListener("click", () => loadSavePanel(b.dataset.prefix))
+  );
+}
+
+function renderSaveFolders(folders) {
+  const el = $("#save-folder-list");
+  if (!folders.length) {
+    el.innerHTML = `<div class="muted" style="font-size:13px;padding:8px 0">No subfolders here.</div>`;
+    return;
+  }
+  el.innerHTML = folders.map((f) => `<div class="save-folder-tile" data-prefix="${esc(f.path)}">
+    <span>📁 ${esc(f.name)}</span><span class="folder-arrow">▶</span>
+  </div>`).join("");
+  el.querySelectorAll(".save-folder-tile").forEach((tile) =>
+    tile.addEventListener("click", () => loadSavePanel(tile.dataset.prefix))
+  );
+}
+
+$("#save-new-folder-btn").addEventListener("click", () => {
+  $("#save-new-folder-row").hidden = false;
+  $("#save-new-folder-btn").hidden = true;
+  $("#save-new-folder-name").value = "";
+  $("#save-new-folder-name").focus();
+});
+
+$("#save-new-folder-cancel").addEventListener("click", () => {
+  $("#save-new-folder-row").hidden = true;
+  $("#save-new-folder-btn").hidden = false;
+});
+
+$("#save-new-folder-confirm").addEventListener("click", async () => {
+  const name = $("#save-new-folder-name").value.trim().replace(/[/\\]/g, "");
+  if (!name) return toast("Enter a folder name", true);
+  try {
+    await postJSON("/api/images/folder", { path: _savePanelPrefix + name + "/" });
+    $("#save-new-folder-row").hidden = true;
+    $("#save-new-folder-btn").hidden = false;
+    toast("Folder created");
+    loadSavePanel(_savePanelPrefix);
+  } catch (e) { toast(e.message, true); }
+});
+
+$("#save-here-btn").addEventListener("click", async () => {
+  if (!_currentImageFile) return toast("No image", true);
+  const btn = $("#save-here-btn");
+  btn.disabled = true; btn.textContent = "Saving…";
+  const destPath = _savePanelPrefix + _currentImageFile.name;
+  const fd = new FormData();
+  fd.append("file", _currentImageFile, _currentImageFile.name);
+  fd.append("path", destPath);
+  try {
+    const r = await fetch("/api/images/save", { method: "POST", body: fd });
+    if (!r.ok) throw new Error((await r.text()) || r.statusText);
+    toast("Saved to cloud ✓");
+    $("#img-save-panel").hidden = true;
+    $("#img-star-btn").textContent = "★ Saved";
+  } catch (e) { toast(e.message, true); }
+  finally { btn.disabled = false; btn.textContent = "Save here"; }
+});
+
+// ---- saved videos select mode -----------------------------------------------
+function enterSavedSelectMode() {
+  _savedSelectMode = true;
+  _savedSelected.clear();
+  $("#saved-list").classList.add("saved-select-mode");
+  $("#saved-bulk-bar").hidden = false;
+  _updateSavedBulkBar();
+}
+
+function exitSavedSelectMode() {
+  _savedSelectMode = false;
+  _savedSelected.clear();
+  $$("#saved-list .out-card.selected").forEach((c) => c.classList.remove("selected"));
+  $("#saved-list").classList.remove("saved-select-mode");
+  $("#saved-bulk-bar").hidden = true;
+}
+
+function _toggleSavedSelect(card) {
+  const pid = card.dataset.pid;
+  if (_savedSelected.has(pid)) { _savedSelected.delete(pid); card.classList.remove("selected"); }
+  else                          { _savedSelected.add(pid);   card.classList.add("selected"); }
+  _updateSavedBulkBar();
+}
+
+function _updateSavedBulkBar() {
+  const n = _savedSelected.size;
+  $("#saved-bulk-count").textContent = n ? `${n} selected` : "";
+  $("#saved-bulk-unstar").disabled = n === 0;
+}
+
+$("#saved-select").addEventListener("click", enterSavedSelectMode);
+$("#saved-bulk-cancel").addEventListener("click", exitSavedSelectMode);
+
+$("#saved-bulk-unstar").addEventListener("click", async () => {
+  const n = _savedSelected.size;
+  if (!confirm(`Unstar ${n} video${n !== 1 ? "s" : ""}? They will be removed from saved.`)) return;
+  const btn = $("#saved-bulk-unstar");
+  btn.disabled = true; btn.textContent = "Removing…";
+  let done = 0;
+  for (const pid of [..._savedSelected]) {
+    try {
+      await deleteJSON(`/api/saved/${pid}`);
+      document.querySelector(`#saved-list .out-card[data-pid="${pid}"]`)?.remove();
+      done++;
+    } catch (_) {}
+  }
+  toast(`${done} video${done !== 1 ? "s" : ""} removed from saved`);
+  btn.textContent = "☆ Unstar";
+  exitSavedSelectMode();
+  if (!$("#saved-list .out-card")) $("#saved-section").hidden = true;
+  if (_outPodId) loadDone(_outPodId);
 });
 
 // ---- boot ------------------------------------------------------------------
