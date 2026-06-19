@@ -156,6 +156,11 @@ function resizeTextareas() {
 
 // ---- tabs ------------------------------------------------------------------
 function switchTab(tab) {
+  // Always collapse any expanded video tile before switching — if the user
+  // navigates away via a tab button instead of ← Back, collapseTile() would
+  // never be called and body.overflow stays "hidden", locking page scroll.
+  const expanded = document.querySelector(".out-card.expanded");
+  if (expanded) collapseTile(expanded);
   $$(".tabs button").forEach((x) => x.classList.toggle("active", x.dataset.tab === tab));
   $$(".tab").forEach((x) => x.classList.remove("active"));
   $("#tab-" + tab).classList.add("active");
