@@ -163,7 +163,6 @@
         <label style="margin:0;flex:1">Pod
           <select id="out-pod"><option value="">No running pod</option></select>
         </label>
-        <button id="out-select" class="ghost small" title="Select">Select</button>
         <button id="out-refresh" class="ghost small" title="Refresh">&#x21bb;</button>
       </div>
       <p class="hint">Videos generated on this pod. Tap to play; safe to close and come back.</p>
@@ -183,7 +182,10 @@
       <div id="saved-list" class="out-grid"></div>
     </div>
     <div id="session-section">
-      <button class="section-head" id="session-toggle">📹 Current Session <span class="section-chevron">▾</span></button>
+      <div class="section-head-row">
+        <button class="section-head" id="session-toggle">📹 Current Session <span class="section-chevron">▾</span></button>
+        <button id="out-select" class="ghost small">Select</button>
+      </div>
       <div id="out-active" class="card-list"></div>
       <div id="out-list" class="out-grid"></div>
     </div>
