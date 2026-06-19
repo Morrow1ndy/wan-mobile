@@ -308,6 +308,21 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-21
+
+**Features added:**
+- Fly machine keep-alive during active generations — `_keepalive_loop()` pings `GET /api/balance` on localhost every 30s while any job has `status=running`. Prevents Fly's idle-detection from stopping the machine mid-generation when the browser is closed (Fly only counts inbound HTTP; `_watch()`'s outbound RunPod connection is invisible to it). Loop is a no-op when no jobs are running so idle cost is unchanged.
+
+**Bugs fixed:**
+- Media (videos/images) failed to load on iOS but not desktop — root cause: `<video src>` and `<img src>` are browser-native fetches that never carry the JS `Authorization` header; iOS Chrome doesn't reuse JS auth state for native media requests (desktop Chrome does). Fix: auth middleware now also accepts a `wan_auth` httponly cookie set by `POST /api/auth/cookie`; the endpoint was returning 500 due to missing `JSONResponse` import — fixed.
+- iOS scroll lock — expanding a video tile sets `body.overflow=hidden`; navigating away via tab buttons (or "Apply to Generate" / "Use this seed") never called `collapseTile()`, leaving overflow locked on the new tab. Fixed by collapsing any expanded tile at the top of `switchTab()`.
+- Generation state lost when iOS backgrounds browser — three sub-fixes: (1) `visibilitychange` now calls `loadDone()` + `tickActive()` on foreground so finished videos appear without refresh; (2) `tickActive()` calls `loadDone()` when removing orphaned active cards (10s done-window expired before browser came back); (3) `cancel_job` no longer overwrites a job that already completed successfully, preserving timing data when user clicks Stop on a ghost active card.
+
+**New endpoints:**
+- `POST /api/auth/cookie` — set httponly auth cookie so browser-native media requests authenticate (already in 2026-06-20 entry but deploy was broken until JSONResponse import fix)
+
+---
+
 ### 2026-06-20
 
 **Features added:**
