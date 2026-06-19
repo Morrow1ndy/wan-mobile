@@ -607,6 +607,42 @@ async def serve_saved_file(filename: str):
         headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
 
+# ----- system metrics (RAM) --------------------------------------------------
+def _mem_usage() -> dict:
+    """Container memory used/total in bytes, read from the Fly VM.
+
+    Prefers the cgroup (the real container limit, e.g. 512MB on Fly); falls
+    back to /proc/meminfo. Returns {used: None, total: None} off-Linux.
+    """
+    try:
+        with open("/sys/fs/cgroup/memory.current") as f:
+            used = int(f.read().strip())
+        with open("/sys/fs/cgroup/memory.max") as f:
+            raw = f.read().strip()
+        if raw != "max":
+            return {"used": used, "total": int(raw)}
+    except Exception:
+        pass
+    try:
+        info = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                k, _, v = line.partition(":")
+                info[k.strip()] = int(v.strip().split()[0]) * 1024
+        total = info.get("MemTotal")
+        avail = info.get("MemAvailable")
+        if total and avail is not None:
+            return {"used": total - avail, "total": total}
+    except Exception:
+        pass
+    return {"used": None, "total": None}
+
+
+@app.get("/api/sysmetrics")
+async def sysmetrics():
+    return _mem_usage()
+
+
 # ----- storage usage ---------------------------------------------------------
 @app.get("/api/storage")
 async def storage_usage():

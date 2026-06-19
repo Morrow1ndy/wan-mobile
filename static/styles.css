@@ -45,6 +45,14 @@ header {
   color: var(--muted); letter-spacing: -0.01em; }
 .balance.low { color: var(--warn); }
 .balance.critical { color: var(--red); }
+/* Fly server RAM chip: small dot + percent, colour-coded by pressure. */
+.ram-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 13px;
+  font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted);
+  letter-spacing: -0.01em; }
+.ram-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor; flex-shrink: 0; }
+.ram-chip.warn { color: var(--warn); }
+.ram-chip.crit { color: var(--red); }
 header h1 {
   font-size: 17px; margin: 0; font-weight: 600; letter-spacing: -0.01em;
   display: flex; align-items: center; gap: 10px; color: var(--text);
@@ -256,7 +264,7 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
   display: flex; align-items: center; gap: 8px;
   padding: 12px 18px max(12px, env(safe-area-inset-bottom));
-  background: rgba(11,12,14,0.95); backdrop-filter: blur(14px);
+  background: #0b0c0e;  /* solid: backdrop-filter breaks fixed pos on iOS */
   border-top: 1px solid var(--line);
 }
 .bulk-bar[hidden] { display: none; }
@@ -394,11 +402,15 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .tpl-actions { display: flex; gap: 8px; }
 .tpl-actions button { flex: 1; }
 
-/* ---- sticky generate bar ---- */
+/* ---- sticky bottom bars ----
+   NOTE: no backdrop-filter here. On iOS WebKit, backdrop-filter on a
+   position:fixed element breaks the fixed positioning during scroll — the bar
+   detaches and drifts into the page. A near-opaque solid background gives the
+   same look without the bug. */
 .generate-bar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
   padding: 12px 18px max(12px, env(safe-area-inset-bottom));
-  background: rgba(11, 12, 14, 0.92); backdrop-filter: blur(14px);
+  background: #0b0c0e;
   border-top: 1px solid var(--line);
 }
 
@@ -406,7 +418,7 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .deploy-bar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
   padding: 12px 18px max(12px, env(safe-area-inset-bottom));
-  background: rgba(11, 12, 14, 0.92); backdrop-filter: blur(14px);
+  background: #0b0c0e;
   border-top: 1px solid var(--line);
 }
 .deploy-bar .hint { margin: 0 0 10px; }
@@ -468,8 +480,14 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .lib-file-tile {
   aspect-ratio: 1; border: 1px solid var(--line); border-radius: 10px;
   overflow: hidden; position: relative; cursor: pointer; background: #000;
+  min-width: 0; min-height: 0;
 }
-.lib-file-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Absolutely fill the square box so the <img> can't dictate (and collapse)
+   the tile height — iOS WebKit otherwise lets the image shrink the row. */
+.lib-file-tile img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
 .lib-file-tile.selected { border-color: var(--accent); }
 .lib-file-tile.selected::after {
   content: "✓"; position: absolute; top: 4px; right: 4px;

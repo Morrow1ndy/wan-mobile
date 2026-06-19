@@ -1558,6 +1558,34 @@ $("#saved-bulk-unstar").addEventListener("click", async () => {
   loadStorage();
 });
 
+// ---- Fly.io server RAM (header chip) ---------------------------------------
+async function loadFlyRam() {
+  const el = $("#fly-ram");
+  if (!el) return;
+  let m;
+  try { m = await getJSON("/api/sysmetrics"); } catch (_) { return; }
+  if (m.used == null || !m.total) { el.textContent = "—"; el.className = "ram-chip"; return; }
+  const pct = Math.round((m.used / m.total) * 100);
+  el.textContent = `${pct}%`;
+  el.title = `Fly.io server RAM · ${fmtBytes(m.used)} / ${fmtBytes(m.total)}`;
+  el.className = "ram-chip" + (pct >= 90 ? " crit" : pct >= 75 ? " warn" : "");
+}
+
+// Poll only while the tab is visible so an idle phone lets the machine sleep.
+let _ramTimer = null;
+function startRamPoll() {
+  stopRamPoll();
+  loadFlyRam();
+  _ramTimer = setInterval(loadFlyRam, 5000);
+}
+function stopRamPoll() {
+  if (_ramTimer) { clearInterval(_ramTimer); _ramTimer = null; }
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopRamPoll();
+  else startRamPoll();
+});
+
 // ---- Fly.io storage meter ---------------------------------------------------
 function fmtBytes(n) {
   if (n == null) return "—";
@@ -1591,5 +1619,6 @@ $("#refresh").addEventListener("click", loadPods);
   await Promise.all([loadPods(), loadTemplates(), loadParamPresets(), restoreLastParams()]);
   loadBalance();
   loadStorage();
+  startRamPoll();
   setInterval(loadBalance, 60_000);
 })();
