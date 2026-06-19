@@ -800,7 +800,7 @@ $("#bulk-delete").addEventListener("click", async () => {
     if (!card) continue;
     try {
       await deleteJSON(`/api/pods/${card.dataset.pod}/outputs/${pid}`);
-      card.remove(); done++;
+      removeCard(card); done++;
     } catch (_) {}
   }
   toast(`${done} video${done !== 1 ? "s" : ""} deleted`);
@@ -974,6 +974,13 @@ function collapseTile(card) {
   card.classList.remove("expanded");
   document.body.style.overflow = "";
 }
+// Always use this to remove an out-card — collapses first if expanded so
+// body.overflow is always restored before the node disappears.
+function removeCard(card) {
+  if (!card) return;
+  if (card.classList.contains("expanded")) collapseTile(card);
+  card.remove();
+}
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     const expanded = document.querySelector(".out-card.expanded");
@@ -1066,7 +1073,7 @@ $("#out-list").addEventListener("click", async (e) => {
     delBtn.disabled = true;
     try {
       await deleteJSON(`/api/pods/${card.dataset.pod}/outputs/${card.dataset.pid}`);
-      card.remove();
+      removeCard(card);
       toast("Deleted");
     } catch (err) { toast(err.message, true); delBtn.disabled = false; }
     return;
@@ -1089,7 +1096,7 @@ $("#out-list").addEventListener("click", async (e) => {
         await postJSON(`/api/saved/${card.dataset.pod}/${starBtn.dataset.pid}`, {
           filename: card.dataset.file, subfolder: card.dataset.sub, type: card.dataset.ftype,
         });
-        card.remove();
+        removeCard(card);
         await loadSaved();
         toast("Saved ✓");
       }
@@ -1123,7 +1130,7 @@ $("#saved-list").addEventListener("click", async (e) => {
     starBtn.disabled = true;
     try {
       await deleteJSON(`/api/saved/${pid}`);
-      starBtn.closest(".out-card").remove();
+      removeCard(starBtn.closest(".out-card"));
       if (!$("#saved-list .out-card")) $("#saved-section").hidden = true;
       if (_outPodId) await loadDone(_outPodId);
       toast("Removed from saved");
@@ -1791,7 +1798,7 @@ $("#saved-bulk-unstar").addEventListener("click", async () => {
   for (const pid of [..._savedSelected]) {
     try {
       await deleteJSON(`/api/saved/${pid}`);
-      document.querySelector(`#saved-list .out-card[data-pid="${pid}"]`)?.remove();
+      removeCard(document.querySelector(`#saved-list .out-card[data-pid="${pid}"]`));
       done++;
     } catch (_) {}
   }
