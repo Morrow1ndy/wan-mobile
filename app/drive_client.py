@@ -128,6 +128,21 @@ def download_image(path: str) -> bytes:
     return _bucket().blob(_IMAGE_PREFIX + path).download_as_bytes()
 
 
+def iter_image(path: str, chunk_size: int = 262144):
+    """Yield an image's bytes in chunks, streamed straight from GCS.
+
+    Avoids buffering the whole file in RAM (matters when a library folder
+    loads many thumbnails at once). Raises if the blob doesn't exist.
+    """
+    blob = _bucket().blob(_IMAGE_PREFIX + path)
+    with blob.open("rb") as fh:
+        while True:
+            chunk = fh.read(chunk_size)
+            if not chunk:
+                break
+            yield chunk
+
+
 def delete_image(path: str):
     if not _enabled():
         return

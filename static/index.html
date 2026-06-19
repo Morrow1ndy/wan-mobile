@@ -69,6 +69,13 @@
         <select id="gen-pod"><option value="">No running pod</option></select>
       </label>
       <div id="pod-readiness" class="status"></div>
+      <div class="storage-meter" data-storage>
+        <div class="storage-meter-row">
+          <span class="storage-label">Fly.io storage</span>
+          <span class="storage-val">—</span>
+        </div>
+        <div class="storage-track"><div class="storage-fill"></div></div>
+      </div>
     </div>
 
     <div class="card">
@@ -152,6 +159,13 @@
         <button id="out-refresh" class="ghost small" title="Refresh">&#x21bb;</button>
       </div>
       <p class="hint">Videos generated on this pod. Tap to play; safe to close and come back.</p>
+      <div class="storage-meter" data-storage>
+        <div class="storage-meter-row">
+          <span class="storage-label">Fly.io storage</span>
+          <span class="storage-val">—</span>
+        </div>
+        <div class="storage-track"><div class="storage-fill"></div></div>
+      </div>
     </div>
     <div id="saved-section" hidden>
       <div class="section-head-row">

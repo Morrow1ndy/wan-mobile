@@ -66,6 +66,7 @@ function switchTab(tab) {
   if (tab === "outputs") loadOutputs();
   else { stopOutTimer(); if (_selectMode) exitSelectMode(); }
   if (tab === "generate") resizeTextareas();
+  if (tab === "generate" || tab === "outputs") loadStorage();
 }
 $$(".tabs button").forEach((b) =>
   b.addEventListener("click", () => switchTab(b.dataset.tab))
@@ -658,6 +659,8 @@ const esc = (s) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 // encode each path segment but preserve slashes for {path:path} FastAPI params
 const encPath = (p) => String(p ?? "").split("/").map(encodeURIComponent).join("/");
+// folder glyph that matches the UI (stroked, currentColor)
+const FOLDER_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
 
 function fmtElapsed(sec) {
   sec = Math.max(0, Math.floor(sec));
@@ -720,9 +723,10 @@ async function loadSaved() {
   const list = $("#saved-list");
   let items;
   try { items = await getJSON("/api/saved"); } catch (_) { return; }
-  if (!items.length) { section.hidden = true; return; }
+  if (!items.length) { section.hidden = true; loadStorage(); return; }
   section.hidden = false;
   list.innerHTML = items.map(renderSavedOutput).join("");
+  loadStorage();
 }
 
 function renderSavedOutput(it) {
@@ -1303,7 +1307,7 @@ function renderLibContents(data) {
   if (_libSelectMode) cont.classList.add("lib-select-mode");
   cont.innerHTML = [
     ...folders.map((f) => `<div class="lib-folder-tile" data-prefix="${esc(f.path)}">
-      <span class="lib-folder-icon">📁</span><span>${esc(f.name)}</span>
+      <span class="lib-folder-icon">${FOLDER_SVG}</span><span class="lib-folder-name">${esc(f.name)}</span>
     </div>`),
     ...files.map((f) => `<div class="lib-file-tile${_libSelected.has(f.path) ? " selected" : ""}" data-path="${esc(f.path)}">
       <img src="/api/images/file/${encPath(f.path)}" alt="${esc(f.name)}" loading="lazy" />
@@ -1451,7 +1455,7 @@ function renderSaveFolders(folders) {
     return;
   }
   el.innerHTML = folders.map((f) => `<div class="save-folder-tile" data-prefix="${esc(f.path)}">
-    <span>📁 ${esc(f.name)}</span><span class="folder-arrow">▶</span>
+    <span class="folder-ic">${FOLDER_SVG}</span><span>${esc(f.name)}</span><span class="folder-arrow">▶</span>
   </div>`).join("");
   el.querySelectorAll(".save-folder-tile").forEach((tile) =>
     tile.addEventListener("click", () => loadSavePanel(tile.dataset.prefix))
@@ -1551,7 +1555,34 @@ $("#saved-bulk-unstar").addEventListener("click", async () => {
   exitSavedSelectMode();
   if (!$("#saved-list .out-card")) $("#saved-section").hidden = true;
   if (_outPodId) loadDone(_outPodId);
+  loadStorage();
 });
+
+// ---- Fly.io storage meter ---------------------------------------------------
+function fmtBytes(n) {
+  if (n == null) return "—";
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024, i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+async function loadStorage() {
+  let s;
+  try { s = await getJSON("/api/storage"); } catch (_) { return; }
+  const pct = s.total ? Math.min(100, (s.used / s.total) * 100) : 0;
+  $$(".storage-meter[data-storage]").forEach((meter) => {
+    const val = meter.querySelector(".storage-val");
+    const fill = meter.querySelector(".storage-fill");
+    if (val) val.textContent = `${fmtBytes(s.used)} / ${fmtBytes(s.total)}`;
+    if (fill) {
+      fill.style.width = pct + "%";
+      fill.classList.toggle("crit", pct >= 90);
+      fill.classList.toggle("warn", pct >= 75 && pct < 90);
+    }
+  });
+}
 
 // ---- boot ------------------------------------------------------------------
 $("#refresh").addEventListener("click", loadPods);
@@ -1559,5 +1590,6 @@ $("#refresh").addEventListener("click", loadPods);
   await loadConfig();
   await Promise.all([loadPods(), loadTemplates(), loadParamPresets(), restoreLastParams()]);
   loadBalance();
+  loadStorage();
   setInterval(loadBalance, 60_000);
 })();

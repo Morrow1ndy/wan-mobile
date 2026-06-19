@@ -10,13 +10,14 @@ import base64
 import json
 import os
 import secrets
+import shutil
 import time
 import uuid
 from pathlib import Path
 
 import websockets
 from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import comfy_client as comfy
@@ -526,19 +527,41 @@ async def unstar_video(prompt_id: str):
 
 @app.get("/api/saved/file/{filename}")
 async def serve_saved_file(filename: str):
+    # Reject path traversal — filename must be a bare name on the volume.
+    if "/" in filename or "\\" in filename or filename in ("", ".", ".."):
+        raise HTTPException(400, "bad filename")
     p = ps.SAVED_DIR / filename
     if not p.exists():
-        # Volume cache miss — restore from GCS.
+        # Volume cache miss — restore from GCS, streamed to disk (no RAM buffer).
         try:
-            data = await asyncio.to_thread(drive.download_video, filename)
             ps.SAVED_DIR.mkdir(parents=True, exist_ok=True)
-            p.write_bytes(data)
+            await asyncio.to_thread(drive.download_video_to_file, filename, p)
         except Exception:
             raise HTTPException(404, "Saved video not found")
-    content = p.read_bytes()
-    ct = _content_type({"filename": filename})
-    return Response(content=content, media_type=ct,
-                    headers={"Content-Disposition": f'inline; filename="{filename}"'})
+    # FileResponse streams from disk in chunks instead of loading the whole
+    # video into memory.
+    return FileResponse(
+        p, media_type=_content_type({"filename": filename}),
+        headers={"Content-Disposition": f'inline; filename="{filename}"'})
+
+
+# ----- storage usage ---------------------------------------------------------
+@app.get("/api/storage")
+async def storage_usage():
+    """Fly volume disk usage, plus how much the saved videos take.
+
+    `total`/`used`/`free` are the whole volume (the filesystem mounted at
+    /app/data); `saved_bytes` is just the starred-video files.
+    """
+    data_dir = ps.SAVED_DIR.parent
+    data_dir.mkdir(parents=True, exist_ok=True)
+    total, used, free = await asyncio.to_thread(shutil.disk_usage, str(data_dir))
+    saved_bytes = 0
+    if ps.SAVED_DIR.exists():
+        saved_bytes = sum(
+            f.stat().st_size for f in ps.SAVED_DIR.glob("*") if f.is_file())
+    return {"total": total, "used": used, "free": free,
+            "saved_bytes": saved_bytes}
 
 
 # ----- input image cloud library --------------------------------------------
@@ -549,12 +572,10 @@ async def browse_images(prefix: str = ""):
 
 @app.get("/api/images/file/{path:path}")
 async def serve_image_file(path: str):
-    try:
-        data = await asyncio.to_thread(drive.download_image, path)
-    except Exception:
-        raise HTTPException(404, "Image not found")
-    return Response(
-        content=data,
+    # Stream the image from GCS in chunks rather than buffering the whole file
+    # in RAM — a library folder can request many thumbnails at once.
+    return StreamingResponse(
+        drive.iter_image(path),
         media_type=_content_type({"filename": path}),
         headers={
             "Content-Disposition": f'inline; filename="{Path(path).name}"',
