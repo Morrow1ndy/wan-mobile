@@ -85,7 +85,9 @@ _AUTH_PASS = os.getenv("WAN_AUTH_PASS", "")
 
 @app.middleware("http")
 async def basic_auth(request: Request, call_next):
-    if _AUTH_USER and _AUTH_PASS:
+    # Only protect API routes. Static files (including the login page itself)
+    # are served without auth so the custom login overlay can load.
+    if _AUTH_USER and _AUTH_PASS and request.url.path.startswith("/api/"):
         header = request.headers.get("authorization", "")
         ok = False
         if header.startswith("Basic "):
@@ -96,8 +98,13 @@ async def basic_auth(request: Request, call_next):
             except Exception:
                 ok = False
         if not ok:
-            return Response(status_code=401, headers={
-                "WWW-Authenticate": 'Basic realm="Wan Mobile"'})
+            # No WWW-Authenticate header — that's what triggers the browser's
+            # native credential dialog. Without it the 401 reaches our JS.
+            return Response(
+                status_code=401,
+                content='{"error":"unauthorized"}',
+                media_type="application/json",
+            )
     return await call_next(request)
 
 # In-memory job tracking (good enough for a single user). Mirrored to disk so

@@ -3,14 +3,112 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+// ---- auth ------------------------------------------------------------------
+// Credentials stored in sessionStorage so they survive page refresh but not
+// a browser restart. The server returns plain 401 JSON (no WWW-Authenticate
+// header) so the browser never shows its native credential dialog.
+let _authHeader = sessionStorage.getItem("wan_auth") || null;
+let _loginShowing = false;
+let _balanceTimer = null;
+
+class AuthError extends Error { constructor() { super("unauthorized"); } }
+
+async function apiFetch(url, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (_authHeader) headers["Authorization"] = _authHeader;
+  const r = await fetch(url, { ...opts, headers });
+  if (r.status === 401) {
+    _authHeader = null;
+    sessionStorage.removeItem("wan_auth");
+    showLoginOverlay();
+    throw new AuthError();
+  }
+  return r;
+}
+
+function showLoginOverlay() {
+  if (_loginShowing) return;
+  _loginShowing = true;
+  $("#login-overlay").hidden = false;
+  $("#login-err").hidden = true;
+  setTimeout(() => $("#login-user").focus(), 80);
+}
+
+function hideLoginOverlay() {
+  _loginShowing = false;
+  $("#login-overlay").hidden = true;
+}
+
+document.getElementById("login-pass").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("login-btn").click();
+});
+
+document.getElementById("login-btn").addEventListener("click", async () => {
+  const user = $("#login-user").value.trim();
+  const pass = $("#login-pass").value;
+  if (!user || !pass) return;
+  const btn = $("#login-btn");
+  btn.disabled = true; btn.textContent = "Signing in…";
+  const header = "Basic " + btoa(user + ":" + pass);
+  const r = await fetch("/api/balance", { headers: { Authorization: header } });
+  btn.disabled = false; btn.textContent = "Sign in";
+  if (r.status === 401) { $("#login-err").hidden = false; return; }
+  _authHeader = header;
+  sessionStorage.setItem("wan_auth", header);
+  hideLoginOverlay();
+  init();
+});
+
+// ---- custom confirm / prompt -----------------------------------------------
+function showConfirm(msg, { okText = "Confirm", danger = false } = {}) {
+  return new Promise((resolve) => {
+    $("#confirm-msg").textContent = msg;
+    const ok = $("#confirm-ok");
+    ok.textContent = okText;
+    ok.className = "primary" + (danger ? " danger" : "");
+    $("#confirm-overlay").hidden = false;
+    const yes = () => { cleanup(); resolve(true); };
+    const no  = () => { cleanup(); resolve(false); };
+    function cleanup() {
+      $("#confirm-overlay").hidden = true;
+      ok.onclick = null; $("#confirm-cancel").onclick = null;
+      $("#confirm-overlay").onclick = null;
+    }
+    ok.onclick = yes;
+    $("#confirm-cancel").onclick = no;
+    $("#confirm-overlay").onclick = (e) => { if (e.target === $("#confirm-overlay")) no(); };
+  });
+}
+
+function showPrompt(msg, defaultVal = "") {
+  return new Promise((resolve) => {
+    $("#prompt-msg").textContent = msg;
+    const inp = $("#prompt-input");
+    inp.value = defaultVal;
+    $("#prompt-overlay").hidden = false;
+    setTimeout(() => inp.focus(), 80);
+    const ok = () => { cleanup(); resolve(inp.value.trim() || null); };
+    const no = () => { cleanup(); resolve(null); };
+    function cleanup() {
+      $("#prompt-overlay").hidden = true;
+      $("#prompt-ok").onclick = null; $("#prompt-cancel").onclick = null;
+      $("#prompt-overlay").onclick = null; inp.onkeydown = null;
+    }
+    $("#prompt-ok").onclick = ok;
+    $("#prompt-cancel").onclick = no;
+    inp.onkeydown = (e) => { if (e.key === "Enter") ok(); if (e.key === "Escape") no(); };
+    $("#prompt-overlay").onclick = (e) => { if (e.target === $("#prompt-overlay")) no(); };
+  });
+}
+
 // ---- tiny helpers ----------------------------------------------------------
 async function getJSON(url) {
-  const r = await fetch(url);
+  const r = await apiFetch(url);
   if (!r.ok) throw new Error((await r.text()) || r.statusText);
   return r.json();
 }
 async function postJSON(url, body) {
-  const r = await fetch(url, {
+  const r = await apiFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body || {}),
@@ -19,7 +117,7 @@ async function postJSON(url, body) {
   return r.json();
 }
 async function putJSON(url, body) {
-  const r = await fetch(url, {
+  const r = await apiFetch(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body || {}),
@@ -28,7 +126,7 @@ async function putJSON(url, body) {
   return r.json();
 }
 async function deleteJSON(url) {
-  const r = await fetch(url, { method: "DELETE" });
+  const r = await apiFetch(url, { method: "DELETE" });
   if (!r.ok) throw new Error((await r.text()) || r.statusText);
   return r.json();
 }
@@ -246,7 +344,7 @@ function bindPodActions() {
   $$(".pod-actions button").forEach((btn) =>
     btn.addEventListener("click", async () => {
       const { act, id } = btn.dataset;
-      if (act === "terminate" && !confirm("Terminate this pod? This destroys it (billing stops).")) return;
+      if (act === "terminate" && !await showConfirm("Terminate this pod? This destroys it and stops billing.", { okText: "Terminate", danger: true })) return;
       btn.disabled = true;
       try {
         await postJSON(`/api/pods/${id}/${act}`, {});
@@ -637,7 +735,7 @@ $("#bulk-star").addEventListener("click", async () => {
 
 $("#bulk-delete").addEventListener("click", async () => {
   const n = _selected.size;
-  if (!confirm(`Delete ${n} video${n !== 1 ? "s" : ""}?`)) return;
+  if (!await showConfirm(`Delete ${n} video${n !== 1 ? "s" : ""}?`, { okText: "Delete", danger: true })) return;
   const btn = $("#bulk-delete");
   btn.disabled = true; btn.textContent = "Deleting…";
   let done = 0;
@@ -732,24 +830,29 @@ async function loadSaved() {
 function renderSavedOutput(it) {
   const url = `/api/saved/file/${encodeURIComponent(it.filename)}`;
   const dt = fmtDatetime(it.completed_at);
+  const dur = it.duration_secs ? fmtElapsed(it.duration_secs) : null;
   return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
               data-pid="${esc(it.prompt_id)}">
     <div class="out-cover">
       <video class="cover-img" preload="metadata" muted src="${url}#t=0.1"></video>
       <span class="play-badge">&#9658;</span>
       <video class="tile-video" data-src="${url}" playsinline preload="none" controls></video>
-      <button class="zoom-back" title="Zoom back">↙</button>
+      <div class="tile-foot">
+        ${dur ? `<span class="tile-dur">⏱ ${dur}</span>` : ""}
+        ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
+      </div>
+      <button class="zoom-back">← Back</button>
       <span class="sel-check"></span>
-      <button class="star-btn starred" data-pid="${esc(it.prompt_id)}" title="Unstar">★</button>
+      <button class="star-btn starred" data-pid="${esc(it.prompt_id)}" title="Remove from saved">★</button>
     </div>
     <div class="out-cap">
-      <div class="out-name-wrap">
+      <div class="cap-meta">
         ${dt ? `<span class="out-dt">${dt}</span>` : ""}
-        ${it.duration_secs ? `<span class="out-dur">⏱ ${fmtElapsed(it.duration_secs)}</span>` : ""}
+        ${dur ? `<span class="out-dur">⏱ ${dur}</span>` : ""}
       </div>
       <div class="out-actions">
-        <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}" title="Details">ⓘ</button>
-        <a class="dl" href="${url}" download="${esc(it.filename)}" title="Download">&#10515;</a>
+        <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
+        <a class="dl" href="${url}" download="${esc(it.filename)}">↓ Save</a>
       </div>
     </div>
   </div>`;
@@ -765,6 +868,7 @@ function renderOutput(podId, it) {
     ? `<img class="cover-img" src="${thumb}" alt="" loading="lazy" />`
     : `<video class="cover-img" preload="metadata" muted src="${url}#t=0.1"></video>`;
   const dt = fmtDatetime(it.completed_at);
+  const dur = it.duration_secs ? fmtElapsed(it.duration_secs) : null;
   const starred = it.is_saved;
   return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
               data-pid="${esc(it.prompt_id)}" data-pod="${esc(podId)}"
@@ -773,20 +877,24 @@ function renderOutput(podId, it) {
       ${cover}
       <span class="play-badge">&#9658;</span>
       <video class="tile-video" data-src="${url}" playsinline preload="none" controls></video>
-      <button class="zoom-back" title="Zoom back">↙</button>
+      <div class="tile-foot">
+        ${dur ? `<span class="tile-dur">⏱ ${dur}</span>` : ""}
+        ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
+      </div>
+      <button class="zoom-back">← Back</button>
       <span class="sel-check"></span>
       <button class="star-btn${starred ? " starred" : ""}" data-pid="${esc(it.prompt_id)}"
-              title="${starred ? "Unstar" : "Save to local"}">${starred ? "★" : "☆"}</button>
+              title="${starred ? "Saved" : "Save to cloud"}">${starred ? "★" : "☆"}</button>
     </div>
     <div class="out-cap">
-      <div class="out-name-wrap">
+      <div class="cap-meta">
         ${dt ? `<span class="out-dt">${dt}</span>` : ""}
-        ${it.duration_secs ? `<span class="out-dur">⏱ ${fmtElapsed(it.duration_secs)}</span>` : ""}
+        ${dur ? `<span class="out-dur">⏱ ${dur}</span>` : ""}
       </div>
       <div class="out-actions">
-        <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}" title="Details">ⓘ</button>
-        <a class="dl" href="${url}" download="${esc(it.filename)}" title="Download">&#10515;</a>
-        <button class="del-btn ghost small" data-pid="${esc(it.prompt_id)}" title="Delete">🗑</button>
+        <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
+        <a class="dl" href="${url}" download="${esc(it.filename)}">↓ Save</a>
+        <button class="del-btn ghost small" data-pid="${esc(it.prompt_id)}">Delete</button>
       </div>
     </div>
   </div>`;
@@ -879,7 +987,7 @@ $("#out-list").addEventListener("click", async (e) => {
   // delete
   const delBtn = e.target.closest(".del-btn");
   if (delBtn) {
-    if (!confirm("Delete this video from history?")) return;
+    if (!await showConfirm("Delete this video from history?", { okText: "Delete", danger: true })) return;
     const card = delBtn.closest(".out-card");
     delBtn.disabled = true;
     try {
@@ -936,7 +1044,7 @@ $("#saved-list").addEventListener("click", async (e) => {
   if (infoBtn) { showDetails(infoBtn.dataset.pid); return; }
   const starBtn = e.target.closest(".star-btn");
   if (starBtn) {
-    if (!confirm("Remove from saved?")) return;
+    if (!await showConfirm("Remove this video from saved?", { okText: "Remove", danger: true })) return;
     const pid = starBtn.dataset.pid;
     starBtn.disabled = true;
     try {
@@ -1119,7 +1227,7 @@ $("#tpl-update").addEventListener("click", async () => {
 $("#tpl-save").addEventListener("click", async () => {
   const ta = document.querySelector('textarea[data-key="positive"]');
   if (!ta || !ta.value.trim()) return toast("Prompt is empty", true);
-  const name = window.prompt("Template name:", "My template");
+  const name = await showPrompt("Template name", "My template");
   if (!name) return;
   try {
     _templates = await postJSON("/api/templates", { name, text: ta.value.trim() });
@@ -1133,7 +1241,7 @@ $("#tpl-del").addEventListener("click", async () => {
   const sel = $("#tpl-select");
   if (!sel || sel.value === "") return toast("Select a template first", true);
   const idx = Number(sel.value);
-  if (!confirm(`Delete "${_templates[idx]?.name}"?`)) return;
+  if (!await showConfirm(`Delete template "${_templates[idx]?.name}"?`, { okText: "Delete", danger: true })) return;
   try {
     _templates = await deleteJSON(`/api/templates/${idx}`);
     renderTemplateSelect();
@@ -1193,7 +1301,7 @@ $("#preset-apply").addEventListener("click", () => {
 });
 
 $("#preset-save").addEventListener("click", async () => {
-  const name = window.prompt("Preset name:", "My preset");
+  const name = await showPrompt("Preset name", "My preset");
   if (!name) return;
   try {
     _presets = await postJSON("/api/param-presets", { name, params: collectParams() });
@@ -1207,7 +1315,7 @@ $("#preset-del").addEventListener("click", async () => {
   const sel = $("#preset-select");
   if (!sel || sel.value === "") return toast("Select a preset first", true);
   const idx = Number(sel.value);
-  if (!confirm(`Delete "${_presets[idx]?.name}"?`)) return;
+  if (!await showConfirm(`Delete preset "${_presets[idx]?.name}"?`, { okText: "Delete", danger: true })) return;
   try {
     _presets = await deleteJSON(`/api/param-presets/${idx}`);
     renderPresetSelect();
@@ -1307,7 +1415,10 @@ function renderLibContents(data) {
   if (_libSelectMode) cont.classList.add("lib-select-mode");
   cont.innerHTML = [
     ...folders.map((f) => `<div class="lib-folder-tile" data-prefix="${esc(f.path)}">
-      <span class="lib-folder-icon">${FOLDER_SVG}</span><span class="lib-folder-name">${esc(f.name)}</span>
+      <div class="lib-folder-tile-inner">
+        <span class="lib-folder-icon">${FOLDER_SVG}</span>
+        <span class="lib-folder-name">${esc(f.name)}</span>
+      </div>
     </div>`),
     ...files.map((f) => `<div class="lib-file-tile${_libSelected.has(f.path) ? " selected" : ""}" data-path="${esc(f.path)}">
       <img src="/api/images/file/${encPath(f.path)}" alt="${esc(f.name)}" loading="lazy" />
@@ -1391,7 +1502,7 @@ function toggleLibSelect(tile) {
 // ---- library bulk delete ----------------------------------------------------
 $("#lib-bulk-delete").addEventListener("click", async () => {
   const n = _libSelected.size;
-  if (!confirm(`Delete ${n} image${n !== 1 ? "s" : ""}?`)) return;
+  if (!await showConfirm(`Delete ${n} image${n !== 1 ? "s" : ""}?`, { okText: "Delete", danger: true })) return;
   const btn = $("#lib-bulk-delete");
   btn.disabled = true; btn.textContent = "Deleting…";
   let done = 0;
@@ -1539,7 +1650,7 @@ $("#saved-bulk-cancel").addEventListener("click", exitSavedSelectMode);
 
 $("#saved-bulk-unstar").addEventListener("click", async () => {
   const n = _savedSelected.size;
-  if (!confirm(`Unstar ${n} video${n !== 1 ? "s" : ""}? They will be removed from saved.`)) return;
+  if (!await showConfirm(`Remove ${n} video${n !== 1 ? "s" : ""} from saved?`, { okText: "Remove", danger: true })) return;
   const btn = $("#saved-bulk-unstar");
   btn.disabled = true; btn.textContent = "Removing…";
   let done = 0;
@@ -1566,7 +1677,7 @@ async function loadFlyRam() {
   try { m = await getJSON("/api/sysmetrics"); } catch (_) { return; }
   if (m.used == null || !m.total) { el.textContent = "—"; el.className = "ram-chip"; return; }
   const pct = Math.round((m.used / m.total) * 100);
-  el.textContent = `${pct}%`;
+  el.textContent = `RAM ${pct}%`;
   el.title = `Fly.io server RAM · ${fmtBytes(m.used)} / ${fmtBytes(m.total)}`;
   el.className = "ram-chip" + (pct >= 90 ? " crit" : pct >= 75 ? " warn" : "");
 }
@@ -1614,11 +1725,22 @@ async function loadStorage() {
 
 // ---- boot ------------------------------------------------------------------
 $("#refresh").addEventListener("click", loadPods);
-(async function init() {
-  await loadConfig();
-  await Promise.all([loadPods(), loadTemplates(), loadParamPresets(), restoreLastParams()]);
+
+async function init() {
+  try {
+    await loadConfig();
+  } catch (e) {
+    if (e instanceof AuthError) return; // login overlay is shown; wait for user
+    // Config failed for another reason — continue so the UI at least loads
+  }
+  await Promise.all(
+    [loadPods(), loadTemplates(), loadParamPresets(), restoreLastParams()]
+      .map((p) => p.catch((e) => { if (!(e instanceof AuthError)) console.warn(e); }))
+  );
   loadBalance();
   loadStorage();
   startRamPoll();
-  setInterval(loadBalance, 60_000);
-})();
+  if (!_balanceTimer) _balanceTimer = setInterval(loadBalance, 60_000);
+}
+
+init();

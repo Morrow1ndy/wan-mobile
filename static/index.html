@@ -204,6 +204,41 @@
     <button id="lib-bulk-cancel" class="ghost small">Cancel</button>
   </div>
 
+  <!-- Custom login overlay (replaces browser native Basic Auth dialog) -->
+  <div id="login-overlay" class="login-overlay" hidden>
+    <div class="login-card">
+      <span class="seal login-seal"></span>
+      <h2 class="login-title">Wan Mobile</h2>
+      <input type="text" id="login-user" placeholder="Username" autocomplete="username" />
+      <input type="password" id="login-pass" placeholder="Password" autocomplete="current-password" />
+      <button id="login-btn" class="primary">Sign in</button>
+      <p id="login-err" class="status err" hidden>Incorrect username or password</p>
+    </div>
+  </div>
+
+  <!-- Custom confirm dialog -->
+  <div id="confirm-overlay" class="dialog-overlay" hidden>
+    <div class="dialog-card">
+      <p id="confirm-msg" class="dialog-msg"></p>
+      <div class="dialog-btns">
+        <button id="confirm-cancel" class="ghost">Cancel</button>
+        <button id="confirm-ok" class="primary">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom prompt dialog -->
+  <div id="prompt-overlay" class="dialog-overlay" hidden>
+    <div class="dialog-card">
+      <p id="prompt-msg" class="dialog-msg"></p>
+      <input type="text" id="prompt-input" />
+      <div class="dialog-btns">
+        <button id="prompt-cancel" class="ghost">Cancel</button>
+        <button id="prompt-ok" class="primary">OK</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/app.js"></script>
 </body>
 </html>
