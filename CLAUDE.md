@@ -6,6 +6,9 @@
 **GitHub:** https://github.com/Morrow1ndy/wan-mobile
 **Deploy command:** `fly deploy` (from project root, requires `flyctl` authenticated)
 
+> **New session? Jump to [Changelog](#changelog) at the bottom first** — it's the
+> fastest way to see what's changed recently before reading anything else.
+
 ---
 
 ## How this document is maintained
