@@ -34,7 +34,12 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 @app.on_event("startup")
 async def _startup():
-    await asyncio.to_thread(_drive_startup_sync)
+    # Run the GCS sync in the background so uvicorn starts serving (and passes
+    # Fly's health check) immediately. A slow/large sync must never block boot;
+    # any video not yet on the volume is fetched on demand by serve_saved_file.
+    task = asyncio.create_task(asyncio.to_thread(_drive_startup_sync))
+    _TASKS.add(task)
+    task.add_done_callback(_TASKS.discard)
 
 
 def _drive_startup_sync():
