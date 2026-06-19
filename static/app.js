@@ -599,7 +599,10 @@ function applyConditions() {
 
 function collectParams() {
   const out = {};
-  $$("[data-key]").forEach((el) => {
+  // Explicitly select only form controls — buttons (e.g. the 🎲 seed-rand
+  // button) also carry data-key but their .value is "" which would overwrite
+  // the real input value and cause a backend 500.
+  $$("input[data-key], textarea[data-key], select[data-key]").forEach((el) => {
     out[el.dataset.key] = el.type === "checkbox" ? el.checked : el.value;
   });
   return out;
