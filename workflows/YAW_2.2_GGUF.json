@@ -1,7 +1,7 @@
 {
   "106": {
     "inputs": {
-      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "clip_name": "umt5_xxl_fp16.safetensors",
       "type": "wan",
       "device": "default"
     },
@@ -297,7 +297,7 @@
     "inputs": {
       "frame_rate": 16,
       "loop_count": 0,
-      "filename_prefix": "WANT2V/2026-06-18/001932_",
+      "filename_prefix": "WANT2V/2026-06-19/214932_",
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 19,
@@ -322,7 +322,7 @@
         0
       ],
       "loop_count": 0,
-      "filename_prefix": "output_2026-06-18/001932_IN",
+      "filename_prefix": "output_2026-06-19/214932_IN",
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 19,
@@ -405,6 +405,15 @@
     "class_type": "ImageSharpen",
     "_meta": {
       "title": "🔪 Image Sharpen"
+    }
+  },
+  "166": {
+    "inputs": {
+      "image": "429154407_913344670242095_52449854403438683_n.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Start Image"
     }
   },
   "168": {
@@ -780,7 +789,7 @@
         0
       ],
       "start_image": [
-        "361",
+        "166",
         0
       ]
     },
@@ -890,15 +899,6 @@
     "class_type": "UnetLoaderGGUF",
     "_meta": {
       "title": "低噪声-Unet Loader (GGUF)"
-    }
-  },
-  "361": {
-    "inputs": {
-      "image": "429154407_913344670242095_52449854403438683_n.jpg"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "Load Start Image"
     }
   }
 }

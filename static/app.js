@@ -517,11 +517,43 @@ $("#start-pod").addEventListener("click", async () => {
 // ---- generate: params form -------------------------------------------------
 let FIELDS = [];
 let CFG = {};
+let _selectedWorkflow = localStorage.getItem("wan_workflow") || "";
+
+// Convert filename to a short display label: "YAW_2.2_GGUF.json" → "GGUF"
+function _workflowLabel(filename) {
+  return filename.replace(/\.json$/i, "").split("_").pop().toUpperCase();
+}
+
+function renderWorkflowTabs(workflows, defaultWorkflow) {
+  const container = $("#workflow-tabs");
+  if (!container || workflows.length < 2) {
+    if (container) container.hidden = true;
+    return;
+  }
+  // Restore saved selection or fall back to default
+  if (!_selectedWorkflow || !workflows.includes(_selectedWorkflow)) {
+    _selectedWorkflow = defaultWorkflow || workflows[0];
+  }
+  container.innerHTML = workflows.map((wf) =>
+    `<button class="img-mode-tab${wf === _selectedWorkflow ? " active" : ""}"
+             data-workflow="${esc(wf)}">${esc(_workflowLabel(wf))}</button>`
+  ).join("");
+  container.querySelectorAll(".img-mode-tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      _selectedWorkflow = btn.dataset.workflow;
+      localStorage.setItem("wan_workflow", _selectedWorkflow);
+      container.querySelectorAll(".img-mode-tab").forEach(
+        (b) => b.classList.toggle("active", b === btn)
+      );
+    });
+  });
+}
 
 async function loadConfig() {
   const cfg = await getJSON("/api/config");
   CFG = cfg;
   FIELDS = cfg.fields || [];
+  renderWorkflowTabs(cfg.workflows || [], cfg.default_workflow || "");
   renderPodFilters();
   const promptField = FIELDS.find((f) => f.key === "positive");
   $("#prompt-field").innerHTML = promptField ? renderField(promptField) : "";
@@ -671,6 +703,7 @@ $("#generate").addEventListener("click", async () => {
   fd.append("pod_id", podId);
   fd.append("image", file);
   fd.append("params", JSON.stringify(params));
+  fd.append("workflow_file", _selectedWorkflow || "");
 
   try {
     const r = await fetch("/api/generate", { method: "POST", body: fd });

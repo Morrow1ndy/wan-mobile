@@ -251,6 +251,8 @@ async def get_config():
         "data_center": config.settings.data_center_id,
         "cloud_type": config.settings.cloud_type,
         "container_disk_gb": config.CONTAINER_DISK_GB,
+        "workflows": config.AVAILABLE_WORKFLOWS,
+        "default_workflow": config.settings.workflow_file,
     }
 
 
@@ -421,15 +423,19 @@ async def generate(
     pod_id: str = Form(...),
     image: UploadFile = File(...),
     params: str = Form("{}"),
+    workflow_file: str = Form(""),
 ):
     values = json.loads(params)
     url = rp.comfy_url(pod_id)
     if not await comfy.is_ready(url):
         raise HTTPException(409, "ComfyUI is not ready on this pod yet.")
 
+    # Validate workflow selection against known files (security: no path traversal)
+    chosen = workflow_file if workflow_file in config.AVAILABLE_WORKFLOWS else config.settings.workflow_file
+
     data = await image.read()
     image_name = await comfy.upload_image(url, data, image.filename or "input.png")
-    workflow = wf.build_workflow(values, image_name)
+    workflow = wf.build_workflow(values, image_name, chosen)
 
     client_id = uuid.uuid4().hex
     prompt_id = await comfy.queue_prompt(url, workflow, client_id)
@@ -442,6 +448,7 @@ async def generate(
         "started_at": None, "finished_at": None,
         "input_image": image_name,
         "preview": None, "preview_ct": None,
+        "workflow_file": chosen,
     }
     log_event(pod_id, "Generation queued")
     _persist_jobs()

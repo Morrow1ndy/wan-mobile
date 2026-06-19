@@ -10,6 +10,7 @@ If you re-export the workflow and node ids change, update the `node_id`s below.
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -59,6 +60,13 @@ class Settings:
 
 
 settings = Settings()
+
+# Workflow JSON files available for selection (ram_clear excluded — internal only)
+_WF_DIR = Path(__file__).resolve().parent.parent / "workflows"
+AVAILABLE_WORKFLOWS: list[str] = sorted([
+    f.name for f in _WF_DIR.glob("*.json")
+    if f.name != "ram_clear.json"
+])
 
 
 # ---------------------------------------------------------------------------

@@ -7,11 +7,12 @@ from pathlib import Path
 from . import config
 from .config import settings
 
-WF_PATH = Path(__file__).resolve().parent.parent / "workflows" / settings.workflow_file
+WF_DIR = Path(__file__).resolve().parent.parent / "workflows"
 
 
-def load_template() -> dict:
-    with open(WF_PATH, "r", encoding="utf-8") as f:
+def load_template(workflow_file: str | None = None) -> dict:
+    path = WF_DIR / (workflow_file or settings.workflow_file)
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -50,9 +51,9 @@ def _passes(field: dict, toggles: dict) -> bool:
     return _as_bool(toggles.get(cond["key"], True)) == bool(cond["is"])
 
 
-def build_workflow(values: dict, image_name: str) -> dict:
+def build_workflow(values: dict, image_name: str, workflow_file: str | None = None) -> dict:
     """Return a ready-to-queue workflow: template + user values + image."""
-    wf = load_template()
+    wf = load_template(workflow_file)
 
     _write(wf, {"node_id": config.IMAGE_NODE["node_id"],
                 "input": config.IMAGE_NODE["input"]}, image_name)
