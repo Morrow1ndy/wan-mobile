@@ -8,6 +8,25 @@
 
 ---
 
+## How this document is maintained
+
+This file is the **handoff document between Claude Code sessions and machines**.
+At the end of each working session (or before switching machines), the agent
+should update this file with a new entry under [Changelog](#changelog) summarising:
+- Features added or changed
+- Bugs fixed (include root cause, not just symptom)
+- Any new env vars, endpoints, or files introduced
+- Known issues discovered but not yet fixed
+
+Keep the entry concise — bullet points, not paragraphs. The architecture sections
+above should be updated in-place if something structural changes (don't just log
+it in the changelog and leave the architecture stale).
+
+**When starting a new session on a new machine:** read this whole file before
+writing any code. The changelog is the fastest way to catch up on recent work.
+
+---
+
 ## Architecture
 
 ```
@@ -274,3 +293,54 @@ python -m uvicorn app.main:app --reload --port 8000
   key → stored as the `GOOGLE_SERVICE_ACCOUNT_JSON` Fly secret).
 - **`saved_videos.json` is committed seed data but also the GCS source of truth** is
   `wan_saved_videos.json` — on startup the GCS copy overwrites the local one.
+
+---
+
+## Changelog
+
+Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-06-19
+
+**Features added:**
+- Input image cloud library (Upload/Library tab toggle, GCS-backed folder browser with breadcrumb nav, select + bulk delete, save-to-cloud flow with inline folder picker + create folder)
+- Saved video bulk unstar (select mode in Outputs → Saved section)
+- Custom login overlay (replaces browser native Basic Auth dialog; credentials in sessionStorage)
+- Custom `showConfirm()` / `showPrompt()` dialogs (replaced all `confirm()` / `window.prompt()` calls)
+- Fly.io storage meter on Generate + Outputs tabs (used/total bar, amber >75%, red >90%)
+- Live RAM chip in header (`RAM N%` from cgroup, polls every 5s while tab visible, pauses on hide)
+- Undo system — `captureUndo()` + `↩ Undo (N)` button in Prompt card; 10-step history, captured at template Use / preset Apply / details Apply / Generate
+- Param preset **Update** button (`PUT /api/param-presets/{index}`) — overwrites selected preset in place, mirrors template Update flow; "Save current" renamed "Save as new"
+- Output card redesign — grid tiles show thumbnail only with gradient duration/datetime overlay; expanded state has solid bottom panel with "← Back" + text-labelled action buttons; SVG play icon
+
+**Bugs fixed:**
+- OOM crash: 256MB → 512MB Fly machine; GCS client now cached (single instance); `serve_saved_file` streams via `FileResponse`; image thumbnails streamed in chunks via `iter_image()`
+- Startup blocking Fly health check: GCS sync moved to background `asyncio.Task`
+- iOS sticky bars drifting on scroll: removed `backdrop-filter` from all `position:fixed` bars (WebKit bug)
+- Library photos stacked on iOS: replaced `aspect-ratio:1` with `padding-bottom:100%` + absolutely-positioned inner content
+- Tile duration/datetime overlapping: `.out-cover` sets `line-height:0`; reset to `1.35` on `.tile-foot` so stacked text has height
+- Library path encoding: `encPath()` helper preserves `/` for FastAPI `{path:path}` params (plain `encodeURIComponent` was encoding `/` → `%2F` causing 404s)
+
+**Security hardened:**
+- `serve_saved_file`: path traversal guard (reject filenames with `/` or `..`)
+- `delete_image_folder`: rejects empty/`..` prefixes at endpoint and GCS client layer
+- `_saved_lock`: `asyncio.Lock()` serializes star/unstar read-modify-write + GCS push
+- GCS: explicit 60s timeout on every blob/list/delete/upload operation
+- Auth: backend no longer sends `WWW-Authenticate: Basic` header (prevents browser native dialog); only `/api/*` routes are protected (static files load without auth so login page can render)
+
+**New endpoints:**
+- `GET /api/storage` — Fly volume disk usage + saved_bytes
+- `GET /api/sysmetrics` — container RAM from cgroup / `/proc/meminfo`
+- `GET /api/images/browse?prefix=` — list GCS image library folders + files
+- `GET /api/images/file/{path:path}` — stream image from GCS
+- `POST /api/images/save` — upload image to GCS library
+- `DELETE /api/images/file/{path:path}` — delete single image
+- `DELETE /api/images/folder/{path:path}` — recursive folder delete (guarded)
+- `POST /api/images/folder` — create virtual GCS folder via `.keep` blob
+- `PUT /api/param-presets/{index}` — update existing preset in place
+
+**Known issues still open:**
+- `active_jobs.json` restored watcher polls terminated pod for up to 15 min
+- No auto-eviction of saved videos if volume fills
