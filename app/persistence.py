@@ -81,6 +81,19 @@ def save_param_presets(presets: list):
     _write(_PRESETS, presets)
 
 
+_ACTIVE_JOBS = _DATA / "active_jobs.json"
+
+
+def get_jobs() -> dict:
+    """Return persisted in-flight jobs (survives restart/auto-stop)."""
+    d = _read(_ACTIVE_JOBS, {})
+    return d if isinstance(d, dict) else {}
+
+
+def save_jobs(jobs: dict):
+    _write(_ACTIVE_JOBS, jobs)
+
+
 def get_saved() -> list:
     return _read(_SAVED_META, [])
 

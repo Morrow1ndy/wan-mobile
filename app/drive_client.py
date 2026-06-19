@@ -11,6 +11,10 @@ import os
 _METADATA_BLOB = "wan_saved_videos.json"
 _VIDEO_PREFIX = "saved_videos/"
 
+# Hard ceiling on any single GCS network call so a hung connection can't wedge
+# a worker thread forever. Applied to every blob/list operation below.
+_TIMEOUT = 60
+
 
 def _enabled() -> bool:
     return bool(os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON") and
@@ -39,17 +43,19 @@ def upload_video(filename: str, data: bytes):
     if not _enabled():
         return
     _bucket().blob(_VIDEO_PREFIX + filename).upload_from_string(
-        data, content_type="video/mp4")
+        data, content_type="video/mp4", timeout=_TIMEOUT)
 
 
 def download_video(filename: str) -> bytes:
     """Download a video from GCS by its filename."""
-    return _bucket().blob(_VIDEO_PREFIX + filename).download_as_bytes()
+    return _bucket().blob(_VIDEO_PREFIX + filename).download_as_bytes(
+        timeout=_TIMEOUT)
 
 
 def download_video_to_file(filename: str, dest_path) -> None:
     """Stream a video from GCS directly to a file path (avoids RAM buffering)."""
-    _bucket().blob(_VIDEO_PREFIX + filename).download_to_filename(str(dest_path))
+    _bucket().blob(_VIDEO_PREFIX + filename).download_to_filename(
+        str(dest_path), timeout=_TIMEOUT)
 
 
 def delete_video(filename: str):
@@ -57,7 +63,7 @@ def delete_video(filename: str):
     if not _enabled():
         return
     try:
-        _bucket().blob(_VIDEO_PREFIX + filename).delete()
+        _bucket().blob(_VIDEO_PREFIX + filename).delete(timeout=_TIMEOUT)
     except Exception:
         pass
 
@@ -68,7 +74,7 @@ def upload_metadata(metadata_list: list):
         return
     data = json.dumps(metadata_list, indent=2, ensure_ascii=False).encode()
     _bucket().blob(_METADATA_BLOB).upload_from_string(
-        data, content_type="application/json")
+        data, content_type="application/json", timeout=_TIMEOUT)
 
 
 def download_metadata() -> list | None:
@@ -79,9 +85,9 @@ def download_metadata() -> list | None:
     if not _enabled():
         return None
     blob = _bucket().blob(_METADATA_BLOB)
-    if not blob.exists():
+    if not blob.exists(timeout=_TIMEOUT):
         return None
-    return json.loads(blob.download_as_bytes())
+    return json.loads(blob.download_as_bytes(timeout=_TIMEOUT))
 
 
 # ---------- input image library ----------
@@ -99,7 +105,7 @@ def list_image_prefix(prefix: str = "") -> dict:
         return {"folders": [], "files": []}
     bkt = _bucket()
     full_prefix = _IMAGE_PREFIX + prefix
-    iterator = bkt.list_blobs(prefix=full_prefix, delimiter="/")
+    iterator = bkt.list_blobs(prefix=full_prefix, delimiter="/", timeout=_TIMEOUT)
     blobs = list(iterator)
     files = []
     for blob in blobs:
@@ -121,11 +127,11 @@ def upload_image(path: str, data: bytes, content_type: str = "image/jpeg"):
     if not _enabled():
         return
     _bucket().blob(_IMAGE_PREFIX + path).upload_from_string(
-        data, content_type=content_type)
+        data, content_type=content_type, timeout=_TIMEOUT)
 
 
 def download_image(path: str) -> bytes:
-    return _bucket().blob(_IMAGE_PREFIX + path).download_as_bytes()
+    return _bucket().blob(_IMAGE_PREFIX + path).download_as_bytes(timeout=_TIMEOUT)
 
 
 def iter_image(path: str, chunk_size: int = 262144):
@@ -135,7 +141,7 @@ def iter_image(path: str, chunk_size: int = 262144):
     loads many thumbnails at once). Raises if the blob doesn't exist.
     """
     blob = _bucket().blob(_IMAGE_PREFIX + path)
-    with blob.open("rb") as fh:
+    with blob.open("rb", timeout=_TIMEOUT) as fh:
         while True:
             chunk = fh.read(chunk_size)
             if not chunk:
@@ -147,19 +153,26 @@ def delete_image(path: str):
     if not _enabled():
         return
     try:
-        _bucket().blob(_IMAGE_PREFIX + path).delete()
+        _bucket().blob(_IMAGE_PREFIX + path).delete(timeout=_TIMEOUT)
     except Exception:
         pass
 
 
 def delete_image_folder(prefix: str):
-    """Delete every object under input_images/{prefix}."""
+    """Delete every object under input_images/{prefix}.
+
+    Refuses an empty/whitespace prefix so a bad request can never wipe the
+    entire library (deleting all of input_images/).
+    """
     if not _enabled():
         return
+    prefix = (prefix or "").strip()
+    if not prefix or prefix == "/":
+        raise ValueError("refusing to delete with an empty folder prefix")
     bkt = _bucket()
-    for blob in list(bkt.list_blobs(prefix=_IMAGE_PREFIX + prefix)):
+    for blob in list(bkt.list_blobs(prefix=_IMAGE_PREFIX + prefix, timeout=_TIMEOUT)):
         try:
-            blob.delete()
+            blob.delete(timeout=_TIMEOUT)
         except Exception:
             pass
 
@@ -169,4 +182,4 @@ def create_image_folder(path: str):
     if not _enabled():
         return
     _bucket().blob(_IMAGE_PREFIX + path + ".keep").upload_from_string(
-        b"", content_type="application/octet-stream")
+        b"", content_type="application/octet-stream", timeout=_TIMEOUT)

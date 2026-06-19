@@ -40,6 +40,10 @@ async def _startup():
     task = asyncio.create_task(asyncio.to_thread(_drive_startup_sync))
     _TASKS.add(task)
     task.add_done_callback(_TASKS.discard)
+    # Re-attach to generations that were in flight when this process last
+    # stopped (e.g. Fly auto-stop). The work continues on the RunPod pod; we
+    # just resume watching it so the UI shows progress and the result resolves.
+    _restore_jobs()
 
 
 def _drive_startup_sync():
@@ -96,14 +100,62 @@ async def basic_auth(request: Request, call_next):
                 "WWW-Authenticate": 'Basic realm="Wan Mobile"'})
     return await call_next(request)
 
-# In-memory job tracking (good enough for a single user). Restarting the
-# server forgets in-flight jobs; finished videos still live on the pod.
+# In-memory job tracking (good enough for a single user). Mirrored to disk so
+# in-flight jobs survive a restart / Fly auto-stop (see _persist_jobs).
 JOBS: dict[str, dict] = {}
 _TASKS: set[asyncio.Task] = set()  # keeps watcher tasks alive until done
+
+# Serializes read-modify-write of the saved-videos metadata + its GCS upload so
+# concurrent star/unstar calls can't clobber each other's changes.
+_saved_lock = asyncio.Lock()
 
 # Per-pod activity log + last-known ComfyUI readiness (app-level, in memory).
 POD_EVENTS: dict[str, list[dict]] = {}
 POD_READY: dict[str, bool] = {}
+
+# Job fields that are JSON-safe to persist (omits raw preview bytes).
+_JOB_PERSIST_KEYS = (
+    "status", "progress", "max", "node", "node_title", "node_titles",
+    "pod_id", "video", "started_at", "finished_at", "input_image", "error",
+)
+
+
+def _persist_jobs():
+    """Write running (and very-recently-finished) jobs to the volume.
+
+    Finished jobs naturally age out: only the ones still relevant to the UI
+    are kept, so the file stays small and stale jobs don't resurrect.
+    """
+    now = time.time()
+    slim = {}
+    for pid, j in JOBS.items():
+        fin = j.get("finished_at")
+        if j.get("status") == "running" or (fin and now - fin < 60):
+            slim[pid] = {k: j.get(k) for k in _JOB_PERSIST_KEYS}
+    try:
+        ps.save_jobs(slim)
+    except Exception:
+        pass
+
+
+def _restore_jobs():
+    """Reload persisted jobs and resume watching any still in flight."""
+    try:
+        saved = ps.get_jobs()
+    except Exception:
+        return
+    for pid, j in saved.items():
+        j.setdefault("preview", None)
+        j.setdefault("preview_ct", None)
+        j.setdefault("node_titles", {})
+        JOBS[pid] = j
+    for pid, j in list(JOBS.items()):
+        if j.get("status") == "running" and j.get("pod_id"):
+            url = rp.comfy_url(j["pod_id"])
+            client_id = uuid.uuid4().hex
+            task = asyncio.create_task(_watch(url, client_id, pid))
+            _TASKS.add(task)
+            task.add_done_callback(_TASKS.discard)
 
 
 def log_event(pod_id: str, msg: str):
@@ -303,6 +355,7 @@ async def generate(
         "preview": None, "preview_ct": None,
     }
     log_event(pod_id, "Generation queued")
+    _persist_jobs()
     task = asyncio.create_task(_watch(url, client_id, prompt_id))
     _TASKS.add(task)
     task.add_done_callback(_TASKS.discard)
@@ -455,6 +508,7 @@ async def cancel_job(pod_id: str, prompt_id: str):
         job["status"] = "error"
         job["error"] = "Cancelled"
         job["finished_at"] = time.time()
+        _persist_jobs()
     return {"ok": True}
 
 
@@ -496,12 +550,14 @@ async def star_video(pod_id: str, prompt_id: str, payload: dict = Body(default={
     except Exception as e:
         log_event(pod_id, f"GCS upload failed: {e}")
 
-    ps.upsert_saved(meta)
-
-    try:
-        await asyncio.to_thread(drive.upload_metadata, ps.get_saved())
-    except Exception:
-        pass
+    # Serialize the metadata read-modify-write + its GCS push so a concurrent
+    # star/unstar can't overwrite this change with a stale list.
+    async with _saved_lock:
+        ps.upsert_saved(meta)
+        try:
+            await asyncio.to_thread(drive.upload_metadata, ps.get_saved())
+        except Exception:
+            pass
 
     log_event(pod_id, f"Video starred: {local_name}")
     return meta
@@ -514,19 +570,20 @@ async def list_saved():
 
 @app.delete("/api/saved/{prompt_id}")
 async def unstar_video(prompt_id: str):
-    item = ps.remove_saved(prompt_id)
-    if item:
-        try:
-            await asyncio.to_thread(drive.delete_video, item["filename"])
-        except Exception:
-            pass
-        try:
-            await asyncio.to_thread(drive.upload_metadata, ps.get_saved())
-        except Exception:
-            pass
-        p = ps.SAVED_DIR / item["filename"]
-        if p.exists():
-            p.unlink()
+    async with _saved_lock:
+        item = ps.remove_saved(prompt_id)
+        if item:
+            try:
+                await asyncio.to_thread(drive.delete_video, item["filename"])
+            except Exception:
+                pass
+            try:
+                await asyncio.to_thread(drive.upload_metadata, ps.get_saved())
+            except Exception:
+                pass
+            p = ps.SAVED_DIR / item["filename"]
+            if p.exists():
+                p.unlink()
     return {"ok": True}
 
 
@@ -609,7 +666,12 @@ async def delete_image_file(path: str):
 
 @app.delete("/api/images/folder/{path:path}")
 async def delete_image_folder(path: str):
-    await asyncio.to_thread(drive.delete_image_folder, path)
+    # Guard against a request that would wipe the whole library: require a
+    # concrete, traversal-free subfolder.
+    clean = (path or "").strip().strip("/")
+    if not clean or ".." in clean.split("/"):
+        raise HTTPException(400, "invalid folder path")
+    await asyncio.to_thread(drive.delete_image_folder, clean + "/")
     return {"ok": True}
 
 
@@ -660,6 +722,7 @@ async def _watch(url: str, client_id: str, prompt_id: str):
                 if mtype == "execution_start":
                     if d.get("prompt_id") == prompt_id and job["started_at"] is None:
                         job["started_at"] = time.time()
+                        _persist_jobs()
                 elif mtype == "progress":
                     if job["started_at"] is None:
                         job["started_at"] = time.time()
@@ -677,6 +740,7 @@ async def _watch(url: str, client_id: str, prompt_id: str):
                     job["status"], job["error"] = "error", d
                     job["finished_at"] = time.time()
                     log_event(job["pod_id"], "Generation error (ComfyUI)")
+                    _persist_jobs()
                     return
     except Exception:
         pass  # fall through to history-based resolution
@@ -698,6 +762,7 @@ async def _watch(url: str, client_id: str, prompt_id: str):
             job["status"], job["error"] = "error", status
             job["finished_at"] = time.time()
             log_event(job["pod_id"], "Generation error (ComfyUI)")
+            _persist_jobs()
             return
         if outputs or status.get("completed"):
             job["video"] = _find_video(outputs)
@@ -711,12 +776,14 @@ async def _watch(url: str, client_id: str, prompt_id: str):
                              job["finished_at"])
             log_event(job["pod_id"],
                       "Video ready ✓" if job["video"] else "Finished (no video output)")
+            _persist_jobs()
             return
         if time.monotonic() > deadline:
             job["status"] = "error"
             job["error"] = "Timed out waiting for ComfyUI to finish."
             job["finished_at"] = time.time()
             log_event(job["pod_id"], "Generation timed out")
+            _persist_jobs()
             return
         await asyncio.sleep(2)
 
