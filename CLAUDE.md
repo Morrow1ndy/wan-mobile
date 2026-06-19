@@ -308,6 +308,29 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-20
+
+**Features added:**
+- Seed control in params panel — `_seed` promoted from hidden const to visible input with 🎲 randomise button; `0` = randomise each run, positive int = fixed seed
+- Seed auto-captured after generation — `_backfill_seed()` extracts the actual seed used (including randomised ones) from ComfyUI history (node `158`) and overwrites the `_seed: 0` placeholder in saved params
+- "Use this seed" button in generation details overlay — appears inline on the Seed row only when a real seed was captured; copies just the seed to the Generate form and switches tab. Old videos (seed not captured) show `"— (not captured)"` instead of `"0"`
+- Param preset **Update** button — `PUT /api/param-presets/{index}` endpoint + Update button in params tpl-actions, mirrors template Update flow; "Save current" renamed "Save as new"
+- Undo system — `captureUndo()` snapshots both prompt + all params before each automated change (template Use, preset Apply, details Apply-to-Generate, Generate); `↩ Undo (N)` button in Prompt card header, 10-step history
+
+**Bugs fixed:**
+- iOS/mobile: all videos and images failed to load (401) while desktop worked — root cause: `<video src>` and `<img src>` are browser-native fetches that bypass `apiFetch()` and never send the `Authorization` header; iOS Chrome doesn't reuse JS-injected auth for native media requests (desktop Chrome does via credential caching). Fix: auth middleware now also accepts a `wan_auth` httponly cookie; `POST /api/auth/cookie` sets it on login and on every page load; browser automatically includes it on all same-origin requests including media elements
+- Long filename in upload button stretched the entire layout — added `overflow: hidden` to `.filebtn` and `text-overflow: ellipsis; white-space: nowrap` to `#image-label`
+- iOS Chrome tab buttons show dark background on all tabs during scroll — same `backdrop-filter` on `position: sticky` compositing bug as the sticky bars; removed `backdrop-filter` from `.tabs`, replaced with solid-top gradient
+- Tile duration/datetime text overlapping — `.out-cover` sets `line-height: 0`; this cascaded into `.tile-foot` text spans collapsing to zero height; reset `line-height: 1.35` on `.tile-foot`
+
+**New endpoints:**
+- `PUT /api/param-presets/{index}` — update existing preset in place
+- `POST /api/auth/cookie` — set httponly auth cookie for media element authentication
+
+**iOS/mobile CSS rules documented in CLAUDE.md** — three named rules covering `backdrop-filter` on fixed/sticky elements, `aspect-ratio` with img children, and text truncation in constrained containers
+
+---
+
 ### 2026-06-19
 
 **Features added:**
