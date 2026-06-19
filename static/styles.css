@@ -432,6 +432,11 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .log-line .ts { color: var(--faint); flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .log-line .msg { color: var(--text); word-break: break-word; }
 
+/* ---- seed input row (input + randomize button) ---- */
+.seed-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.seed-row input { flex: 1; margin-top: 0; }
+.seed-rand { flex-shrink: 0; font-size: 16px; padding: 8px 10px; }
+
 /* ---- prompt / params card heading row ---- */
 .card-h-row {
   display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;

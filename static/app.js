@@ -55,6 +55,8 @@ document.getElementById("login-btn").addEventListener("click", async () => {
   if (r.status === 401) { $("#login-err").hidden = false; return; }
   _authHeader = header;
   sessionStorage.setItem("wan_auth", header);
+  // Set httponly cookie so <video src> / <img src> requests also authenticate
+  await fetch("/api/auth/cookie", { method: "POST", headers: { Authorization: header } });
   hideLoginOverlay();
   init();
 });
@@ -533,6 +535,13 @@ async function loadConfig() {
   $$("textarea").forEach((ta) =>
     ta.addEventListener("input", resizeTextareas)
   );
+  // 🎲 randomise seed button
+  $("#params").addEventListener("click", (e) => {
+    const btn = e.target.closest(".seed-rand");
+    if (!btn) return;
+    const inp = document.querySelector(`input[data-key="${btn.dataset.key}"]`);
+    if (inp) inp.value = Math.floor(Math.random() * 2 ** 32);
+  });
 }
 
 function renderField(f) {
@@ -553,7 +562,10 @@ function renderField(f) {
     inner = `<label>${f.label}<select data-key="${f.key}">${opts}</select></label>`;
   } else if (f.type === "seed") {
     inner = `<label>${f.label}
-      <input type="text" inputmode="numeric" data-key="${f.key}" value="${f.default ?? 0}" /></label>`;
+      <div class="seed-row">
+        <input type="text" inputmode="numeric" data-key="${f.key}" value="${f.default ?? 0}" placeholder="0 = random each run" />
+        <button type="button" class="ghost small seed-rand" data-key="${f.key}" title="Generate a random seed now">🎲</button>
+      </div></label>`;
   } else {
     const step = f.step ?? 1;
     const labelRow = f.label
@@ -942,9 +954,16 @@ async function showDetails(promptId) {
   const rows = sorted.map(([key, val]) => {
     const field = fields.find((f) => f.key === key);
     const label = field ? field.label : key.replace(/_/g, " ");
+    const isSeed = key === "_seed";
+    const seedNum = isSeed ? Number(val) : 0;
+    const display = isSeed && seedNum <= 0 ? "— (not captured)" : esc(String(val));
+    const useBtn = isSeed && seedNum > 0
+      ? `<button class="ghost small detail-use-seed" data-seed="${seedNum}" style="margin-top:6px;font-size:12px">↑ Use this seed</button>`
+      : "";
     return `<div class="detail-row">
       <span class="detail-key">${esc(label)}</span>
-      <span class="detail-val">${esc(String(val))}</span>
+      <span class="detail-val">${display}</span>
+      ${useBtn}
     </div>`;
   }).join("");
 
@@ -969,7 +988,15 @@ async function showDetails(promptId) {
     toast("Params applied ✓");
   });
   overlay.addEventListener("click", (e) => {
-    if (e.target === overlay || e.target.closest(".details-close")) overlay.remove();
+    if (e.target === overlay || e.target.closest(".details-close")) { overlay.remove(); return; }
+    const seedBtn = e.target.closest(".detail-use-seed");
+    if (seedBtn) {
+      overlay.remove();
+      const inp = document.querySelector('input[data-key="_seed"]');
+      if (inp) inp.value = seedBtn.dataset.seed;
+      switchTab("generate");
+      toast(`Seed ${seedBtn.dataset.seed} applied`);
+    }
   });
   document.body.appendChild(overlay);
 }
@@ -1783,6 +1810,12 @@ async function loadStorage() {
 $("#refresh").addEventListener("click", loadPods);
 
 async function init() {
+  // Refresh the auth cookie on every page load so browser-native media
+  // requests (<video src>, <img src>) can authenticate without JS headers.
+  if (_authHeader) {
+    fetch("/api/auth/cookie", { method: "POST", headers: { Authorization: _authHeader } })
+      .catch(() => {});
+  }
   try {
     await loadConfig();
   } catch (e) {

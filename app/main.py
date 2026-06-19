@@ -81,6 +81,34 @@ def _drive_startup_sync():
 # every request must carry matching Basic credentials. Unset => open (local).
 _AUTH_USER = os.getenv("WAN_AUTH_USER", "")
 _AUTH_PASS = os.getenv("WAN_AUTH_PASS", "")
+# On Fly.io connections are always HTTPS; on localhost they're HTTP.
+_SECURE_COOKIE = bool(os.getenv("FLY_APP_NAME"))
+
+
+def _check_auth(request: Request) -> bool:
+    """Accept either the Authorization header or the wan_auth cookie.
+
+    <video src> and <img src> are browser-native requests that bypass our
+    JS fetch wrapper and therefore never carry the Authorization header.
+    Setting an httponly cookie in parallel lets the browser include credentials
+    automatically on all same-origin requests, including media elements.
+    """
+    candidates: list[str] = []
+    header = request.headers.get("authorization", "")
+    if header.startswith("Basic "):
+        candidates.append(header[6:])
+    cookie = request.cookies.get("wan_auth", "")
+    if cookie:
+        candidates.append(cookie)
+    for cred_b64 in candidates:
+        try:
+            user, _, pw = base64.b64decode(cred_b64).decode().partition(":")
+            if (secrets.compare_digest(user, _AUTH_USER)
+                    and secrets.compare_digest(pw, _AUTH_PASS)):
+                return True
+        except Exception:
+            pass
+    return False
 
 
 @app.middleware("http")
@@ -88,24 +116,41 @@ async def basic_auth(request: Request, call_next):
     # Only protect API routes. Static files (including the login page itself)
     # are served without auth so the custom login overlay can load.
     if _AUTH_USER and _AUTH_PASS and request.url.path.startswith("/api/"):
-        header = request.headers.get("authorization", "")
-        ok = False
-        if header.startswith("Basic "):
-            try:
-                user, _, pw = base64.b64decode(header[6:]).decode().partition(":")
-                ok = (secrets.compare_digest(user, _AUTH_USER)
-                      and secrets.compare_digest(pw, _AUTH_PASS))
-            except Exception:
-                ok = False
-        if not ok:
-            # No WWW-Authenticate header — that's what triggers the browser's
-            # native credential dialog. Without it the 401 reaches our JS.
+        if not _check_auth(request):
             return Response(
                 status_code=401,
                 content='{"error":"unauthorized"}',
                 media_type="application/json",
             )
     return await call_next(request)
+
+
+@app.post("/api/auth/cookie")
+async def set_auth_cookie(request: Request):
+    """Persist auth as an httponly cookie so browser media elements work.
+
+    Called by the frontend immediately after login and on every page load
+    that has stored credentials. The middleware already verified the request,
+    so we just extract the credential string and bake it into a cookie that
+    the browser will include automatically on all same-origin requests
+    (including <video src> and <img src> which can't carry custom headers).
+    """
+    cred_b64 = ""
+    header = request.headers.get("authorization", "")
+    if header.startswith("Basic "):
+        cred_b64 = header[6:]
+    elif request.cookies.get("wan_auth"):
+        cred_b64 = request.cookies["wan_auth"]
+    response = JSONResponse({"ok": True})
+    response.set_cookie(
+        key="wan_auth",
+        value=cred_b64,
+        httponly=True,
+        secure=_SECURE_COOKIE,
+        samesite="strict",
+        max_age=30 * 24 * 3600,  # 30 days; refreshed on every page load
+    )
+    return response
 
 # In-memory job tracking (good enough for a single user). Mirrored to disk so
 # in-flight jobs survive a restart / Fly auto-stop (see _persist_jobs).
@@ -829,6 +874,7 @@ async def _watch(url: str, client_id: str, prompt_id: str):
                 ps.save_stat(prompt_id,
                              round(job["finished_at"] - job["started_at"]),
                              job["finished_at"])
+            _backfill_seed(prompt_id, entry)
             log_event(job["pod_id"],
                       "Video ready ✓" if job["video"] else "Finished (no video output)")
             _persist_jobs()
@@ -841,6 +887,31 @@ async def _watch(url: str, client_id: str, prompt_id: str):
             _persist_jobs()
             return
         await asyncio.sleep(2)
+
+
+def _backfill_seed(prompt_id: str, history_entry: dict):
+    """Extract the actual seed used from ComfyUI history and persist it.
+
+    ComfyUI always records the concrete seed (even randomised ones) in the
+    queued workflow, so we can read it back and overwrite the _seed: 0
+    placeholder that was saved at queue time.  Node "158" is the seed source
+    node (see config.py PARAM_FIELDS _seed targets).
+    """
+    try:
+        prompt = history_entry.get("prompt")
+        if not (isinstance(prompt, list) and len(prompt) >= 3):
+            return
+        wf = prompt[2]
+        if not isinstance(wf, dict):
+            return
+        seed_val = (wf.get("158", {}).get("inputs") or {}).get("seed")
+        if not seed_val or int(seed_val) <= 0:
+            return
+        params = ps.get_params(prompt_id) or {}
+        params["_seed"] = int(seed_val)
+        ps.save_params(prompt_id, params)
+    except Exception:
+        pass
 
 
 def _find_video(outputs: dict):

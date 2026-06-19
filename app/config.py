@@ -258,8 +258,8 @@ PARAM_FIELDS = [
      "default": "beta57",
      "targets": [{"node_id": "129", "input": "scheduler"}]},
 
-    # ---- seed: auto-randomized every run, no UI control ----
-    {"key": "_seed", "type": "const", "fmt": "seed", "value": 0,
+    # ---- seed: 0 (or blank) = randomize each run; positive int = fixed seed ----
+    {"key": "_seed", "label": "Seed", "type": "seed", "fmt": "seed", "default": 0,
      "targets": [{"node_id": "158", "input": "seed"}]},
 ]
 
