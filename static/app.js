@@ -139,6 +139,20 @@ function toast(msg, isErr = false) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), isErr ? 5000 : 2800);
 }
+// Like Gmail "undo send" — toast with an Undo button that calls onUndo() if
+// tapped before the timeout. Useful for reversible server-side actions.
+function toastUndo(msg, onUndo, duration = 5000) {
+  const t = document.createElement("div");
+  t.className = "toast toast-undo";
+  t.innerHTML = `<span>${esc(msg)}</span><button class="toast-undo-btn">Undo</button>`;
+  document.body.appendChild(t);
+  let gone = false;
+  const dismiss = () => { if (!gone) { gone = true; t.remove(); } };
+  const timer = setTimeout(dismiss, duration);
+  t.querySelector(".toast-undo-btn").addEventListener("click", () => {
+    clearTimeout(timer); dismiss(); onUndo();
+  });
+}
 const fmtCost = (c) => (c == null ? "" : `$${Number(c).toFixed(2)}/hr`);
 function fmtUptime(s) {
   if (!s) return "";
@@ -170,7 +184,14 @@ function switchTab(tab) {
   if (genBar) genBar.style.display = tab === "generate" ? "" : "none";
   if (tab === "outputs") loadOutputs();
   else { stopOutTimer(); if (_selectMode) exitSelectMode(); }
-  if (tab === "generate") resizeTextareas();
+  if (tab === "generate") {
+    resizeTextareas();
+    // Re-sync workflow tab active states — on iOS touching other elements
+    // can make the button look unselected even though the class is still set.
+    $$("#workflow-tabs .img-mode-tab").forEach(
+      (b) => b.classList.toggle("active", b.dataset.workflow === _selectedWorkflow)
+    );
+  }
   if (tab === "generate" || tab === "outputs") loadStorage();
 }
 $$(".tabs button").forEach((b) =>
@@ -1304,11 +1325,19 @@ $("#tpl-update").addEventListener("click", async () => {
   const ta = document.querySelector('textarea[data-key="positive"]');
   if (!ta || !ta.value.trim()) return toast("Prompt is empty", true);
   const idx = Number(sel.value);
+  const oldText = _templates[idx]?.text;
+  const name = _templates[idx]?.name;
   try {
     _templates = await putJSON(`/api/templates/${idx}`, { text: ta.value.trim() });
     renderTemplateSelect();
     sel.value = String(idx);
-    toast(`"${_templates[idx]?.name}" updated`);
+    toastUndo(`"${name}" updated`, async () => {
+      try {
+        _templates = await putJSON(`/api/templates/${idx}`, { text: oldText });
+        renderTemplateSelect(); sel.value = String(idx);
+        toast(`"${name}" reverted`);
+      } catch (e) { toast(e.message, true); }
+    });
   } catch (e) { toast(e.message, true); }
 });
 
@@ -1330,10 +1359,17 @@ $("#tpl-del").addEventListener("click", async () => {
   if (!sel || sel.value === "") return toast("Select a template first", true);
   const idx = Number(sel.value);
   if (!await showConfirm(`Delete template "${_templates[idx]?.name}"?`, { okText: "Delete", danger: true })) return;
+  const deleted = { name: _templates[idx].name, text: _templates[idx].text };
   try {
     _templates = await deleteJSON(`/api/templates/${idx}`);
     renderTemplateSelect();
-    toast("Template deleted");
+    toastUndo(`"${deleted.name}" deleted`, async () => {
+      try {
+        _templates = await postJSON("/api/templates", { name: deleted.name, text: deleted.text });
+        renderTemplateSelect();
+        toast(`"${deleted.name}" restored`);
+      } catch (e) { toast(e.message, true); }
+    });
   } catch (e) { toast(e.message, true); }
 });
 
@@ -1406,11 +1442,18 @@ $("#preset-update").addEventListener("click", async () => {
   const idx = Number(sel.value);
   const name = _presets[idx]?.name;
   if (!name) return;
+  const oldParams = _presets[idx]?.params;
   try {
     _presets = await putJSON(`/api/param-presets/${idx}`, { name, params: collectParams() });
     renderPresetSelect();
     sel.value = String(idx);
-    toast(`"${name}" updated`);
+    toastUndo(`"${name}" updated`, async () => {
+      try {
+        _presets = await putJSON(`/api/param-presets/${idx}`, { name, params: oldParams });
+        renderPresetSelect(); sel.value = String(idx);
+        toast(`"${name}" reverted`);
+      } catch (e) { toast(e.message, true); }
+    });
   } catch (e) { toast(e.message, true); }
 });
 
@@ -1419,10 +1462,17 @@ $("#preset-del").addEventListener("click", async () => {
   if (!sel || sel.value === "") return toast("Select a preset first", true);
   const idx = Number(sel.value);
   if (!await showConfirm(`Delete preset "${_presets[idx]?.name}"?`, { okText: "Delete", danger: true })) return;
+  const deleted = { name: _presets[idx].name, params: _presets[idx].params };
   try {
     _presets = await deleteJSON(`/api/param-presets/${idx}`);
     renderPresetSelect();
-    toast("Preset deleted");
+    toastUndo(`"${deleted.name}" deleted`, async () => {
+      try {
+        _presets = await postJSON("/api/param-presets", { name: deleted.name, params: deleted.params });
+        renderPresetSelect();
+        toast(`"${deleted.name}" restored`);
+      } catch (e) { toast(e.message, true); }
+    });
   } catch (e) { toast(e.message, true); }
 });
 
