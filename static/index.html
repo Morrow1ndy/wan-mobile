@@ -122,7 +122,10 @@
     </div>
 
     <div class="card">
-      <h2>Prompt</h2>
+      <div class="card-h-row">
+        <h2>Prompt</h2>
+        <button id="revert-btn" class="ghost small" hidden title="Undo last template / preset / generate change">↩ Undo</button>
+      </div>
       <select id="tpl-select" class="tpl-select"><option value="">— select a template —</option></select>
       <div class="tpl-actions">
         <button class="ghost small" id="tpl-use">Use</button>
@@ -138,7 +141,8 @@
       <select id="preset-select" class="tpl-select"><option value="">— saved presets —</option></select>
       <div class="tpl-actions">
         <button class="ghost small" id="preset-apply">Apply</button>
-        <button class="ghost small" id="preset-save">Save current</button>
+        <button class="ghost small" id="preset-update">Update</button>
+        <button class="ghost small" id="preset-save">Save as new</button>
         <button class="ghost small" id="preset-del">Delete</button>
       </div>
       <div id="params"></div>

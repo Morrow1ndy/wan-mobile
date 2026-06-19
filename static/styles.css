@@ -125,16 +125,22 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .out-cover { position: relative; cursor: pointer; line-height: 0; background: #000;
   aspect-ratio: 9/16; overflow: hidden; }
 .cover-img { width: 100%; height: 100%; display: block; object-fit: cover; }
-.play-badge { position: absolute; inset: 0; margin: auto; width: 34px; height: 34px;
-  display: flex; align-items: center; justify-content: center; border-radius: 50%;
-  background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 13px; padding-left: 2px; }
+.play-badge {
+  position: absolute; inset: 0; margin: auto;
+  width: 46px; height: 46px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: rgba(11, 12, 14, 0.58);
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
 
 /* ---- tile meta overlay (gradient strip at bottom) ---- */
 .tile-foot {
   position: absolute; bottom: 0; left: 0; right: 0;
   padding: 26px 7px 6px;
   background: linear-gradient(transparent, rgba(0,0,0,0.62));
-  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
   pointer-events: none;
 }
 .tile-dur { font-size: 10px; color: rgba(255,255,255,0.9); font-variant-numeric: tabular-nums; }
@@ -418,10 +424,16 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .log-line .ts { color: var(--faint); flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .log-line .msg { color: var(--text); word-break: break-word; }
 
+/* ---- prompt / params card heading row ---- */
+.card-h-row {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;
+}
+.card-h-row h2 { margin: 0; }
+
 /* ---- prompt templates ---- */
 .tpl-select { width: 100%; margin-bottom: 10px; }
-.tpl-actions { display: flex; gap: 8px; }
-.tpl-actions button { flex: 1; }
+.tpl-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.tpl-actions button { flex: 1; min-width: 0; }
 
 /* ---- sticky bottom bars ----
    NOTE: no backdrop-filter here. On iOS WebKit, backdrop-filter on a

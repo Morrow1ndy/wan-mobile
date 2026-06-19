@@ -643,6 +643,7 @@ $("#generate").addEventListener("click", async () => {
   btn.disabled = true;
   btn.textContent = "Submitting…";
 
+  captureUndo("before this generation");
   const params = collectParams();
   postJSON("/api/last-params", params).catch(() => {});
 
@@ -759,6 +760,8 @@ const esc = (s) =>
 const encPath = (p) => String(p ?? "").split("/").map(encodeURIComponent).join("/");
 // folder glyph that matches the UI (stroked, currentColor)
 const FOLDER_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
+// play icon: filled triangle, offset 2px right to optically centre inside the circle
+const PLAY_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style="margin-left:2px"><path d="M8 5v14l11-7z"/></svg>`;
 
 function fmtElapsed(sec) {
   sec = Math.max(0, Math.floor(sec));
@@ -835,7 +838,7 @@ function renderSavedOutput(it) {
               data-pid="${esc(it.prompt_id)}">
     <div class="out-cover">
       <video class="cover-img" preload="metadata" muted src="${url}#t=0.1"></video>
-      <span class="play-badge">&#9658;</span>
+      <span class="play-badge">${PLAY_SVG}</span>
       <video class="tile-video" data-src="${url}" playsinline preload="none" controls></video>
       <div class="tile-foot">
         ${dur ? `<span class="tile-dur">⏱ ${dur}</span>` : ""}
@@ -875,7 +878,7 @@ function renderOutput(podId, it) {
               data-file="${esc(it.filename)}" data-sub="${esc(it.subfolder||"")}" data-ftype="${esc(it.type||"output")}">
     <div class="out-cover">
       ${cover}
-      <span class="play-badge">&#9658;</span>
+      <span class="play-badge">${PLAY_SVG}</span>
       <video class="tile-video" data-src="${url}" playsinline preload="none" controls></video>
       <div class="tile-foot">
         ${dur ? `<span class="tile-dur">⏱ ${dur}</span>` : ""}
@@ -960,6 +963,7 @@ async function showDetails(promptId) {
   </div>`;
   overlay.querySelector(".details-apply").addEventListener("click", () => {
     overlay.remove();
+    captureUndo("before applying generation details");
     applyParams(params);
     switchTab("generate");
     toast("Params applied ✓");
@@ -1207,6 +1211,7 @@ $("#tpl-use").addEventListener("click", () => {
   const tpl = _templates[Number(sel.value)];
   if (!tpl) return;
   const ta = document.querySelector('textarea[data-key="positive"]');
+  captureUndo(`before applying template "${tpl.name}"`);
   if (ta) { ta.value = tpl.text; resizeTextareas(); toast("Template loaded"); }
 });
 
@@ -1296,6 +1301,7 @@ $("#preset-apply").addEventListener("click", () => {
   if (!sel || sel.value === "") return toast("Select a preset first", true);
   const preset = _presets[Number(sel.value)];
   if (!preset) return;
+  captureUndo(`before applying "${preset.name}"`);
   applyParams(preset.params);
   toast(`"${preset.name}" applied`);
 });
@@ -1311,6 +1317,20 @@ $("#preset-save").addEventListener("click", async () => {
   } catch (e) { toast(e.message, true); }
 });
 
+$("#preset-update").addEventListener("click", async () => {
+  const sel = $("#preset-select");
+  if (!sel || sel.value === "") return toast("Select a preset first", true);
+  const idx = Number(sel.value);
+  const name = _presets[idx]?.name;
+  if (!name) return;
+  try {
+    _presets = await putJSON(`/api/param-presets/${idx}`, { name, params: collectParams() });
+    renderPresetSelect();
+    sel.value = String(idx);
+    toast(`"${name}" updated`);
+  } catch (e) { toast(e.message, true); }
+});
+
 $("#preset-del").addEventListener("click", async () => {
   const sel = $("#preset-select");
   if (!sel || sel.value === "") return toast("Select a preset first", true);
@@ -1322,6 +1342,42 @@ $("#preset-del").addEventListener("click", async () => {
     toast("Preset deleted");
   } catch (e) { toast(e.message, true); }
 });
+
+// ---- undo / revert (prompt + params together) ------------------------------
+// Captures state at key automated moments (template use, preset apply,
+// details apply, generate). Manual typing is NOT captured — 10 undo steps.
+const UNDO_MAX = 10;
+let _undoStack = [];
+
+function captureUndo(label) {
+  const ta = document.querySelector('textarea[data-key="positive"]');
+  _undoStack.unshift({ prompt: ta ? ta.value : "", params: collectParams(), label });
+  if (_undoStack.length > UNDO_MAX) _undoStack.pop();
+  _updateRevertBtn();
+}
+
+function _updateRevertBtn() {
+  const btn = $("#revert-btn");
+  if (!btn) return;
+  if (_undoStack.length) {
+    btn.hidden = false;
+    btn.textContent = `↩ Undo (${_undoStack.length})`;
+  } else {
+    btn.hidden = true;
+  }
+}
+
+function revertState() {
+  if (!_undoStack.length) return;
+  const { prompt, params, label } = _undoStack.shift();
+  const ta = document.querySelector('textarea[data-key="positive"]');
+  if (ta) { ta.value = prompt; resizeTextareas(); }
+  applyParams(params);
+  toast(`Reverted: ${label}`);
+  _updateRevertBtn();
+}
+
+$("#revert-btn").addEventListener("click", revertState);
 
 // ---- balance ---------------------------------------------------------------
 async function loadBalance() {

@@ -324,6 +324,18 @@ async def add_param_preset(payload: dict = Body(default={})):
     return presets
 
 
+@app.put("/api/param-presets/{index}")
+async def update_param_preset(index: int, payload: dict = Body(default={})):
+    presets = ps.get_param_presets()
+    if 0 <= index < len(presets):
+        presets[index] = {
+            "name": payload.get("name", presets[index]["name"]),
+            "params": payload.get("params", presets[index]["params"]),
+        }
+        ps.save_param_presets(presets)
+    return presets
+
+
 @app.delete("/api/param-presets/{index}")
 async def delete_param_preset(index: int):
     presets = ps.get_param_presets()
