@@ -24,7 +24,10 @@ def _as_bool(v) -> bool:
 def _coerce(raw, fmt):
     """Return the coerced value, or None to skip writing this field."""
     if fmt == "seed":
-        v = int(float(raw))
+        try:
+            v = int(float(raw))
+        except (ValueError, TypeError):
+            v = 0  # blank or invalid input → randomise
         return random.randint(0, 2**32 - 1) if v <= 0 else v
     if raw is None or raw == "":
         return None

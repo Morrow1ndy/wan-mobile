@@ -82,12 +82,12 @@ header h1 {
   text-transform: uppercase; letter-spacing: 0.06em; }
 
 label { display: block; font-size: 13px; margin: 0 0 14px; color: var(--muted); font-weight: 500; }
-input[type="text"], textarea, select {
+input[type="text"], input[type="password"], textarea, select {
   width: 100%; margin-top: 8px; padding: 11px 12px; background: var(--solid);
   border: 1px solid var(--line-2); border-radius: 9px; color: var(--text);
   font-family: var(--f); font-size: 16px; transition: border-color .15s, box-shadow .15s;
 }
-input[type="text"]:focus, textarea:focus, select:focus {
+input[type="text"]:focus, input[type="password"]:focus, textarea:focus, select:focus {
   outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak);
 }
 textarea { min-height: 84px; resize: none; overflow: hidden; }

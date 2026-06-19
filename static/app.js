@@ -568,7 +568,7 @@ function renderField(f) {
   } else if (f.type === "seed") {
     inner = `<label>${f.label}
       <div class="seed-row">
-        <input type="text" inputmode="numeric" data-key="${f.key}" value="${f.default ?? 0}" placeholder="0 = random each run" />
+        <input type="text" inputmode="numeric" data-key="${f.key}" value="" placeholder="Leave blank (or 0) to randomise each run" />
         <button type="button" class="ghost small seed-rand" data-key="${f.key}" title="Generate a random seed now">🎲</button>
       </div></label>`;
   } else {
@@ -707,6 +707,7 @@ function enterSelectMode() {
   _selected.clear();
   $("#out-list").classList.add("select-mode");
   $("#bulk-bar").hidden = false;
+  $("#out-select").textContent = "Done";
   _updateBulkBar();
 }
 function exitSelectMode() {
@@ -715,6 +716,7 @@ function exitSelectMode() {
   $$("#out-list .out-card.selected").forEach((c) => c.classList.remove("selected"));
   $("#out-list").classList.remove("select-mode");
   $("#bulk-bar").hidden = true;
+  $("#out-select").textContent = "Select";
 }
 function _toggleSelect(card) {
   const pid = card.dataset.pid;
@@ -729,7 +731,7 @@ function _updateBulkBar() {
   $("#bulk-delete").disabled = n === 0;
 }
 
-$("#out-select").addEventListener("click", enterSelectMode);
+$("#out-select").addEventListener("click", () => _selectMode ? exitSelectMode() : enterSelectMode());
 $("#bulk-cancel").addEventListener("click", exitSelectMode);
 
 $("#bulk-star").addEventListener("click", async () => {
@@ -1197,7 +1199,7 @@ function upsertActiveCard(podId, j) {
 $("#out-active").addEventListener("click", async (e) => {
   const btn = e.target.closest(".stop-btn");
   if (!btn) return;
-  if (!confirm("Stop this generation?")) return;
+  if (!await showConfirm("Stop this generation?", { okText: "Stop", danger: true })) return;
   btn.disabled = true;
   try {
     await postJSON(`/api/pods/${btn.dataset.pod}/cancel/${btn.dataset.pid}`, {});
@@ -1539,9 +1541,9 @@ function renderLibSelection() {
   if (_libSelectMode) {
     el.innerHTML = `<span style="font-size:13px;color:var(--muted)">${n} selected</span>
       <div style="flex:1"></div>
-      <button id="lib-sel-cancel" class="ghost small">Cancel</button>`;
+      <button id="lib-sel-done" class="ghost small">Done</button>`;
     el.hidden = false;
-    el.querySelector("#lib-sel-cancel").addEventListener("click", exitLibSelectMode);
+    el.querySelector("#lib-sel-done").addEventListener("click", exitLibSelectMode);
     const bar = $("#lib-bulk-bar");
     bar.hidden = n === 0;
     $("#lib-bulk-count").textContent = n ? `${n} selected` : "";
@@ -1718,6 +1720,7 @@ function enterSavedSelectMode() {
   _savedSelected.clear();
   $("#saved-list").classList.add("saved-select-mode");
   $("#saved-bulk-bar").hidden = false;
+  $("#saved-select").textContent = "Done";
   _updateSavedBulkBar();
 }
 
@@ -1727,6 +1730,7 @@ function exitSavedSelectMode() {
   $$("#saved-list .out-card.selected").forEach((c) => c.classList.remove("selected"));
   $("#saved-list").classList.remove("saved-select-mode");
   $("#saved-bulk-bar").hidden = true;
+  $("#saved-select").textContent = "Select";
 }
 
 function _toggleSavedSelect(card) {
@@ -1742,7 +1746,7 @@ function _updateSavedBulkBar() {
   $("#saved-bulk-unstar").disabled = n === 0;
 }
 
-$("#saved-select").addEventListener("click", enterSavedSelectMode);
+$("#saved-select").addEventListener("click", () => _savedSelectMode ? exitSavedSelectMode() : enterSavedSelectMode());
 $("#saved-bulk-cancel").addEventListener("click", exitSavedSelectMode);
 
 $("#saved-bulk-unstar").addEventListener("click", async () => {
