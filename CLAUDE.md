@@ -54,11 +54,14 @@ wan-mobile/
 │   ├── comfy_client.py  # ComfyUI HTTP/WS client
 │   ├── runpod_client.py # RunPod GraphQL API client
 │   ├── workflow.py      # ComfyUI workflow builder
+│   ├── push.py          # Web Push / VAPID key management + subscription store
 │   └── config.py        # Settings loaded from environment / config files
 ├── static/
 │   ├── index.html       # Single-page app shell (all overlays/modals in here)
 │   ├── styles.css       # Dark mobile-first UI (CSS variables, no framework)
-│   └── app.js           # All frontend logic (~1700 lines, vanilla JS)
+│   ├── app.js           # All frontend logic (~2100 lines, vanilla JS)
+│   ├── sw.js            # Service worker — handles push events + notificationclick
+│   └── manifest.webmanifest  # PWA manifest (required for iOS Web Push)
 ├── data/                # Fly persistent volume mount point
 │   ├── saved_videos/    # MP4 files synced from GCS on startup
 │   ├── saved_videos.json
@@ -80,8 +83,8 @@ wan-mobile/
 ```
 
 **Dependencies** (`requirements.txt`): fastapi, uvicorn[standard], runpod, httpx,
-websockets, python-dotenv, python-multipart, google-cloud-storage. No frontend
-build step — `static/` is served as-is.
+websockets, python-dotenv, python-multipart, google-cloud-storage, pywebpush. No
+frontend build step — `static/` is served as-is.
 
 **Fly.io volume:** `wan_data` mounted at `/app/data`. Persists across restarts. The Dockerfile CMD conditionally seeds JSON files on first boot only.
 
@@ -305,6 +308,33 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-06-20
+
+**Features added:**
+- Web Push notifications — server notifies phone when video generation completes (ready / failed / timed-out), even with browser minimised or closed
+  - New `app/push.py`: auto-generates & persists a VAPID keypair to `data/vapid.json` on first run (or reads from `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` env vars); subscription store in `data/push_subs.json`; prunes dead subscriptions on 404/410 responses
+  - New `GET /api/push/vapid` + `POST /api/push/subscribe` endpoints in `main.py`
+  - `_notify()` helper fires push at all terminal states in `_watch()` (success, error, timeout)
+  - New `static/sw.js` service worker: handles `push` events → `showNotification`; `notificationclick` focuses or opens app window
+  - New `static/manifest.webmanifest` + PWA meta tags in `index.html` (required for iOS 16.4+ Web Push — must be added to Home Screen first)
+  - New PNG icons: `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`
+  - Frontend: `registerServiceWorker()` + `ensurePushSubscription()` in `app.js`; permission request triggered on first Generate tap (user gesture required); auto-re-subscribes in `init()` if permission was previously granted
+  - `pywebpush>=1.14.0` added to `requirements.txt`; `data/vapid.json` + `data/push_subs.json` added to `.gitignore`
+
+**Bugs fixed:**
+- `startMetrics()` timer leak — per-second uptime ticker accumulated indefinitely across `loadPods()` calls; fixed by tracking all timers in `uptimeTimers = {}` and clearing them at the top of each `loadPods()` call
+- Generation error message was always generic — `jobErrorText()` helper now extracts real ComfyUI reason from `exception_message`, `status_str`, `error`, or `node_type`
+- 4 bare `fetch()` calls bypassed `apiFetch()` and never sent auth headers — fixed for `/api/generate`, `useLibraryImage`, lib-bulk-delete, and `/api/images/save`
+- Template name in `<option>` was unescaped (XSS risk) — `esc(t.name)` applied in `renderTemplateSelect`; pod names/IDs escaped in all dropdowns
+- Null RunPod balance crashed `updateBalance()` — guard renders `"—"` and neutral CSS class when balance is `null`
+- `/api/video/{prompt_id}` and `/api/pods/{pod_id}/view` buffered entire MP4 in RAM before sending — replaced with `comfy.open_view_stream()` + `StreamingResponse` (eliminates OOM risk on 512MB Fly VM); `fetch_view()` kept for star-to-GCS path (needs bytes)
+- `generation_params.json` and `generation_durations.json` grew without bound — `persistence.py` now trims to 500 / 1000 entries respectively before each write
+
+**New env vars (optional):**
+- `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` — override auto-generated VAPID keys (useful if rotating or migrating keys without losing existing push subscriptions)
 
 ---
 

@@ -24,6 +24,7 @@ from . import comfy_client as comfy
 from . import config
 from . import drive_client as drive
 from . import persistence as ps
+from . import push
 from . import runpod_client as rp
 from . import workflow as wf
 
@@ -177,10 +178,31 @@ async def set_auth_cookie(request: Request):
     )
     return response
 
+# ----- Web Push (notify when a video is ready) -----------------------------
+@app.get("/api/push/vapid")
+async def push_vapid():
+    """The VAPID public key the browser needs to subscribe (null if disabled)."""
+    return {"public_key": push.public_key()}
+
+
+@app.post("/api/push/subscribe")
+async def push_subscribe(payload: dict = Body(default={})):
+    """Store a browser PushSubscription so we can notify this device."""
+    await asyncio.to_thread(push.add_subscription, payload)
+    return {"ok": True}
+
+
 # In-memory job tracking (good enough for a single user). Mirrored to disk so
 # in-flight jobs survive a restart / Fly auto-stop (see _persist_jobs).
 JOBS: dict[str, dict] = {}
 _TASKS: set[asyncio.Task] = set()  # keeps watcher tasks alive until done
+
+
+def _notify(title: str, body: str):
+    """Fire a push notification without blocking the caller."""
+    task = asyncio.create_task(asyncio.to_thread(push.send_push, title, body))
+    _TASKS.add(task)
+    task.add_done_callback(_TASKS.discard)
 
 # Serializes read-modify-write of the saved-videos metadata + its GCS upload so
 # concurrent star/unstar calls can't clobber each other's changes.
@@ -518,12 +540,12 @@ async def video(prompt_id: str):
     if not job or not job.get("video"):
         raise HTTPException(404, "no video for this job yet")
     v = job["video"]
-    content = await comfy.fetch_view(
+    body = await comfy.open_view_stream(
         rp.comfy_url(job["pod_id"]), v["filename"], v.get("subfolder", ""),
         v.get("type", "output"),
     )
-    return Response(
-        content=content,
+    return StreamingResponse(
+        body,
         media_type=v.get("content_type", "video/mp4"),
         headers={"Content-Disposition": f'inline; filename="{v["filename"]}"'},
     )
@@ -581,9 +603,9 @@ async def pod_jobs(pod_id: str):
 async def pod_view(pod_id: str, filename: str, subfolder: str = "",
                    type: str = "output"):
     """Proxy a single output file from the pod by its ComfyUI coordinates."""
-    content = await comfy.fetch_view(rp.comfy_url(pod_id), filename, subfolder, type)
-    return Response(
-        content=content,
+    body = await comfy.open_view_stream(rp.comfy_url(pod_id), filename, subfolder, type)
+    return StreamingResponse(
+        body,
         media_type=_content_type({"filename": filename}),
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
@@ -876,6 +898,7 @@ async def _watch(url: str, client_id: str, prompt_id: str):
                     job["status"], job["error"] = "error", d
                     job["finished_at"] = time.time()
                     log_event(job["pod_id"], "Generation error (ComfyUI)")
+                    _notify("Generation failed", "ComfyUI hit an error — open the app for details.")
                     _persist_jobs()
                     return
     except Exception:
@@ -898,6 +921,7 @@ async def _watch(url: str, client_id: str, prompt_id: str):
             job["status"], job["error"] = "error", status
             job["finished_at"] = time.time()
             log_event(job["pod_id"], "Generation error (ComfyUI)")
+            _notify("Generation failed", "ComfyUI hit an error — open the app for details.")
             _persist_jobs()
             return
         if outputs or status.get("completed"):
@@ -913,6 +937,12 @@ async def _watch(url: str, client_id: str, prompt_id: str):
             _backfill_seed(prompt_id, entry)
             log_event(job["pod_id"],
                       "Video ready ✓" if job["video"] else "Finished (no video output)")
+            if job["video"]:
+                secs = job.get("finished_at", 0) - (job.get("started_at") or 0)
+                took = f" in {round(secs)}s" if secs > 0 else ""
+                _notify("Your video is ready 🎬", f"Generation finished{took}. Tap to watch.")
+            else:
+                _notify("Generation finished", "No video was produced — open the app to check.")
             _persist_jobs()
             return
         if time.monotonic() > deadline:
@@ -920,6 +950,7 @@ async def _watch(url: str, client_id: str, prompt_id: str):
             job["error"] = "Timed out waiting for ComfyUI to finish."
             job["finished_at"] = time.time()
             log_event(job["pod_id"], "Generation timed out")
+            _notify("Generation timed out", "ComfyUI didn't finish in time — open the app.")
             _persist_jobs()
             return
         await asyncio.sleep(2)

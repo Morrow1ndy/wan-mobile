@@ -84,10 +84,46 @@ async def delete_history(comfy: str, prompt_id: str):
 
 async def fetch_view(comfy: str, filename: str, subfolder: str = "",
                      type_: str = "output") -> bytes:
-    """Download a generated file (video/image) from ComfyUI."""
+    """Download a generated file (video/image) from ComfyUI, fully buffered.
+
+    Use only when the bytes are needed in memory (e.g. starring a video, which
+    must upload to GCS). For serving to the browser, prefer open_view_stream().
+    """
     async with _client(comfy) as c:
         r = await c.get("/view", params={
             "filename": filename, "subfolder": subfolder, "type": type_,
         })
         r.raise_for_status()
         return r.content
+
+
+async def open_view_stream(comfy: str, filename: str, subfolder: str = "",
+                           type_: str = "output"):
+    """Stream a generated file from ComfyUI without buffering it in RAM.
+
+    Returns an async byte-generator suitable for a StreamingResponse. The
+    underlying httpx client/response stay open until the generator is fully
+    consumed, then close in its `finally`. raise_for_status runs before the
+    generator is returned so HTTP errors surface to the caller immediately.
+    """
+    client = httpx.AsyncClient(base_url=comfy, timeout=httpx.Timeout(120.0))
+    req = client.build_request("GET", "/view", params={
+        "filename": filename, "subfolder": subfolder, "type": type_,
+    })
+    resp = await client.send(req, stream=True)
+    try:
+        resp.raise_for_status()
+    except Exception:
+        await resp.aclose()
+        await client.aclose()
+        raise
+
+    async def body():
+        try:
+            async for chunk in resp.aiter_bytes():
+                yield chunk
+        finally:
+            await resp.aclose()
+            await client.aclose()
+
+    return body()

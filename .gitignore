@@ -7,3 +7,5 @@ outputs/
 *.json.key
 data/saved_videos/*.mp4
 data/active_jobs.json
+data/vapid.json
+data/push_subs.json

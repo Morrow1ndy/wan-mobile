@@ -28,6 +28,21 @@ def _write(path: Path, data):
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _trim_oldest(d: dict, cap: int) -> dict:
+    """Keep only the most recent `cap` entries (dicts preserve insert order)."""
+    if len(d) <= cap:
+        return d
+    for k in list(d.keys())[: len(d) - cap]:
+        del d[k]
+    return d
+
+
+# Per-generation params + durations grow by one key on every run and are never
+# otherwise pruned. Cap them so the volume can't fill with stale history.
+_MAX_PARAMS = 500
+_MAX_STATS = 1000
+
+
 def get_templates() -> list:
     return _read(_TEMPLATES, [])
 
@@ -56,7 +71,7 @@ def get_stats() -> dict:
 def save_stat(prompt_id: str, secs: int, completed_at: float):
     d = get_stats()
     d[prompt_id] = {"secs": secs, "at": round(completed_at)}
-    _write(_STATS, d)
+    _write(_STATS, _trim_oldest(d, _MAX_STATS))
 
 
 _PARAMS   = _DATA / "generation_params.json"
@@ -66,7 +81,7 @@ _PRESETS  = _DATA / "param_presets.json"
 def save_params(prompt_id: str, params: dict):
     d = _read(_PARAMS, {})
     d[prompt_id] = params
-    _write(_PARAMS, d)
+    _write(_PARAMS, _trim_oldest(d, _MAX_PARAMS))
 
 
 def get_params(prompt_id: str) -> dict | None:

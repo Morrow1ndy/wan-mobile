@@ -200,7 +200,8 @@ $$(".tabs button").forEach((b) =>
 
 // ---- pods ------------------------------------------------------------------
 let selectedGpu = null;
-const metricsTimers = {}; // pod_id -> interval id
+const metricsTimers = {}; // pod_id -> interval id (4s metric poll)
+const uptimeTimers = {};  // pod_id -> interval id (1s uptime ticker)
 const uptimeBase = {};    // pod_id -> { secs, at } — base snapshot for live ticking
 
 function isRunning(p) {
@@ -218,9 +219,13 @@ async function loadPods() {
     return;
   }
 
-  // stop any metric pollers from the previous render
+  // stop any metric pollers from the previous render (both the 4s metric poll
+  // and the 1s uptime ticker — otherwise the uptime intervals stack up on every
+  // loadPods and never get cleared).
   Object.values(metricsTimers).forEach(clearInterval);
   for (const k in metricsTimers) delete metricsTimers[k];
+  Object.values(uptimeTimers).forEach(clearInterval);
+  for (const k in uptimeTimers) delete uptimeTimers[k];
 
   if (!pods.length) {
     list.innerHTML = `<div class="card muted">No pods. Deploy one below.</div>`;
@@ -236,7 +241,7 @@ async function loadPods() {
   // running-pod dropdowns on the Generate + Outputs tabs
   const running = pods.filter(isRunning);
   const opts = running.length
-    ? running.map((p) => `<option value="${p.id}">${p.name || p.id}</option>`).join("")
+    ? running.map((p) => `<option value="${esc(p.id)}">${esc(p.name || p.id)}</option>`).join("")
     : `<option value="">No running pod</option>`;
 
   const prev = genSel.value;
@@ -260,7 +265,8 @@ async function loadPods() {
 }
 
 function renderPod(p) {
-  const gpu = (p.machine && p.machine.gpuDisplayName) || p.gpuTypeId || "GPU";
+  const name = esc(p.name || p.id);
+  const gpu = esc((p.machine && p.machine.gpuDisplayName) || p.gpuTypeId || "GPU");
   const up = fmtUptime(p.uptimeSeconds);
   const running = isRunning(p);
   const statusBadge = running
@@ -277,7 +283,7 @@ function renderPod(p) {
        <div class="log" id="log-${p.id}"><div class="muted">…</div></div>`
     : "";
   return `<div class="pod">
-    <div class="pod-head"><span class="pod-name">${p.name || p.id}</span>${statusBadge}</div>
+    <div class="pod-head"><span class="pod-name">${name}</span>${statusBadge}</div>
     <div class="pod-meta">${gpu} &middot; ${fmtCost(p.costPerHr)} ${up ? "&middot; " + up : ""}</div>
     <div class="pod-actions">${actions}</div>
     ${session}
@@ -309,8 +315,10 @@ function startMetrics(podId) {
   };
   tick();
   metricsTimers[podId] = setInterval(tick, 4000);
-  // Tick the session-time display every second without re-fetching.
-  setInterval(() => {
+  // Tick the session-time display every second without re-fetching. Stored so
+  // loadPods can clear it on the next render (else these leak, one per call).
+  if (uptimeTimers[podId]) clearInterval(uptimeTimers[podId]);
+  uptimeTimers[podId] = setInterval(() => {
     const base = uptimeBase[podId];
     const el = $("#up-" + podId);
     if (!base || !el) return;
@@ -727,7 +735,10 @@ $("#generate").addEventListener("click", async () => {
   fd.append("workflow_file", _selectedWorkflow || "");
 
   try {
-    const r = await fetch("/api/generate", { method: "POST", body: fd });
+    // Ask for notification permission + push subscription on this user gesture
+    // so we can alert when the video is ready (even with the browser minimised).
+    ensurePushSubscription();
+    const r = await apiFetch("/api/generate", { method: "POST", body: fd });
     if (!r.ok) throw new Error((await r.text()) || r.statusText);
     await r.json();
     toast("Generation queued");
@@ -1162,6 +1173,16 @@ $("#saved-list").addEventListener("click", async (e) => {
   if (cover) expandTile(cover.closest(".out-card"));
 });
 
+// Pull a human-readable message out of a job's `error` field, which may be a
+// plain string ("Cancelled", "Timed out…") or the raw ComfyUI execution_error
+// object ({ exception_message, node_type, … }).
+function jobErrorText(err) {
+  if (!err) return "unknown error";
+  if (typeof err === "string") return err;
+  return err.exception_message || err.status_str || err.error
+    || (err.node_type ? `error in node ${err.node_type}` : "see pod logs");
+}
+
 // ---- outputs: in-flight generations ----------------------------------------
 const activeCardId = (pid) => "act-" + pid.replace(/[^a-zA-Z0-9_-]/g, "");
 
@@ -1179,7 +1200,10 @@ async function tickActive() {
       continue; // the finished clip belongs in the done list below
     }
     if (j.status === "error") {
-      if (!_seenDone.has(j.prompt_id)) { _seenDone.add(j.prompt_id); toast("Generation failed", true); }
+      if (!_seenDone.has(j.prompt_id)) {
+        _seenDone.add(j.prompt_id);
+        toast("Generation failed: " + jobErrorText(j.error), true);
+      }
       continue;
     }
     live.add(j.prompt_id);
@@ -1305,7 +1329,7 @@ function renderTemplateSelect() {
   if (!sel) return;
   const prev = sel.value;
   sel.innerHTML = `<option value="">— select a template —</option>` +
-    _templates.map((t, i) => `<option value="${i}">${t.name}</option>`).join("");
+    _templates.map((t, i) => `<option value="${i}">${esc(t.name)}</option>`).join("");
   if (prev && _templates[Number(prev)]) sel.value = prev;
 }
 
@@ -1518,7 +1542,8 @@ async function loadBalance() {
     const { balance } = await getJSON("/api/balance");
     const el = $("#balance");
     if (!el) return;
-    el.textContent = balance != null ? `$${Number(balance).toFixed(2)}` : "—";
+    if (balance == null) { el.textContent = "—"; el.className = "balance"; return; }
+    el.textContent = `$${Number(balance).toFixed(2)}`;
     el.className = "balance" + (balance < 2 ? " critical" : balance < 5 ? " low" : "");
   } catch (_) {}
 }
@@ -1652,7 +1677,7 @@ function renderLibSelection() {
 
 async function useLibraryImage(path) {
   try {
-    const r = await fetch(`/api/images/file/${encPath(path)}`);
+    const r = await apiFetch(`/api/images/file/${encPath(path)}`);
     if (!r.ok) throw new Error(r.statusText);
     const blob = await r.blob();
     const name = path.split("/").pop();
@@ -1701,7 +1726,7 @@ $("#lib-bulk-delete").addEventListener("click", async () => {
   let done = 0;
   for (const path of [..._libSelected]) {
     try {
-      const r = await fetch(`/api/images/file/${encPath(path)}`, { method: "DELETE" });
+      const r = await apiFetch(`/api/images/file/${encPath(path)}`, { method: "DELETE" });
       if (r.ok) done++;
     } catch (_) {}
   }
@@ -1799,7 +1824,7 @@ $("#save-here-btn").addEventListener("click", async () => {
   fd.append("file", _currentImageFile, _currentImageFile.name);
   fd.append("path", destPath);
   try {
-    const r = await fetch("/api/images/save", { method: "POST", body: fd });
+    const r = await apiFetch("/api/images/save", { method: "POST", body: fd });
     if (!r.ok) throw new Error((await r.text()) || r.statusText);
     toast("Saved to cloud ✓");
     $("#img-save-panel").hidden = true;
@@ -1928,6 +1953,65 @@ async function loadStorage() {
   });
 }
 
+// ---- web push notifications ------------------------------------------------
+// Register a service worker + subscribe to push so a "video ready" notification
+// arrives even when the browser is minimised. On iOS this only works once the
+// app has been added to the Home Screen (iOS 16.4+).
+let _swReg = null;
+let _pushBusy = false;
+
+async function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return null;
+  try {
+    _swReg = await navigator.serviceWorker.register("/sw.js");
+    return _swReg;
+  } catch (_) {
+    return null;
+  }
+}
+
+function urlB64ToUint8Array(base64) {
+  const pad = "=".repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + pad).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(b64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+// Idempotent: safe to call on every page load and on each Generate. Requests
+// permission (needs a user gesture on some browsers, hence the Generate hook),
+// subscribes once, and re-registers the subscription with the server.
+async function ensurePushSubscription() {
+  if (_pushBusy) return;
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)
+      || !("Notification" in window)) return;
+  if (Notification.permission === "denied") return;
+  _pushBusy = true;
+  try {
+    if (Notification.permission === "default") {
+      if (await Notification.requestPermission() !== "granted") return;
+    }
+    const reg = _swReg || (await registerServiceWorker());
+    if (!reg) return;
+    await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const { public_key } = await getJSON("/api/push/vapid");
+      if (!public_key) return; // push disabled server-side
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64ToUint8Array(public_key),
+      });
+    }
+    await postJSON("/api/push/subscribe", sub.toJSON ? sub.toJSON() : sub);
+  } catch (e) {
+    if (!(e instanceof AuthError)) console.warn("push subscribe failed", e);
+  } finally {
+    _pushBusy = false;
+  }
+}
+
 // ---- boot ------------------------------------------------------------------
 $("#refresh").addEventListener("click", loadPods);
 
@@ -1952,6 +2036,12 @@ async function init() {
   loadStorage();
   startRamPoll();
   if (!_balanceTimer) _balanceTimer = setInterval(loadBalance, 60_000);
+  // Register the SW now; (re)subscribe to push if the user already granted it.
+  // First-time permission is requested on the Generate tap (a user gesture).
+  registerServiceWorker();
+  if (window.Notification && Notification.permission === "granted") {
+    ensurePushSubscription();
+  }
 }
 
 init();
