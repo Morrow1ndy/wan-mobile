@@ -308,6 +308,23 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-19 (continued)
+
+**Bugs fixed (late session):**
+- Workflow BF16/GGUF tab lost selection when user clicked Upload/Library or other elements — `$$(".img-mode-tab")` was a global selector that toggled `active` on every `.img-mode-tab` on the page, wiping the workflow selection whenever the image tab row was touched. Fixed by scoping to `btn.closest(".img-mode-tabs")` so each tab row only manages its own buttons.
+- Session video multi-select "Select" button was invisible — it was placed next to the pod dropdown, not next to the "📹 Current Session" section header. Moved to match the ⭐ Saved section pattern.
+- Scroll lock when deleting/removing an expanded video card — `card.remove()` bypassed `collapseTile()`, leaving `body.overflow=hidden`. Added `removeCard()` helper that collapses first; applied to all 5 card-removal sites (delete, bulk delete, star-to-saved, unstar, bulk unstar).
+- Workflow tab visual state not obvious — changed active tab to filled accent-blue pill (solid background, dark text, bold) so selected model is unmistakable.
+- Template/preset Update and Delete: undo toast (5s) now appears after each action with an "Undo" button that reverses server-side changes (Update reverts via PUT with old data; Delete restores via POST).
+- Seed input blank/invalid value caused 500 on generate — `_coerce` now handles `ValueError`/`TypeError` gracefully (treats as 0 = randomise). Seed input default changed to empty; placeholder updated to "Leave blank (or 0) to randomise each run".
+- Login password field used browser default styling — `input[type="password"]` was missing from CSS styled-input selector.
+- Select buttons (session/saved/library) now toggle to "Done" when active; tapping Done exits selection without needing the Cancel bar.
+- Stop generation confirmation replaced browser `confirm()` with custom `showConfirm()` dialog.
+- `collectParams()` was collecting button elements with `data-key` (the 🎲 seed-rand button), overwriting the real seed value with `""` → 500 on every generate. Fixed by scoping selector to `input, textarea, select` only.
+- `toastUndo()` helper added for reversible actions.
+
+---
+
 ### 2026-06-19
 
 **Features added:**
