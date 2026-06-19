@@ -44,6 +44,31 @@ async def _startup():
     # stopped (e.g. Fly auto-stop). The work continues on the RunPod pod; we
     # just resume watching it so the UI shows progress and the result resolves.
     _restore_jobs()
+    # Keep the Fly machine alive while generations are running. Without this,
+    # Fly's idle-detection stops the machine (no inbound HTTP = idle), even
+    # though _watch() is actively polling RunPod. The self-ping counts as
+    # inbound traffic and prevents auto-stop until all jobs complete.
+    asyncio.create_task(_keepalive_loop())
+
+
+async def _keepalive_loop():
+    """Ping ourselves every 30s while any job is running.
+
+    Fly auto-stops machines that have no inbound HTTP traffic. A running
+    _watch() task is server-side outbound traffic — Fly doesn't count it.
+    This loop makes an inbound request so Fly sees activity and keeps the
+    machine up until all generations finish.
+    """
+    while True:
+        await asyncio.sleep(30)
+        if any(j.get("status") == "running" for j in JOBS.values()):
+            try:
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    await client.get("http://localhost:8000/api/balance",
+                                     timeout=5)
+            except Exception:
+                pass
 
 
 def _drive_startup_sync():
