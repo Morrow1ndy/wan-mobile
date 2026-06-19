@@ -11,6 +11,17 @@
 
 ---
 
+## Git & deploy rules
+
+- **Do NOT commit/push after every individual change.** More edits are likely
+  coming in the same session. Only commit + push (and deploy if needed) when
+  the user **explicitly says so** in their message (e.g. "push", "deploy",
+  "commit this"). Batch all pending changes into one commit at that point.
+- When committing, `git add -A` to include everything changed in the session.
+- Deploy (`fly deploy`) only when the user asks — don't auto-deploy after a push.
+
+---
+
 ## How this document is maintained
 
 This file is the **handoff document between Claude Code sessions and machines**.
