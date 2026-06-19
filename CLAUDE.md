@@ -25,14 +25,16 @@
 ## How this document is maintained
 
 This file is the **handoff document between Claude Code sessions and machines**.
-At the end of each working session (or before switching machines), the agent
-should update this file with a new entry under [Changelog](#changelog) summarising:
+
+**Do NOT touch the [Changelog](#changelog) section during normal work.** The user
+will explicitly ask for a changelog update at the end of each day's work. At that
+point, add a new entry (newest-first) covering:
 - Features added or changed
 - Bugs fixed (include root cause, not just symptom)
 - Any new env vars, endpoints, or files introduced
 - Known issues discovered but not yet fixed
 
-Keep the entry concise — bullet points, not paragraphs. The architecture sections
+Keep entries concise — bullet points, not paragraphs. The architecture sections
 above should be updated in-place if something structural changes (don't just log
 it in the changelog and leave the architecture stale).
 
