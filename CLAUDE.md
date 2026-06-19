@@ -308,6 +308,27 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-22
+
+**Features added:**
+- Workflow selector (BF16 / GGUF toggle) in Generate tab — tabs rendered dynamically from files in `workflows/` (ram_clear.json excluded); selection persisted in localStorage; chosen workflow sent as `workflow_file` form field on each generate request. Adding new workflow files to `workflows/` auto-populates new tabs on next deploy. All param node IDs confirmed identical between bf16 and GGUF workflows — only loader nodes differ (UNETLoader vs UnetLoaderGGUF).
+- `workflow.py`: `build_workflow()` now accepts optional `workflow_file` param, making workflow selection per-request rather than server-global
+- `/api/config` now returns `workflows` (list of available filenames) and `default_workflow`
+- `/api/generate` now accepts `workflow_file` form field; validated against known files (path-traversal safe)
+
+**Bugs fixed:**
+- Generate returned 500 on every call after seed feature was added — the 🎲 randomise button carried `data-key="_seed"` so `collectParams()` (which selected all `[data-key]` elements) collected it too; a button's `.value` is `""`, overwriting the real seed input value; `_coerce("", "seed")` → `ValueError` → 500. Fixed by scoping `collectParams()` selector to `input[data-key], textarea[data-key], select[data-key]` only.
+- Blank seed input also caused 500 — `_coerce` did `int(float(""))` which throws. Fixed with try/except: blank or invalid → treat as 0 → randomise.
+- Login password field used browser default styling — `input[type="password"]` was missing from the CSS styled-input selector.
+- Select buttons (session outputs, saved videos, image library) gave no feedback when active — now toggle to "Done" when selection mode is on; tapping "Done" exits selection (same as Cancel at bottom).
+- Stop generation confirmation still used browser native `confirm()` — replaced with custom `showConfirm()` dialog.
+
+**Seed input UX:**
+- Default value changed from `"0"` to `""` so placeholder is always visible
+- Placeholder updated to `"Leave blank (or 0) to randomise each run"`
+
+---
+
 ### 2026-06-21
 
 **Features added:**
