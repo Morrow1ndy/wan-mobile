@@ -206,9 +206,36 @@ _libSelectMode     // bulk select for image library
 --red: #f87171     /* red — errors, delete, storage >90% */
 ```
 
-**Font:** Inter (Google Fonts). All sticky bars use solid `#0b0c0e` background (not `backdrop-filter` — iOS WebKit breaks `position:fixed` with `backdrop-filter`).
+**Font:** Inter (Google Fonts).
 
-**iOS-safe squares:** Library tiles use `padding-bottom: 100%` + `position: absolute` inner content (not `aspect-ratio`, which iOS WebKit collapses when an `<img>` with intrinsic dimensions is present).
+---
+
+## iOS / mobile CSS rules — READ BEFORE ADDING ANY NEW UI
+
+These are hard-won fixes for iOS WebKit / Chrome bugs. Violating them causes
+visual glitches that only appear on iOS, not on desktop.
+
+**Rule 1 — Never use `backdrop-filter` on any `position: fixed` or `position: sticky` element.**
+iOS WebKit composites `backdrop-filter` elements onto a separate GPU layer. On
+`position: fixed` this breaks the fixed positioning during scroll (the bar drifts
+into the page). On `position: sticky` it bleeds the blur onto sibling/child
+elements during scroll momentum (inactive tab buttons appear to gain a dark
+background). **Fix: use a solid or near-opaque background colour instead.**
+Affected elements: `.generate-bar`, `.deploy-bar`, `.bulk-bar`, `.tabs` — all
+already use solid `#0b0c0e` or opaque gradients for this reason.
+
+**Rule 2 — Never use `aspect-ratio` for grid tiles that contain `<img>` elements.**
+iOS WebKit lets the image's intrinsic size override the `aspect-ratio` constraint,
+collapsing rows into thin strips. **Fix: use `padding-bottom: 100%` on the tile
+with `position: absolute; inset: 0` on the inner content.** Already applied to
+`.lib-folder-tile` and `.lib-file-tile`.
+
+**Rule 3 — Always truncate text in constrained containers.**
+Long strings (filenames, folder names) break out of flex/block containers on iOS
+if `overflow: hidden` is not set. **Fix: add `overflow: hidden; text-overflow:
+ellipsis; white-space: nowrap` to any text element that could receive user-supplied
+or dynamic content inside a fixed-width container.** Already applied to
+`#image-label` and `.lib-folder-name`.
 
 ---
 
