@@ -5,6 +5,17 @@ on:
   push:
     branches:
       - main
+    paths:
+      # Only deploy when actual app/config files change.
+      # Doc-only pushes (CLAUDE.md, README, etc.) are skipped.
+      - 'app/**'
+      - 'static/**'
+      - 'workflows/**'
+      - 'data/**'
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - 'fly.toml'
+      - '.github/workflows/**'
 jobs:
   deploy:
     name: Deploy app
