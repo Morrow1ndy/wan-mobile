@@ -1544,7 +1544,11 @@ $("#ram-clear").addEventListener("click", async () => {
 // ---- image mode tabs --------------------------------------------------------
 $$(".img-mode-tab").forEach((btn) => {
   btn.addEventListener("click", () => {
-    $$(".img-mode-tab").forEach((b) => b.classList.toggle("active", b === btn));
+    // Scope to THIS tab row only — $$(".img-mode-tab") is global and would
+    // also clear the active class on the workflow selector tabs.
+    btn.closest(".img-mode-tabs").querySelectorAll(".img-mode-tab").forEach(
+      (b) => b.classList.toggle("active", b === btn)
+    );
     const mode = btn.dataset.mode;
     $("#img-upload-panel").hidden = mode !== "upload";
     $("#img-library-panel").hidden = mode !== "library";
