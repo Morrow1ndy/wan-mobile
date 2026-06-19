@@ -85,6 +85,10 @@ def get_saved() -> list:
     return _read(_SAVED_META, [])
 
 
+def save_saved(items: list):
+    _write(_SAVED_META, items)
+
+
 def upsert_saved(meta: dict):
     saved = get_saved()
     idx = next((i for i, s in enumerate(saved) if s["prompt_id"] == meta["prompt_id"]), None)

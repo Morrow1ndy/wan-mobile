@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import comfy_client as comfy
 from . import config
+from . import drive_client as drive
 from . import persistence as ps
 from . import runpod_client as rp
 from . import workflow as wf
@@ -28,6 +29,43 @@ from . import workflow as wf
 app = FastAPI(title="Wan Mobile")
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+
+@app.on_event("startup")
+async def _startup():
+    await asyncio.to_thread(_drive_startup_sync)
+
+
+def _drive_startup_sync():
+    """Sync saved videos with GCS on startup.
+
+    GCS is the source of truth. Updates local metadata and downloads any
+    video files missing from the local volume. Falls back to local cache
+    silently if GCS is unreachable.
+    """
+    try:
+        gcs_meta = drive.download_metadata()
+    except Exception as e:
+        print(f"[GCS] startup sync skipped: {e}")
+        return
+
+    if gcs_meta is None:
+        return  # nothing saved yet, local state is already empty
+
+    ps.save_saved(gcs_meta)
+    ps.SAVED_DIR.mkdir(parents=True, exist_ok=True)
+    downloaded = 0
+    for item in gcs_meta:
+        local_file = ps.SAVED_DIR / item["filename"]
+        if not local_file.exists():
+            try:
+                data = drive.download_video(item["filename"])
+                local_file.write_bytes(data)
+                downloaded += 1
+            except Exception as e:
+                print(f"[GCS] failed to download {item['filename']}: {e}")
+    if downloaded:
+        print(f"[GCS] downloaded {downloaded} missing video(s) from GCS")
 
 # ----- optional HTTP Basic Auth -------------------------------------------
 # When WAN_AUTH_USER + WAN_AUTH_PASS are set (e.g. on a public Fly.io URL),
@@ -426,7 +464,7 @@ async def delete_output(pod_id: str, prompt_id: str):
 # ----- saved (starred) videos ------------------------------------------------
 @app.post("/api/saved/{pod_id}/{prompt_id}")
 async def star_video(pod_id: str, prompt_id: str, payload: dict = Body(default={})):
-    """Download a video from the pod and store it on the persistent volume."""
+    """Download a video from the pod, store it locally, and upload to Drive."""
     filename = payload.get("filename")
     if not filename:
         raise HTTPException(400, "filename required")
@@ -447,7 +485,19 @@ async def star_video(pod_id: str, prompt_id: str, payload: dict = Body(default={
         "completed_at": stat.get("at"),
         "duration_secs": stat.get("secs"),
     }
+
+    try:
+        await asyncio.to_thread(drive.upload_video, local_name, content)
+    except Exception as e:
+        log_event(pod_id, f"GCS upload failed: {e}")
+
     ps.upsert_saved(meta)
+
+    try:
+        await asyncio.to_thread(drive.upload_metadata, ps.get_saved())
+    except Exception:
+        pass
+
     log_event(pod_id, f"Video starred: {local_name}")
     return meta
 
@@ -461,6 +511,14 @@ async def list_saved():
 async def unstar_video(prompt_id: str):
     item = ps.remove_saved(prompt_id)
     if item:
+        try:
+            await asyncio.to_thread(drive.delete_video, item["filename"])
+        except Exception:
+            pass
+        try:
+            await asyncio.to_thread(drive.upload_metadata, ps.get_saved())
+        except Exception:
+            pass
         p = ps.SAVED_DIR / item["filename"]
         if p.exists():
             p.unlink()
@@ -471,7 +529,13 @@ async def unstar_video(prompt_id: str):
 async def serve_saved_file(filename: str):
     p = ps.SAVED_DIR / filename
     if not p.exists():
-        raise HTTPException(404, "Saved video not found")
+        # Volume cache miss — restore from GCS.
+        try:
+            data = await asyncio.to_thread(drive.download_video, filename)
+            ps.SAVED_DIR.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(data)
+        except Exception:
+            raise HTTPException(404, "Saved video not found")
     content = p.read_bytes()
     ct = _content_type({"filename": filename})
     return Response(content=content, media_type=ct,

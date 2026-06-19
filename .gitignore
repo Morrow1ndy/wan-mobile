@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 outputs/
 *.log
+*.json.key
+data/saved_videos/*.mp4

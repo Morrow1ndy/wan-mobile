@@ -5,3 +5,4 @@ httpx>=0.24.0
 websockets>=11.0
 python-dotenv>=1.0.0
 python-multipart>=0.0.9
+google-cloud-storage>=2.10.0

@@ -16,4 +16,4 @@ RUN cp -r /app/data /app/seed-data
 EXPOSE 8000
 
 # Seed any missing data files onto the (possibly empty) volume, then serve.
-CMD ["sh", "-c", "mkdir -p /app/data/saved_videos; for f in last_params.json generation_durations.json; do [ -f \"/app/data/$f\" ] || cp \"/app/seed-data/$f\" \"/app/data/$f\" 2>/dev/null || true; done; cp /app/seed-data/saved_videos.json /app/data/saved_videos.json 2>/dev/null || true; cp /app/seed-data/prompt_templates.json /app/data/prompt_templates.json 2>/dev/null || true; cp /app/seed-data/generation_params.json /app/data/generation_params.json 2>/dev/null || true; for v in /app/seed-data/saved_videos/*.mp4; do [ -f \"/app/data/saved_videos/$(basename $v)\" ] || cp \"$v\" /app/data/saved_videos/ 2>/dev/null || true; done; exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "mkdir -p /app/data/saved_videos; for f in last_params.json generation_durations.json saved_videos.json prompt_templates.json generation_params.json param_presets.json; do [ -f \"/app/data/$f\" ] || cp \"/app/seed-data/$f\" \"/app/data/$f\" 2>/dev/null || true; done; exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
