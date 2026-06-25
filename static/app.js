@@ -834,7 +834,6 @@ $("#generate").addEventListener("click", async () => {
     if (outSel) outSel.value = podId;
     setGenBadge(1);          // immediate feedback; refined by the next poll
     startGenBadgePoll();     // keeps the badge live if the user navigates away
-    switchTab("outputs");
   } catch (e) {
     toast(e.message, true);
   } finally {
