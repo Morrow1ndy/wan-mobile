@@ -754,6 +754,20 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   pointer-events: none;
 }
 
+/* ---- video buffering spinner ---- */
+.vid-loading-ov {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.32); z-index: 44; pointer-events: none;
+}
+.vid-spinner {
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.18);
+  border-top-color: rgba(255,255,255,0.88);
+  animation: vid-spin 0.65s linear infinite;
+}
+@keyframes vid-spin { to { transform: rotate(360deg); } }
+
 /* ---- TikTok-style play/pause overlay ---- */
 .vid-play-overlay {
   position: absolute; top: 50%; left: 50%;

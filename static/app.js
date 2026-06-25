@@ -1124,14 +1124,33 @@ const _coverObserver = ("IntersectionObserver" in window)
     }, { rootMargin: "300px" })
   : null;
 
+// Preload tile-video metadata when a card nears the viewport so the moov atom
+// is already cached by the time the user taps to play.
+const _tileObserver = ("IntersectionObserver" in window)
+  ? new IntersectionObserver((entries, obs) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const tv = e.target.querySelector(".tile-video[data-src]");
+        if (tv && !tv.getAttribute("src")) {
+          tv.preload = "metadata";
+          tv.src = tv.dataset.src;
+        }
+        obs.unobserve(e.target);
+      }
+    }, { rootMargin: "400px" })
+  : null;
+
 function observeLazyCovers(root) {
   if (!root) return;
   const vids = root.querySelectorAll("video.cover-img[data-src]");
-  if (!_coverObserver) { // no IntersectionObserver → just load them all
+  if (!_coverObserver) {
     vids.forEach((v) => { if (!v.getAttribute("src")) v.src = v.dataset.src; });
-    return;
+  } else {
+    vids.forEach((v) => _coverObserver.observe(v));
   }
-  vids.forEach((v) => _coverObserver.observe(v));
+  if (_tileObserver) {
+    root.querySelectorAll(".out-card").forEach((c) => _tileObserver.observe(c));
+  }
 }
 
 function renderSavedOutput(it) {
@@ -1211,6 +1230,19 @@ function renderOutput(podId, it) {
   </div>`;
 }
 
+// ---- video buffering spinner -----------------------------------------------
+function _showVidSpinner(card) {
+  const cover = card.querySelector(".out-cover");
+  if (!cover || cover.querySelector(".vid-loading-ov")) return;
+  const ov = document.createElement("div");
+  ov.className = "vid-loading-ov";
+  ov.innerHTML = '<div class="vid-spinner"></div>';
+  cover.appendChild(ov);
+}
+function _hideVidSpinner(card) {
+  card.querySelector(".vid-loading-ov")?.remove();
+}
+
 // ---- TikTok-style tap-to-pause overlay -------------------------------------
 function _showVidOverlay(card, state) {
   const cover = card.querySelector(".out-cover");
@@ -1250,10 +1282,24 @@ function expandTile(card) {
   const existing = document.querySelector(".out-card.expanded");
   if (existing && existing !== card) collapseTile(existing);
   const video = card.querySelector(".tile-video");
-  if (video && !video.src) video.src = video.dataset.src;
+  const firstExpand = video && !video.getAttribute("src");
+  if (firstExpand) {
+    video.src = video.dataset.src;
+    // Attach buffering listeners once (waiting/playing can fire repeatedly).
+    video.addEventListener("waiting", () => _showVidSpinner(card));
+    video.addEventListener("playing", () => _hideVidSpinner(card));
+  }
   card.classList.add("expanded");
   document.body.style.overflow = "hidden";
-  if (video) video.play().catch(() => {});
+  if (video) {
+    // Show spinner until the browser has enough data to start playing.
+    if (video.readyState < 3) {
+      _showVidSpinner(card);
+      video.addEventListener("canplay", () => _hideVidSpinner(card), { once: true });
+      video.addEventListener("error",   () => _hideVidSpinner(card), { once: true });
+    }
+    video.play().catch(() => {});
+  }
 
   // Prev/next nav — appended to card (not cover) so overflow:hidden and iOS
   // native video controls can't clip or cover the buttons.
