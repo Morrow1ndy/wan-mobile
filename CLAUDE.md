@@ -311,6 +311,23 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-25 (bugfixes)
+
+**Bugs fixed:**
+- **`ensurePushSubscription is not defined`** — stale call left in the Generate button
+  handler after notifications were removed; deleted.
+- **Two refresh buttons in header** — removed `#refresh` from the header, moved it
+  inline into the Pods tab section (small ↻ next to "Running pods"). Only the ↺
+  hard-refresh remains in the top-right.
+- **Prev/next video nav not visible** — nav was appended inside `.out-cover`
+  (`overflow: hidden`), and `position: absolute; inset: 0` was unreliable inside
+  the flex card on iOS. Changed to `position: fixed; inset: 0` so the nav is a
+  true full-viewport overlay, with ‹/› arrows at vertical-center left/right edges.
+- **Generate button switches to Outputs tab** — removed the `switchTab("outputs")`
+  call after queue; stays on Generate tab. Badge on Outputs tab still updates live.
+
+---
+
 ### 2026-06-25 (multi-feature session)
 
 **Features added:**
