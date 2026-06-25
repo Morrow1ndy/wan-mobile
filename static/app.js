@@ -2122,6 +2122,17 @@ document.addEventListener("visibilitychange", () => {
   else resumePolls();
 });
 
+// iOS Safari restores a backgrounded tab from the bfcache WITHOUT reliably
+// firing visibilitychange→visible, so resumePolls() above never runs and the
+// Outputs poll (which self-cancels while hidden) stays dead — leaving the active
+// card frozen at "queued" even though the generation has progressed or finished.
+// pageshow with persisted=true is the dependable signal for those restores.
+// resumePolls() is idempotent (each timer is cleared before being re-armed), so
+// running it here as well is safe even if visibilitychange does also fire.
+window.addEventListener("pageshow", (e) => {
+  if (e.persisted && !document.hidden) resumePolls();
+});
+
 // ---- Fly.io storage meter ---------------------------------------------------
 function fmtBytes(n) {
   if (n == null) return "—";

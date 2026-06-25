@@ -314,6 +314,22 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 ### 2026-06-25 (continued)
 
 **Bugs fixed:**
+- **Stale "queued" active card after returning from background (regression)** —
+  the earlier (2026-06-25) network-traffic refactor replaced the persistent
+  `setInterval(tickActive, 1000)` Outputs poll with a self-cancelling
+  `setTimeout` chain (`scheduleOutTick`) that **stops itself while the tab is
+  hidden** and relies entirely on `visibilitychange→resumePolls()` to restart.
+  On iOS Safari a backgrounded tab is often restored from the **bfcache without
+  firing `visibilitychange→visible`**, so `resumePolls()` never ran, the Outputs
+  poll stayed dead, and the active card frozen at "queued" was never reconciled —
+  it stuck on "queued" while the generation was actually running/finished, and
+  left a ghost "queued" card above the completed clip. **Fix:** also call
+  `resumePolls()` on `pageshow` when `event.persisted` is true (the reliable
+  bfcache-restore signal). `resumePolls()` is idempotent (each timer is cleared
+  before re-arming), so the extra trigger is safe if `visibilitychange` does fire
+  too. (The old `setInterval` masked this because iOS auto-resumes a live
+  interval on foreground regardless of which lifecycle event fired.)
+  Bumped `sw.js` `CACHE_VERSION` → `wan-static-v2`.
 - **"Save to cloud" button stuck on "★ Saved" after uploading a new image** — `#img-star-btn` text was set to `"★ Saved"` on successful save but never reset when a new image was loaded. Fixed by resetting to `"☆ Save to cloud"` in both places `_currentImageFile` is assigned: the file input `change` handler and the library "use image" handler (`app.js`).
 
 ---
