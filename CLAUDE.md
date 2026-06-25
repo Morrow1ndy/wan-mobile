@@ -311,6 +311,51 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-25 (multi-feature session)
+
+**Features added:**
+- **Input library copy/move** — bulk-select images, then "Copy to" or "Move to" reuses
+  the existing save-panel folder picker. `_libBulkOp` state variable routes the
+  `save-here-btn` handler to `POST /api/images/copy` or `/api/images/move`.
+  `drive_client.copy_image` uses GCS `copy_blob`; `move_image` is copy + delete.
+- **Video name field** — text input added below Seed in params (rendered in `loadConfig`,
+  not in `PARAM_FIELDS` so workflow.py ignores it). Collected via `collectParams`,
+  stored in `JOBS[prompt_id]["video_name"]`, persisted in `_JOB_PERSIST_KEYS`,
+  exposed in `_job_public`. Shown as accent-blue label on active cards, done tiles,
+  and saved tiles. Included in starred-video metadata.
+- **Sampler + Scheduler combined** — `sampler_high/low` and `scheduler_high/low` merged
+  into single `sampler` and `scheduler` fields that write to both KSampler nodes
+  (128 and 129). Saved-video Details overlay hides legacy `sampler_low`/`scheduler_low`
+  keys and relabels `sampler_high` → "Sampler", `scheduler_high` → "Scheduler".
+- **One-tap clear for prompt** — `✕` button rendered inside `.prompt-wrap` wrapper on
+  the Prompt textarea (key `"positive"` only); clears value and fires `input` event.
+- **Prev/next video navigation** — `expandTile` appends a `.tile-nav` overlay with ‹/›
+  buttons and an "N / total" counter. Navigation walks `#out-list` or `#saved-list`
+  sibling cards. Buttons auto-hide at first/last position.
+- **Hard refresh button** — `#hard-refresh` (↺) in the header: clears all SW caches
+  with `caches.delete`, then `location.reload()`. Spinning CSS animation plays on tap.
+- **Notifications removed** — `#notif-btn`, all push JS (`ensurePushSubscription`,
+  `_updateNotifBtn`, `_pushState`, VAPID helpers), push API endpoints
+  (`/api/push/vapid`, `/api/push/subscribe`), and `push.send_push` calls in `_watch`
+  all removed. SW registration kept for app-shell caching.
+
+**Bugs fixed:**
+- **Screen stuck when vid gen completes during preview** — `loadDone` now calls
+  `collapseTile` on any expanded `.out-card` in `#out-list` before overwriting
+  `innerHTML`, so `body.overflow` is always restored before the node disappears.
+- **Hide unused params in Details overlay** — `showDetails` now filters rows with
+  `_shouldShow(key)`: hides keys starting with `_` (except `_seed`), `const` fields,
+  `video_name` (metadata-only), and fields whose `when` condition isn't met in the
+  saved params (e.g. LoRA sliders when the LoRA toggle was off).
+
+**New endpoints:**
+- `POST /api/images/copy` — `{src, dest}` (both relative to `input_images/`)
+- `POST /api/images/move` — same; server-side copy + delete
+
+**SW cache:** bumped to `wan-static-v4`.
+
+---
+
 ### 2026-06-25 (SSE job stream)
 
 **Architecture change — replaced timer-based job polling with SSE:**

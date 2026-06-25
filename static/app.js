@@ -615,6 +615,21 @@ async function loadConfig() {
     const inp = document.querySelector(`input[data-key="${btn.dataset.key}"]`);
     if (inp) inp.value = Math.floor(Math.random() * 2 ** 32);
   });
+  // ✕ clear prompt button
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".prompt-clear");
+    if (!btn) return;
+    const ta = btn.closest(".prompt-wrap")?.querySelector("textarea");
+    if (ta) { ta.value = ""; ta.dispatchEvent(new Event("input")); resizeTextareas(); }
+  });
+  // Video name input (below seed, outside FIELDS so workflow.py ignores it)
+  $("#params").insertAdjacentHTML("beforeend", `
+    <div class="field" data-fkey="video_name">
+      <label>Video name (optional)
+        <input type="text" data-key="video_name" placeholder="Label this clip (shown on the card)" />
+      </label>
+    </div>
+  `);
 }
 
 function renderField(f) {
@@ -626,8 +641,13 @@ function renderField(f) {
       <input type="checkbox" data-key="${f.key}"${f.default ? " checked" : ""} /></label>`;
   } else if (f.type === "textarea") {
     const ph = f.placeholder ? ` placeholder="${f.placeholder}"` : "";
+    const clearBtn = f.key === "positive"
+      ? `<button type="button" class="prompt-clear" title="Clear prompt">✕</button>` : "";
     inner = `<label>${f.label}
-      <textarea data-key="${f.key}"${ph}>${f.default ?? ""}</textarea></label>`;
+      <div class="prompt-wrap">
+        <textarea data-key="${f.key}"${ph}>${f.default ?? ""}</textarea>
+        ${clearBtn}
+      </div></label>`;
   } else if (f.type === "select") {
     const opts = (f.choices || [])
       .map((c) => `<option value="${c}"${c === f.default ? " selected" : ""}>${c}</option>`)
@@ -1056,6 +1076,10 @@ async function loadOutputs() {
 
 async function loadDone(podId) {
   const list = $("#out-list");
+  // Collapse any expanded card before rebuilding to avoid leaving body.overflow
+  // locked when a generation completes while the user is previewing a video.
+  const expanded = list.querySelector(".out-card.expanded");
+  if (expanded) collapseTile(expanded);
   let items;
   try {
     items = await getJSON(`/api/pods/${podId}/outputs`);
@@ -1063,9 +1087,6 @@ async function loadDone(podId) {
     list.innerHTML = `<div class="card muted">Could not load outputs: ${esc(e.message)}</div>`;
     return;
   }
-  // If a job completed while the browser was backgrounded, the server-side watcher
-  // may still show it as "running" for a moment. Remove any active card that already
-  // appears in the done list so both are never visible simultaneously.
   for (const it of items) {
     const activeCard = document.getElementById(activeCardId(it.prompt_id));
     if (activeCard) { removeCard(activeCard); _seenDone.add(it.prompt_id); }
@@ -1121,6 +1142,7 @@ function renderSavedOutput(it) {
   const url = `/api/saved/file/${encodeURIComponent(it.filename)}`;
   const dt = fmtDatetime(it.completed_at);
   const dur = it.duration_secs ? fmtElapsed(it.duration_secs) : null;
+  const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
   return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
               data-pid="${esc(it.prompt_id)}">
     <div class="out-cover">
@@ -1137,6 +1159,7 @@ function renderSavedOutput(it) {
     </div>
     <div class="out-cap">
       <div class="cap-meta">
+        ${name}
         ${dt ? `<span class="out-dt">${dt}</span>` : ""}
         ${dur ? `<span class="out-dur">⏱ ${dur}</span>` : ""}
       </div>
@@ -1160,6 +1183,7 @@ function renderOutput(podId, it) {
   const dt = fmtDatetime(it.completed_at);
   const dur = it.duration_secs ? fmtElapsed(it.duration_secs) : null;
   const starred = it.is_saved;
+  const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
   return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
               data-pid="${esc(it.prompt_id)}" data-pod="${esc(podId)}"
               data-file="${esc(it.filename)}" data-sub="${esc(it.subfolder||"")}" data-ftype="${esc(it.type||"output")}">
@@ -1178,6 +1202,7 @@ function renderOutput(podId, it) {
     </div>
     <div class="out-cap">
       <div class="cap-meta">
+        ${name}
         ${dt ? `<span class="out-dt">${dt}</span>` : ""}
         ${dur ? `<span class="out-dur">⏱ ${dur}</span>` : ""}
       </div>
@@ -1199,6 +1224,32 @@ function expandTile(card) {
   card.classList.add("expanded");
   document.body.style.overflow = "hidden";
   if (video) video.play().catch(() => {});
+
+  // Prev/next nav: find sibling cards in the same grid
+  const cover = card.querySelector(".out-cover");
+  const grid = card.closest("#out-list, #saved-list");
+  if (cover && grid) {
+    cover.querySelectorAll(".tile-nav").forEach((n) => n.remove());
+    const cards = [...grid.querySelectorAll(".out-card")];
+    const idx = cards.indexOf(card);
+    if (cards.length > 1) {
+      const nav = document.createElement("div");
+      nav.className = "tile-nav";
+      nav.innerHTML = `
+        <button class="tile-nav-btn${idx <= 0 ? " tile-hidden" : ""}" data-dir="-1" aria-label="Previous">&#x2039;</button>
+        <span class="tile-nav-count">${idx + 1} / ${cards.length}</span>
+        <button class="tile-nav-btn${idx >= cards.length - 1 ? " tile-hidden" : ""}" data-dir="1" aria-label="Next">&#x203A;</button>
+      `;
+      nav.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const btn = e.target.closest(".tile-nav-btn");
+        if (!btn || btn.classList.contains("tile-hidden")) return;
+        const next = cards[idx + Number(btn.dataset.dir)];
+        if (next) expandTile(next);
+      });
+      cover.appendChild(nav);
+    }
+  }
 }
 function collapseTile(card) {
   const video = card.querySelector(".tile-video");
@@ -1227,27 +1278,52 @@ async function showDetails(promptId) {
   catch (_) { toast("No details saved for this generation", true); return; }
 
   const fields = CFG.fields || [];
+
+  // Label aliases for legacy (pre-combined) sampler/scheduler keys
+  const LEGACY_LABELS = { sampler_high: "Sampler", scheduler_high: "Scheduler" };
+  // Keys to always hide in details (redundant, internal, or metadata-only)
+  const HIDDEN_KEYS = new Set(["sampler_low", "scheduler_low", "video_name"]);
+
+  function _detailBool(v) {
+    if (v === true || v === 1) return true;
+    if (v === false || v === 0 || v == null) return false;
+    return !["", "false", "0", "no", "off"].includes(String(v).trim().toLowerCase());
+  }
+  function _shouldShow(key) {
+    if (HIDDEN_KEYS.has(key)) return false;
+    if (key.startsWith("_") && key !== "_seed") return false;
+    const field = fields.find((f) => f.key === key);
+    if (!field) return true;
+    if (field.type === "const") return false;
+    if (field.when) {
+      const condMet = _detailBool(params[field.when.key]) === !!field.when.is;
+      if (!condMet) return false;
+    }
+    return true;
+  }
+
   const entries = Object.entries(params);
-  // prompt (positive) first, then the rest
   const sorted = [
     ...entries.filter(([k]) => k === "positive"),
     ...entries.filter(([k]) => k !== "positive"),
   ];
-  const rows = sorted.map(([key, val]) => {
-    const field = fields.find((f) => f.key === key);
-    const label = field ? field.label : key.replace(/_/g, " ");
-    const isSeed = key === "_seed";
-    const seedNum = isSeed ? Number(val) : 0;
-    const display = isSeed && seedNum <= 0 ? "— (not captured)" : esc(String(val));
-    const useBtn = isSeed && seedNum > 0
-      ? `<button class="ghost small detail-use-seed" data-seed="${seedNum}" style="margin-top:6px;font-size:12px">↑ Use this seed</button>`
-      : "";
-    return `<div class="detail-row">
-      <span class="detail-key">${esc(label)}</span>
-      <span class="detail-val">${display}</span>
-      ${useBtn}
-    </div>`;
-  }).join("");
+  const rows = sorted
+    .filter(([key]) => _shouldShow(key))
+    .map(([key, val]) => {
+      const field = fields.find((f) => f.key === key);
+      const label = LEGACY_LABELS[key] || (field ? field.label : key.replace(/_/g, " "));
+      const isSeed = key === "_seed";
+      const seedNum = isSeed ? Number(val) : 0;
+      const display = isSeed && seedNum <= 0 ? "— (not captured)" : esc(String(val));
+      const useBtn = isSeed && seedNum > 0
+        ? `<button class="ghost small detail-use-seed" data-seed="${seedNum}" style="margin-top:6px;font-size:12px">↑ Use this seed</button>`
+        : "";
+      return `<div class="detail-row">
+        <span class="detail-key">${esc(label)}</span>
+        <span class="detail-val">${display}</span>
+        ${useBtn}
+      </div>`;
+    }).join("");
 
   const existing = document.querySelector(".details-overlay");
   if (existing) existing.remove();
@@ -1401,6 +1477,7 @@ function upsertActiveCard(podId, j) {
   let card = document.getElementById(activeCardId(j.prompt_id));
   if (!card) {
     const thumb = inputThumbUrl(podId, j.input_image);
+    const nameHtml = j.video_name ? `<div class="active-name">${esc(j.video_name)}</div>` : "";
     $("#out-active").insertAdjacentHTML("afterbegin", `
       <div class="out-item active" id="${activeCardId(j.prompt_id)}"
            data-pid="${esc(j.prompt_id)}">
@@ -1410,6 +1487,7 @@ function upsertActiveCard(podId, j) {
           <span class="gen-badge">queued</span>
         </div>
         <div class="active-body">
+          ${nameHtml}
           <div class="active-row">
             <span class="elapsed muted">queued</span>
             <span class="step muted"></span>
@@ -1842,6 +1920,8 @@ function renderLibSelection() {
     bar.hidden = n === 0;
     $("#lib-bulk-count").textContent = n ? `${n} selected` : "";
     $("#lib-bulk-delete").disabled = n === 0;
+    $("#lib-bulk-copy").disabled = n === 0;
+    $("#lib-bulk-move").disabled = n === 0;
   } else {
     el.innerHTML = `<div style="flex:1"></div><button id="lib-sel-btn" class="ghost small">Select</button>`;
     el.hidden = false;
@@ -1913,6 +1993,22 @@ $("#lib-bulk-delete").addEventListener("click", async () => {
 });
 $("#lib-bulk-cancel").addEventListener("click", exitLibSelectMode);
 
+// ---- library bulk copy / move -----------------------------------------------
+// Reuses the save-to-cloud folder picker. _libBulkOp tracks the active operation.
+let _libBulkOp = null; // "copy" | "move" | null
+
+function _openLibCopyMove(op) {
+  _libBulkOp = op;
+  document.querySelector(".save-panel-title").textContent =
+    op === "copy" ? "Copy to folder" : "Move to folder";
+  $("#save-here-btn").textContent = op === "copy" ? "Copy here" : "Move here";
+  _savePanelPrefix = "";
+  $("#img-save-panel").hidden = false;
+  loadSavePanel("");
+}
+$("#lib-bulk-copy").addEventListener("click", () => _openLibCopyMove("copy"));
+$("#lib-bulk-move").addEventListener("click", () => _openLibCopyMove("move"));
+
 // ---- save-to-cloud panel ----------------------------------------------------
 $("#img-star-btn").addEventListener("click", () => {
   if (!_currentImageFile) return toast("No image to save", true);
@@ -1923,6 +2019,11 @@ $("#img-star-btn").addEventListener("click", () => {
 
 $("#img-save-cancel").addEventListener("click", () => {
   $("#img-save-panel").hidden = true;
+  if (_libBulkOp) {
+    _libBulkOp = null;
+    document.querySelector(".save-panel-title").textContent = "Save to folder";
+    $("#save-here-btn").textContent = "Save here";
+  }
 });
 
 async function loadSavePanel(prefix) {
@@ -1992,8 +2093,39 @@ $("#save-new-folder-confirm").addEventListener("click", async () => {
 });
 
 $("#save-here-btn").addEventListener("click", async () => {
-  if (!_currentImageFile) return toast("No image", true);
   const btn = $("#save-here-btn");
+
+  // Copy/move mode — triggered from library bulk-select
+  if (_libBulkOp) {
+    const op = _libBulkOp;
+    const destPrefix = _savePanelPrefix;
+    const files = [..._libSelected];
+    btn.disabled = true; btn.textContent = op === "copy" ? "Copying…" : "Moving…";
+    let done = 0;
+    for (const srcPath of files) {
+      const name = srcPath.split("/").pop();
+      const destPath = destPrefix + name;
+      try {
+        const r = await apiFetch(`/api/images/${op}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ src: srcPath, dest: destPath }),
+        });
+        if (r.ok) done++;
+      } catch (_) {}
+    }
+    toast(`${done} image${done !== 1 ? "s" : ""} ${op === "copy" ? "copied" : "moved"}`);
+    btn.disabled = false; btn.textContent = "Save here";
+    _libBulkOp = null;
+    document.querySelector(".save-panel-title").textContent = "Save to folder";
+    $("#img-save-panel").hidden = true;
+    exitLibSelectMode();
+    loadLibrary(_libPrefix);
+    return;
+  }
+
+  // Normal save-to-cloud mode
+  if (!_currentImageFile) return toast("No image", true);
   btn.disabled = true; btn.textContent = "Saving…";
   const destPath = _savePanelPrefix + _currentImageFile.name;
   const fd = new FormData();
@@ -2165,104 +2297,25 @@ async function loadStorage() {
   });
 }
 
-// ---- web push notifications ------------------------------------------------
-// Register a service worker + subscribe to push so a "video ready" notification
-// arrives even when the browser is minimised. On iOS this only works once the
-// app has been added to the Home Screen (iOS 16.4+).
-let _swReg = null;
-let _pushBusy = false;
-
-function _updateNotifBtn(state) {
-  // state: "on" | "off" | "denied" | "unsupported"
-  const btn = $("#notif-btn");
-  if (!btn) return;
-  btn.className = "ghost small notif-btn " + (state === "on" ? "on" : "off");
-  const labels = { on: "🔔 Notifications on", off: "🔔 Tap to enable notifications",
-                   denied: "🔕 Notifications blocked", unsupported: "🔕 Notifications unavailable" };
-  btn.title = labels[state] || "Push notifications";
-}
-
-function _pushState() {
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)
-      || !("Notification" in window)) return "unsupported";
-  if (Notification.permission === "denied") return "denied";
-  if (Notification.permission === "granted") return "on";
-  return "off";
-}
-
+// ---- service worker (app shell caching) ------------------------------------
 async function registerServiceWorker() {
-  if (!("serviceWorker" in navigator)) return null;
-  try {
-    _swReg = await navigator.serviceWorker.register("/sw.js");
-    return _swReg;
-  } catch (e) {
-    console.warn("SW registration failed", e);
-    return null;
-  }
+  if (!("serviceWorker" in navigator)) return;
+  try { await navigator.serviceWorker.register("/sw.js"); } catch (_) {}
 }
 
-function urlB64ToUint8Array(base64) {
-  const pad = "=".repeat((4 - (base64.length % 4)) % 4);
-  const b64 = (base64 + pad).replace(/-/g, "+").replace(/_/g, "/");
-  const raw = atob(b64);
-  const arr = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-  return arr;
-}
-
-// Idempotent: safe to call on every page load and on each Generate. Requests
-// permission (needs a user gesture on some browsers, hence the Generate hook),
-// subscribes once, and re-registers the subscription with the server.
-async function ensurePushSubscription() {
-  if (_pushBusy) return;
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const isStandalone = !!navigator.standalone
-    || window.matchMedia("(display-mode: standalone)").matches;
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)
-      || !("Notification" in window)) {
-    if (isIOS && !isStandalone) {
-      toast("To enable notifications: Share → Add to Home Screen, then open from there.");
-    }
-    _updateNotifBtn("unsupported");
-    return;
-  }
-  if (Notification.permission === "denied") {
-    _updateNotifBtn("denied");
-    toast("Notifications blocked — enable them in your browser settings.", true);
-    return;
-  }
-  _pushBusy = true;
+// ---- hard refresh (clear SW cache + reload) --------------------------------
+$("#hard-refresh").addEventListener("click", async () => {
+  const btn = $("#hard-refresh");
+  btn.classList.add("spinning");
   try {
-    if (Notification.permission === "default") {
-      const result = await Notification.requestPermission();
-      if (result !== "granted") { _updateNotifBtn("off"); return; }
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
     }
-    const reg = _swReg || (await registerServiceWorker());
-    if (!reg) { _updateNotifBtn("off"); return; }
-    await navigator.serviceWorker.ready;
-    let sub = await reg.pushManager.getSubscription();
-    if (!sub) {
-      const { public_key } = await getJSON("/api/push/vapid");
-      if (!public_key) { _updateNotifBtn("off"); return; }
-      sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlB64ToUint8Array(public_key),
-      });
-    }
-    await postJSON("/api/push/subscribe", sub.toJSON ? sub.toJSON() : sub);
-    _updateNotifBtn("on");
-  } catch (e) {
-    if (!(e instanceof AuthError)) {
-      console.warn("push subscribe failed", e);
-      toast("Notification setup failed: " + e.message, true);
-    }
-    _updateNotifBtn("off");
   } finally {
-    _pushBusy = false;
+    window.location.reload();
   }
-}
-
-$("#notif-btn").addEventListener("click", () => ensurePushSubscription());
+});
 
 // ---- boot ------------------------------------------------------------------
 $("#refresh").addEventListener("click", loadPods);
@@ -2289,13 +2342,7 @@ async function init() {
   startRamPoll();
   pollGenBadge(); // surface a restored in-flight generation on the Outputs tab
   if (!_balanceTimer) _balanceTimer = setInterval(loadBalance, 60_000);
-  // Register the SW now; (re)subscribe to push if the user already granted it.
-  // First-time permission is requested on the Generate tap (a user gesture).
-  _updateNotifBtn(_pushState());
-  registerServiceWorker();
-  if (window.Notification && Notification.permission === "granted") {
-    ensurePushSubscription();
-  }
+  registerServiceWorker(); // register SW for app-shell caching
 }
 
 init();

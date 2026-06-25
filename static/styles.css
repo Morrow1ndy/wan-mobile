@@ -688,3 +688,65 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .dialog-btns .primary { flex: 1.5; display: block; }
 .dialog-btns .primary.danger { background: var(--red); color: #fff; }
 #prompt-input { margin: 0; }
+
+/* ---- prompt clear button ---- */
+.prompt-wrap { position: relative; }
+.prompt-wrap textarea { padding-right: 34px; }
+.prompt-clear {
+  position: absolute; top: 17px; right: 10px;
+  background: none; border: none; color: var(--muted);
+  font-size: 15px; line-height: 1; cursor: pointer; padding: 3px;
+  border-radius: 4px; font-family: var(--f); opacity: 0.55;
+  transition: opacity .15s, color .15s;
+}
+.prompt-clear:active { opacity: 1; color: var(--text); }
+
+/* ---- video name ---- */
+.active-name {
+  font-size: 12px; font-weight: 500; color: var(--accent);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-bottom: 6px;
+}
+.out-name {
+  display: block; font-size: 11px; font-weight: 500; color: var(--accent);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-bottom: 2px;
+}
+
+/* ---- prev/next nav in expanded tile ---- */
+.tile-nav {
+  display: none;
+  position: absolute;
+  bottom: max(60px, calc(env(safe-area-inset-bottom) + 54px));
+  left: 0; right: 0;
+  align-items: center; justify-content: space-between;
+  padding: 0 16px; z-index: 42; pointer-events: none;
+}
+.out-card.expanded .tile-nav { display: flex; }
+.tile-nav-btn {
+  pointer-events: all;
+  background: rgba(11,12,14,0.75); border: 1px solid rgba(255,255,255,0.15);
+  color: #fff; font-size: 26px; font-weight: 300; line-height: 1;
+  width: 46px; height: 46px; border-radius: 50%;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  -webkit-tap-highlight-color: transparent; font-family: var(--f);
+  transition: opacity .15s;
+}
+.tile-nav-btn.tile-hidden { opacity: 0; pointer-events: none; }
+.tile-nav-count {
+  pointer-events: none;
+  background: rgba(11,12,14,0.75); border: 1px solid rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.75); font-size: 13px; font-weight: 500;
+  padding: 6px 14px; border-radius: 999px; font-variant-numeric: tabular-nums;
+}
+
+/* ---- hard refresh button ---- */
+.hard-refresh-btn { font-size: 17px; padding: 5px 8px; }
+@keyframes hard-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-360deg); }
+}
+.hard-refresh-btn.spinning { animation: hard-spin 0.5s ease-out; }
+
+/* ---- lib bulk copy/move buttons ---- */
+#lib-bulk-copy, #lib-bulk-move { color: var(--accent) !important; }

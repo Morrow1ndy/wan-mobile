@@ -24,7 +24,6 @@ from . import comfy_client as comfy
 from . import config
 from . import drive_client as drive
 from . import persistence as ps
-from . import push
 from . import runpod_client as rp
 from . import workflow as wf
 
@@ -178,20 +177,6 @@ async def set_auth_cookie(request: Request):
     )
     return response
 
-# ----- Web Push (notify when a video is ready) -----------------------------
-@app.get("/api/push/vapid")
-async def push_vapid():
-    """The VAPID public key the browser needs to subscribe (null if disabled)."""
-    return {"public_key": push.public_key()}
-
-
-@app.post("/api/push/subscribe")
-async def push_subscribe(payload: dict = Body(default={})):
-    """Store a browser PushSubscription so we can notify this device."""
-    await asyncio.to_thread(push.add_subscription, payload)
-    return {"ok": True}
-
-
 # In-memory job tracking (good enough for a single user). Mirrored to disk so
 # in-flight jobs survive a restart / Fly auto-stop (see _persist_jobs).
 JOBS: dict[str, dict] = {}
@@ -210,6 +195,7 @@ POD_READY: dict[str, bool] = {}
 _JOB_PERSIST_KEYS = (
     "status", "progress", "max", "node", "node_title", "node_titles",
     "pod_id", "video", "started_at", "finished_at", "input_image", "error",
+    "video_name",
 )
 
 
@@ -454,6 +440,7 @@ async def generate(
     workflow_file: str = Form(""),
 ):
     values = json.loads(params)
+    video_name = (values.get("video_name") or "").strip()
     url = rp.comfy_url(pod_id)
     if not await comfy.is_ready(url):
         raise HTTPException(409, "ComfyUI is not ready on this pod yet.")
@@ -477,6 +464,7 @@ async def generate(
         "input_image": image_name,
         "preview": None, "preview_ct": None,
         "workflow_file": chosen,
+        "video_name": video_name,
     }
     log_event(pod_id, "Generation queued")
     _persist_jobs()
@@ -510,6 +498,7 @@ def _job_public(prompt_id: str, job: dict) -> dict:
         "has_preview": job.get("preview") is not None,
         "video": job.get("video"),
         "error": job.get("error"),
+        "video_name": job.get("video_name", ""),
     }
 
 
@@ -741,12 +730,14 @@ async def star_video(pod_id: str, prompt_id: str, payload: dict = Body(default={
     (ps.SAVED_DIR / local_name).write_bytes(content)
 
     stat = ps.get_stats().get(prompt_id, {})
+    _job = JOBS.get(prompt_id) or {}
     meta = {
         "prompt_id": prompt_id,
         "filename": local_name,
         "saved_at": round(time.time()),
         "completed_at": stat.get("at"),
         "duration_secs": stat.get("secs"),
+        "video_name": _job.get("video_name", ""),
     }
 
     try:
@@ -927,6 +918,30 @@ async def create_image_folder(payload: dict = Body(default={})):
     return {"ok": True}
 
 
+def _safe_image_path(p: str) -> str:
+    """Validate an image library path: must be non-empty and traversal-free."""
+    clean = (p or "").strip().strip("/")
+    if not clean or ".." in clean.split("/"):
+        raise HTTPException(400, "invalid path")
+    return clean
+
+
+@app.post("/api/images/copy")
+async def copy_image_file(payload: dict = Body(default={})):
+    src = _safe_image_path(payload.get("src", ""))
+    dest = _safe_image_path(payload.get("dest", ""))
+    await asyncio.to_thread(drive.copy_image, src, dest)
+    return {"ok": True}
+
+
+@app.post("/api/images/move")
+async def move_image_file(payload: dict = Body(default={})):
+    src = _safe_image_path(payload.get("src", ""))
+    dest = _safe_image_path(payload.get("dest", ""))
+    await asyncio.to_thread(drive.move_image, src, dest)
+    return {"ok": True}
+
+
 # ----- RAM clear -------------------------------------------------------------
 _RAM_CLEAR_WF = Path(__file__).resolve().parent.parent / "workflows" / "ram_clear.json"
 
@@ -984,8 +999,6 @@ async def _watch(url: str, client_id: str, prompt_id: str):
                     job["finished_at"] = time.time()
                     log_event(job["pod_id"], "Generation error (ComfyUI)")
                     _persist_jobs()
-                    await asyncio.to_thread(push.send_push,
-                        "Generation failed", "ComfyUI hit an error — open the app for details.")
                     return
     except Exception:
         pass  # fall through to history-based resolution
@@ -1008,8 +1021,6 @@ async def _watch(url: str, client_id: str, prompt_id: str):
             job["finished_at"] = time.time()
             log_event(job["pod_id"], "Generation error (ComfyUI)")
             _persist_jobs()
-            await asyncio.to_thread(push.send_push,
-                "Generation failed", "ComfyUI hit an error — open the app for details.")
             return
         if outputs or status.get("completed"):
             job["video"] = _find_video(outputs)
@@ -1025,14 +1036,6 @@ async def _watch(url: str, client_id: str, prompt_id: str):
             log_event(job["pod_id"],
                       "Video ready ✓" if job["video"] else "Finished (no video output)")
             _persist_jobs()
-            if job["video"]:
-                secs = job.get("finished_at", 0) - (job.get("started_at") or 0)
-                took = f" in {round(secs)}s" if secs > 0 else ""
-                await asyncio.to_thread(push.send_push,
-                    "Your video is ready 🎬", f"Generation finished{took}. Tap to watch.")
-            else:
-                await asyncio.to_thread(push.send_push,
-                    "Generation finished", "No video was produced — open the app to check.")
             return
         if time.monotonic() > deadline:
             job["status"] = "error"
@@ -1040,8 +1043,6 @@ async def _watch(url: str, client_id: str, prompt_id: str):
             job["finished_at"] = time.time()
             log_event(job["pod_id"], "Generation timed out")
             _persist_jobs()
-            await asyncio.to_thread(push.send_push,
-                "Generation timed out", "ComfyUI didn't finish in time — open the app.")
             return
         await asyncio.sleep(2)
 

@@ -183,3 +183,18 @@ def create_image_folder(path: str):
         return
     _bucket().blob(_IMAGE_PREFIX + path + ".keep").upload_from_string(
         b"", content_type="application/octet-stream", timeout=_TIMEOUT)
+
+
+def copy_image(src: str, dest: str):
+    """Copy a blob within input_images/ (src → dest, both relative to prefix)."""
+    if not _enabled():
+        return
+    bkt = _bucket()
+    bkt.copy_blob(bkt.blob(_IMAGE_PREFIX + src), bkt,
+                  new_name=_IMAGE_PREFIX + dest, timeout=_TIMEOUT)
+
+
+def move_image(src: str, dest: str):
+    """Move (copy + delete) a blob within input_images/."""
+    copy_image(src, dest)
+    delete_image(src)
