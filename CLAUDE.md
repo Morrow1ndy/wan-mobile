@@ -311,6 +311,16 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-25 (end of day)
+
+**Changes:**
+- **Outputs section order swapped** — Current Session now appears above Saved (HTML reorder only).
+- **Library image caching** — `Cache-Control` on `/api/images/file/` changed from
+  `max-age=300` to `max-age=31536000, immutable`. Thumbnails are write-once per path
+  so the browser caches them for a year; repeat library visits are now instant.
+
+---
+
 ### 2026-06-25 (late session)
 
 **Features added:**
