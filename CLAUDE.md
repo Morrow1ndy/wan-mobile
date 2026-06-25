@@ -311,6 +311,46 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-26
+
+**Bugs fixed:**
+- **Video name missing on completed session and saved tiles** — `pod_outputs` was
+  building the item dict from ComfyUI history without `video_name`. Fixed by looking
+  it up from the in-memory `JOBS` dict first, falling back to `ps.get_params(pid)`
+  (params are saved to disk at generate time and include `video_name`). Both
+  `renderOutput` and `renderSavedOutput` already handled `it.video_name`; only the
+  backend was missing the field.
+- **Drag-to-reorder video cards** — hold a card 400 ms to start dragging; drop
+  anywhere in the grid to reorder. Uses SortableJS 1.15.6 (CDN, `forceFallback`
+  for reliable iOS grid drag). Saved section: order persisted to `saved_videos.json`
+  + GCS via `POST /api/saved/reorder`. Session section: order persisted to
+  `localStorage` keyed by pod ID; applied on every `loadDone()` so new clips appear
+  at the top. Sortable is disabled while select mode is active in each section.
+- **Storage filename now uses display name** — `star_video` constructs the storage
+  filename as `{sanitized_name}_{YYYYMMDD_HHMMSS}.mp4` (e.g. `beach_sunset_20260626_143022.mp4`)
+  instead of `{prompt_id[:8]}_{comfyui_name}.mp4`. Falls back to `{timestamp}.mp4`
+  when no name is set. Name is sanitized: filesystem-unsafe chars stripped,
+  spaces → underscores.
+- **Delete button colour wrong** — duplicate CSS rule at line 349 overrode `.del-btn`
+  red with muted grey; removed the conflict. Save (↓) link is now accent blue.
+  Details stays muted grey.
+
+**Features added:**
+- **iOS-native Save sheet for videos** — `↓ Save` button now fetches the video as a
+  blob and calls `navigator.share({ files: [file] })`, which opens the iOS native
+  share sheet (Save to Photos / Save to Files / AirDrop). Falls back to a
+  programmatic blob-URL download click on desktop. `AbortError` (user dismissed the
+  sheet) is silently swallowed. Button shows "↓ …" while downloading.
+- **Quick-delete on session tiles** — small red ✕ button at bottom-right of each
+  current-session video tile; deletes without needing to expand the card.
+- **Video buffering spinner** — white spinner overlay appears while `readyState < 3`
+  on expand and on any subsequent `waiting` event; hides on `canplay`/`playing`.
+- **Tile-video metadata preload** — `IntersectionObserver` now also sets
+  `tile-video.src` with `preload="metadata"` when a card nears the viewport (400px
+  margin), so the moov atom is already cached before the user taps.
+
+---
+
 ### 2026-06-25 (end of day)
 
 **Changes:**

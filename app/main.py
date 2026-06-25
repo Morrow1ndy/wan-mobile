@@ -9,10 +9,12 @@ import asyncio
 import base64
 import json
 import os
+import re
 import secrets
 import shutil
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import websockets
@@ -591,9 +593,13 @@ async def pod_outputs(pod_id: str, limit: int = 30):
             stat = all_stats.get(pid, {})
             duration = round(f - s) if s and f else stat.get("secs")
             completed_at = f or stat.get("at")
+            # video_name: try in-memory job first, then fall back to saved params
+            video_name = (job or {}).get("video_name") or \
+                         (ps.get_params(pid) or {}).get("video_name", "")
             items.append({"prompt_id": pid, "input_image": _input_image(entry),
                           "duration_secs": duration, "completed_at": completed_at,
-                          "is_saved": pid in saved_ids, **vid})
+                          "is_saved": pid in saved_ids,
+                          "video_name": video_name, **vid})
     items.reverse()  # history is chronological -> newest first
     return items
 
@@ -725,12 +731,16 @@ async def star_video(pod_id: str, prompt_id: str, payload: dict = Body(default={
 
     content = await comfy.fetch_view(rp.comfy_url(pod_id), filename, subfolder, file_type)
     ps.SAVED_DIR.mkdir(parents=True, exist_ok=True)
-    basename = Path(filename).name
-    local_name = f"{prompt_id[:8]}_{basename}"
+    _job = JOBS.get(prompt_id) or {}
+    video_name = (_job.get("video_name") or "").strip()
+    # Sanitize display name: strip filesystem-unsafe chars, collapse spaces to _
+    safe_name = re.sub(r'[\\/:*?"<>|]', "", video_name).strip()
+    safe_name = re.sub(r"\s+", "_", safe_name)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    local_name = f"{safe_name}_{ts}.mp4" if safe_name else f"{ts}.mp4"
     (ps.SAVED_DIR / local_name).write_bytes(content)
 
     stat = ps.get_stats().get(prompt_id, {})
-    _job = JOBS.get(prompt_id) or {}
     meta = {
         "prompt_id": prompt_id,
         "filename": local_name,
@@ -779,6 +789,25 @@ async def unstar_video(prompt_id: str):
             p = ps.SAVED_DIR / item["filename"]
             if p.exists():
                 p.unlink()
+    return {"ok": True}
+
+
+@app.post("/api/saved/reorder")
+async def reorder_saved(payload: dict = Body(default={})):
+    """Persist a user-defined display order for saved videos."""
+    ids = [str(i) for i in (payload.get("ids") or [])]
+    if not ids:
+        raise HTTPException(400, "ids required")
+    async with _saved_lock:
+        saved = ps.get_saved()
+        by_id = {s["prompt_id"]: s for s in saved}
+        reordered = [by_id[pid] for pid in ids if pid in by_id]
+        reordered += [s for s in saved if s["prompt_id"] not in set(ids)]
+        ps.save_saved(reordered)
+        try:
+            await asyncio.to_thread(drive.upload_metadata, reordered)
+        except Exception:
+            pass
     return {"ok": True}
 
 

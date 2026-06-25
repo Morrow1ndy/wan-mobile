@@ -183,6 +183,7 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   font-size: 14px; font-weight: 500; font-family: var(--f);
   text-decoration: none; cursor: pointer;
 }
+.out-cap button.dl:disabled { opacity: 0.5; cursor: default; }
 .info-btn { color: var(--muted) !important; }
 .del-btn  { color: var(--red) !important; }
 
@@ -796,6 +797,16 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   0%   { transform: translate(-50%, -50%) scale(0.6); }
   60%  { transform: translate(-50%, -50%) scale(1.1); }
   100% { transform: translate(-50%, -50%) scale(1); }
+}
+
+/* ---- SortableJS drag-to-reorder ---- */
+.sortable-ghost  { opacity: 0.25; border-color: var(--accent) !important; }
+.sortable-chosen { box-shadow: 0 0 0 2px var(--accent); }
+.sortable-drag   {
+  opacity: 1 !important;
+  box-shadow: 0 10px 36px rgba(0,0,0,0.55) !important;
+  border-color: var(--accent) !important;
+  transform: scale(1.04);
 }
 
 /* ---- hard refresh button ---- */

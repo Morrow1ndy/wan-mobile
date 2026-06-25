@@ -842,6 +842,44 @@ $("#generate").addEventListener("click", async () => {
   }
 });
 
+// ---- drag-to-reorder (SortableJS) ------------------------------------------
+let _savedSortable = null;
+let _sessionSortable = null;
+const _SORTABLE_OPTS = {
+  animation: 150,
+  delay: 400, delayOnTouchOnly: true, touchStartThreshold: 5,
+  forceFallback: true, fallbackOnBody: true,
+  ghostClass: "sortable-ghost",
+  chosenClass: "sortable-chosen",
+  dragClass: "sortable-drag",
+};
+
+function initSavedSortable() {
+  if (typeof Sortable === "undefined") return;
+  if (_savedSortable) _savedSortable.destroy();
+  _savedSortable = new Sortable($("#saved-list"), {
+    ..._SORTABLE_OPTS,
+    onEnd() {
+      const ids = [...$$("#saved-list .out-card[data-pid]")].map((c) => c.dataset.pid);
+      postJSON("/api/saved/reorder", { ids }).catch(() => {});
+    },
+  });
+}
+
+function initSessionSortable() {
+  if (typeof Sortable === "undefined") return;
+  if (_sessionSortable) _sessionSortable.destroy();
+  _sessionSortable = new Sortable($("#out-list"), {
+    ..._SORTABLE_OPTS,
+    onEnd() {
+      if (!_outPodId) return;
+      const ids = [...$$("#out-list .out-card[data-pid]")].map((c) => c.dataset.pid);
+      try { localStorage.setItem(`wan_session_order_${_outPodId}`, JSON.stringify(ids)); }
+      catch (_) {}
+    },
+  });
+}
+
 // ---- outputs gallery -------------------------------------------------------
 let _outPodId = null;
 let _outTimer = null;
@@ -953,6 +991,7 @@ function enterSelectMode() {
   $("#bulk-bar").hidden = false;
   $("#out-select").textContent = "Done";
   _updateBulkBar();
+  if (_sessionSortable) _sessionSortable.option("disabled", true);
 }
 function exitSelectMode() {
   _selectMode = false;
@@ -961,6 +1000,7 @@ function exitSelectMode() {
   $("#out-list").classList.remove("select-mode");
   $("#bulk-bar").hidden = true;
   $("#out-select").textContent = "Select";
+  if (_sessionSortable) _sessionSortable.option("disabled", false);
 }
 function _toggleSelect(card) {
   const pid = card.dataset.pid;
@@ -1088,10 +1128,27 @@ async function loadDone(podId) {
     if (activeCard) { removeCard(activeCard); _seenDone.add(it.prompt_id); }
   }
   const unsaved = items.filter((it) => !it.is_saved);
+  // Apply user-defined session order (persisted in localStorage after drag).
+  // New clips not yet in the stored order go to the top.
+  try {
+    const stored = JSON.parse(localStorage.getItem(`wan_session_order_${podId}`) || "null");
+    if (stored && stored.length) {
+      const rank = new Map(stored.map((id, i) => [id, i]));
+      unsaved.sort((a, b) => {
+        const ai = rank.has(a.prompt_id) ? rank.get(a.prompt_id) : -1;
+        const bi = rank.has(b.prompt_id) ? rank.get(b.prompt_id) : -1;
+        if (ai === -1 && bi === -1) return 0;
+        if (ai === -1) return -1;
+        if (bi === -1) return 1;
+        return ai - bi;
+      });
+    }
+  } catch (_) {}
   list.innerHTML = unsaved.length
     ? unsaved.map((it) => renderOutput(podId, it)).join("")
     : `<div class="card muted">No videos yet on this pod.</div>`;
   observeLazyCovers(list);
+  initSessionSortable();
 }
 
 async function loadSaved() {
@@ -1103,6 +1160,7 @@ async function loadSaved() {
   section.hidden = false;
   list.innerHTML = items.map(renderSavedOutput).join("");
   observeLazyCovers(list);
+  initSavedSortable();
   loadStorage();
 }
 
@@ -1153,6 +1211,36 @@ function observeLazyCovers(root) {
   }
 }
 
+// Download / share a video file.
+// On iOS uses Web Share API (shows native "Save to Photos / Files" sheet).
+// Falls back to blob-URL download for desktop browsers.
+async function saveVideoFile(url, filename, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "↓ …"; }
+  try {
+    const r = await apiFetch(url);
+    if (!r.ok) throw new Error(r.statusText);
+    const blob = await r.blob();
+    const file = new File([blob], filename, { type: blob.type || "video/mp4" });
+
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename });
+    } else {
+      // Desktop fallback: programmatic anchor click
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(file);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") toast("Could not save video: " + e.message, true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "↓ Save"; }
+  }
+}
+
 function renderSavedOutput(it) {
   const url = `/api/saved/file/${encodeURIComponent(it.filename)}`;
   const dt = fmtDatetime(it.completed_at);
@@ -1180,7 +1268,7 @@ function renderSavedOutput(it) {
       </div>
       <div class="out-actions">
         <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
-        <a class="dl" href="${url}" download="${esc(it.filename)}">↓ Save</a>
+        <button class="dl" data-url="${url}" data-filename="${esc(it.filename)}">↓ Save</button>
       </div>
     </div>
   </div>`;
@@ -1224,7 +1312,7 @@ function renderOutput(podId, it) {
       </div>
       <div class="out-actions">
         <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
-        <a class="dl" href="${url}" download="${esc(it.filename)}">↓ Save</a>
+        <button class="dl" data-url="${url}" data-filename="${esc(it.filename)}">↓ Save</button>
         <button class="del-btn ghost small" data-pid="${esc(it.prompt_id)}">Delete</button>
       </div>
     </div>
@@ -1451,7 +1539,8 @@ $("#out-list").addEventListener("click", async (e) => {
     collapseTile(e.target.closest(".out-card"));
     return;
   }
-  if (e.target.closest(".dl")) return;
+  const dlBtn = e.target.closest(".dl");
+  if (dlBtn) { saveVideoFile(dlBtn.dataset.url, dlBtn.dataset.filename, dlBtn); return; }
   // delete
   const delBtn = e.target.closest(".del-btn");
   if (delBtn) {
@@ -1524,7 +1613,8 @@ $("#saved-list").addEventListener("click", async (e) => {
     collapseTile(e.target.closest(".out-card"));
     return;
   }
-  if (e.target.closest(".dl")) return;
+  const dlBtn2 = e.target.closest(".dl");
+  if (dlBtn2) { saveVideoFile(dlBtn2.dataset.url, dlBtn2.dataset.filename, dlBtn2); return; }
   const infoBtn = e.target.closest(".info-btn");
   if (infoBtn) { showDetails(infoBtn.dataset.pid); return; }
   const starBtn = e.target.closest(".star-btn");
@@ -2233,6 +2323,7 @@ function enterSavedSelectMode() {
   $("#saved-bulk-bar").hidden = false;
   $("#saved-select").textContent = "Done";
   _updateSavedBulkBar();
+  if (_savedSortable) _savedSortable.option("disabled", true);
 }
 
 function exitSavedSelectMode() {
@@ -2242,6 +2333,7 @@ function exitSavedSelectMode() {
   $("#saved-list").classList.remove("saved-select-mode");
   $("#saved-bulk-bar").hidden = true;
   $("#saved-select").textContent = "Select";
+  if (_savedSortable) _savedSortable.option("disabled", false);
 }
 
 function _toggleSavedSelect(card) {
