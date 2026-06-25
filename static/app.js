@@ -742,6 +742,7 @@ $("#image").addEventListener("change", (e) => {
   $("#image-label").textContent = f.name;
   $("#preview").src = URL.createObjectURL(f);
   $("#img-preview-wrap").hidden = false;
+  $("#img-star-btn").textContent = "☆ Save to cloud";
 });
 
 // ---- generate: downscale input image before upload -------------------------
@@ -1852,6 +1853,7 @@ async function useLibraryImage(path) {
     _currentImageFile = new File([blob], name, { type: blob.type || "image/jpeg" });
     $("#preview").src = URL.createObjectURL(_currentImageFile);
     $("#img-preview-wrap").hidden = false;
+    $("#img-star-btn").textContent = "☆ Save to cloud";
     $$(".img-mode-tab").forEach((b) => b.classList.toggle("active", b.dataset.mode === "upload"));
     $("#img-upload-panel").hidden = false;
     $("#img-library-panel").hidden = true;

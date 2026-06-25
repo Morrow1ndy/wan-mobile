@@ -311,6 +311,13 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-25 (continued)
+
+**Bugs fixed:**
+- **"Save to cloud" button stuck on "★ Saved" after uploading a new image** — `#img-star-btn` text was set to `"★ Saved"` on successful save but never reset when a new image was loaded. Fixed by resetting to `"☆ Save to cloud"` in both places `_currentImageFile` is assigned: the file input `change` handler and the library "use image" handler (`app.js`).
+
+---
+
 ### 2026-06-25
 
 **Network traffic reductions (the focus of this session):**
