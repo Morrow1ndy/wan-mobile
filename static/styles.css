@@ -713,31 +713,38 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   margin-bottom: 2px;
 }
 
-/* ---- prev/next nav in expanded tile ---- */
+/* ---- prev/next nav in expanded tile ----
+   Appended to .out-card (the fixed full-screen element), NOT .out-cover,
+   so it is never clipped by overflow:hidden and sits above iOS native controls.
+   Arrows at vertical-center sides; counter at top-right near the zoom-back. */
 .tile-nav {
   display: none;
-  position: absolute;
-  bottom: max(60px, calc(env(safe-area-inset-bottom) + 54px));
-  left: 0; right: 0;
-  align-items: center; justify-content: space-between;
-  padding: 0 16px; z-index: 42; pointer-events: none;
+  position: absolute; inset: 0; z-index: 45;
+  pointer-events: none;
 }
-.out-card.expanded .tile-nav { display: flex; }
+.out-card.expanded .tile-nav { display: block; }
 .tile-nav-btn {
+  position: absolute;
+  top: 50%; transform: translateY(-50%);
   pointer-events: all;
-  background: rgba(11,12,14,0.75); border: 1px solid rgba(255,255,255,0.15);
-  color: #fff; font-size: 26px; font-weight: 300; line-height: 1;
-  width: 46px; height: 46px; border-radius: 50%;
+  background: rgba(11,12,14,0.72); border: 1px solid rgba(255,255,255,0.18);
+  color: #fff; font-size: 28px; font-weight: 300; line-height: 1;
+  width: 48px; height: 48px; border-radius: 50%;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   -webkit-tap-highlight-color: transparent; font-family: var(--f);
   transition: opacity .15s;
 }
+.tile-nav-prev { left: 12px; }
+.tile-nav-next { right: 12px; }
 .tile-nav-btn.tile-hidden { opacity: 0; pointer-events: none; }
 .tile-nav-count {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  right: 14px;
+  background: rgba(11,12,14,0.72); border: 1px solid rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.8); font-size: 12px; font-weight: 600;
+  padding: 5px 12px; border-radius: 999px; font-variant-numeric: tabular-nums;
   pointer-events: none;
-  background: rgba(11,12,14,0.75); border: 1px solid rgba(255,255,255,0.15);
-  color: rgba(255,255,255,0.75); font-size: 13px; font-weight: 500;
-  padding: 6px 14px; border-radius: 999px; font-variant-numeric: tabular-nums;
 }
 
 /* ---- hard refresh button ---- */

@@ -1222,29 +1222,30 @@ function expandTile(card) {
   document.body.style.overflow = "hidden";
   if (video) video.play().catch(() => {});
 
-  // Prev/next nav: find sibling cards in the same grid
-  const cover = card.querySelector(".out-cover");
+  // Prev/next nav — appended to card (not cover) so overflow:hidden and iOS
+  // native video controls can't clip or cover the buttons.
+  card.querySelectorAll(".tile-nav").forEach((n) => n.remove());
   const grid = card.closest("#out-list, #saved-list");
-  if (cover && grid) {
-    cover.querySelectorAll(".tile-nav").forEach((n) => n.remove());
+  if (grid) {
     const cards = [...grid.querySelectorAll(".out-card")];
     const idx = cards.indexOf(card);
     if (cards.length > 1) {
       const nav = document.createElement("div");
       nav.className = "tile-nav";
       nav.innerHTML = `
-        <button class="tile-nav-btn${idx <= 0 ? " tile-hidden" : ""}" data-dir="-1" aria-label="Previous">&#x2039;</button>
-        <span class="tile-nav-count">${idx + 1} / ${cards.length}</span>
-        <button class="tile-nav-btn${idx >= cards.length - 1 ? " tile-hidden" : ""}" data-dir="1" aria-label="Next">&#x203A;</button>
+        <button class="tile-nav-btn tile-nav-prev${idx <= 0 ? " tile-hidden" : ""}" aria-label="Previous">&#x2039;</button>
+        <span class="tile-nav-count">${idx + 1}&thinsp;/&thinsp;${cards.length}</span>
+        <button class="tile-nav-btn tile-nav-next${idx >= cards.length - 1 ? " tile-hidden" : ""}" aria-label="Next">&#x203A;</button>
       `;
-      nav.addEventListener("click", (e) => {
+      nav.querySelector(".tile-nav-prev").addEventListener("click", (e) => {
         e.stopPropagation();
-        const btn = e.target.closest(".tile-nav-btn");
-        if (!btn || btn.classList.contains("tile-hidden")) return;
-        const next = cards[idx + Number(btn.dataset.dir)];
-        if (next) expandTile(next);
+        if (idx > 0) expandTile(cards[idx - 1]);
       });
-      cover.appendChild(nav);
+      nav.querySelector(".tile-nav-next").addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (idx < cards.length - 1) expandTile(cards[idx + 1]);
+      });
+      card.appendChild(nav);
     }
   }
 }
