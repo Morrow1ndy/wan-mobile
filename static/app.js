@@ -1214,6 +1214,7 @@ function renderOutput(podId, it) {
       <span class="sel-check"></span>
       <button class="star-btn${starred ? " starred" : ""}" data-pid="${esc(it.prompt_id)}"
               title="${starred ? "Saved" : "Save to cloud"}">${starred ? "★" : "☆"}</button>
+      <button class="tile-del-btn" data-pid="${esc(it.prompt_id)}" title="Delete">✕</button>
     </div>
     <div class="out-cap">
       <div class="cap-meta">
@@ -1462,6 +1463,19 @@ $("#out-list").addEventListener("click", async (e) => {
       removeCard(card);
       toast("Deleted");
     } catch (err) { toast(err.message, true); delBtn.disabled = false; }
+    return;
+  }
+  // quick-delete tile button
+  const tileDelBtn = e.target.closest(".tile-del-btn");
+  if (tileDelBtn) {
+    if (!await showConfirm("Delete this video from history?", { okText: "Delete", danger: true })) return;
+    const card = tileDelBtn.closest(".out-card");
+    tileDelBtn.disabled = true;
+    try {
+      await deleteJSON(`/api/pods/${card.dataset.pod}/outputs/${card.dataset.pid}`);
+      removeCard(card);
+      toast("Deleted");
+    } catch (err) { toast(err.message, true); tileDelBtn.disabled = false; }
     return;
   }
   // details

@@ -179,7 +179,7 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .out-cap .dl {
   display: inline-flex; align-items: center; gap: 4px;
   background: var(--surface-2); border: 1px solid var(--line-2);
-  color: var(--text); padding: 6px 10px; border-radius: 9px;
+  color: var(--accent); padding: 6px 10px; border-radius: 9px;
   font-size: 14px; font-weight: 500; font-family: var(--f);
   text-decoration: none; cursor: pointer;
 }
@@ -346,7 +346,7 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 }
 .stop-btn { color: var(--red) !important; }
 .out-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.del-btn { color: var(--muted) !important; font-size: 14px; }
+.del-btn { color: var(--red) !important; font-size: 14px; }
 
 .field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .field-row .val { min-width: 56px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -712,6 +712,16 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   transition: opacity .15s, color .15s;
 }
 .prompt-clear:active { opacity: 1; color: var(--text); }
+
+/* ---- quick-delete button on session tiles ---- */
+.tile-del-btn {
+  position: absolute; bottom: 5px; right: 5px; z-index: 3;
+  width: 24px; height: 24px; padding: 0; border: none; border-radius: 50%;
+  background: rgba(0,0,0,0.5); color: var(--red);
+  font-size: 11px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(3px);
+}
 
 /* ---- video name (shown in tile-foot / cap-meta) ---- */
 .out-name {
