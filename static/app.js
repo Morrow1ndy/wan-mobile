@@ -831,22 +831,58 @@ let _outPodId = null;
 let _outTimer = null;
 let _outActivePoll = false; // last tick saw an in-flight job → poll fast
 let _seenDone = new Set(); // jobs we've already dropped into the done list
+let _jobStream = null; // EventSource for /api/pods/{id}/stream
 
 function stopOutTimer() {
   if (_outTimer) { clearTimeout(_outTimer); _outTimer = null; }
 }
 
-// Self-rescheduling poll: 1s while a generation is in flight, 6s when the pod
-// is idle. Avoids hammering the server (and keeping the Fly machine awake) just
-// because the Outputs tab is open. Paused while the tab is hidden — the
-// visibilitychange handler resumes it with a fresh refresh on return.
-function scheduleOutTick() {
-  stopOutTimer();
-  if (document.hidden || !_outPodId) return;
-  _outTimer = setTimeout(async () => {
-    await tickActive();
-    scheduleOutTick();
-  }, _outActivePoll ? 1000 : 6000);
+// Connect (or reconnect) the SSE job stream for the given pod.
+// EventSource auto-reconnects on any drop, so the client always gets fresh
+// state within 1 s of foregrounding regardless of visibility events.
+function connectJobStream(podId) {
+  if (_jobStream) { _jobStream.close(); _jobStream = null; }
+  if (!podId) return;
+  const es = new EventSource(`/api/pods/${encodeURIComponent(podId)}/stream`);
+  _jobStream = es;
+  es.addEventListener("message", async (e) => {
+    let jobs;
+    try { jobs = JSON.parse(e.data); } catch { return; }
+    await _applyJobsUpdate(jobs, podId);
+  });
+  // EventSource retries automatically on error — no onerror handler needed.
+}
+
+function disconnectJobStream() {
+  if (_jobStream) { _jobStream.close(); _jobStream = null; }
+}
+
+// Shared job-update logic used by both the SSE stream and tickActive().
+async function _applyJobsUpdate(jobs, podId) {
+  const live = new Set();
+  for (const j of jobs) {
+    if (j.status === "done") {
+      if (!_seenDone.has(j.prompt_id)) { _seenDone.add(j.prompt_id); loadDone(podId); }
+      continue;
+    }
+    if (j.status === "error") {
+      if (!_seenDone.has(j.prompt_id)) {
+        _seenDone.add(j.prompt_id);
+        toast("Generation failed: " + jobErrorText(j.error), true);
+      }
+      continue;
+    }
+    live.add(j.prompt_id);
+    upsertActiveCard(podId, j);
+  }
+  const orphaned = [...$$("#out-active .out-item")].filter(
+    (c) => !live.has(c.dataset.pid)
+  );
+  orphaned.forEach((c) => c.remove());
+  if (orphaned.length > 0) loadDone(podId);
+  _outActivePoll = live.size > 0;
+  setGenBadge(live.size);
+  if (live.size === 0) stopGenBadgePoll();
 }
 
 // ---- "generation running" badge on the Outputs tab -------------------------
@@ -868,7 +904,7 @@ function setGenBadge(n) {
 function startGenBadgePoll() {
   if (_genBadgeTimer) return;
   _genBadgeTimer = setInterval(() => {
-    // While the Outputs tab is open, tickActive() already maintains the badge.
+    // While the Outputs tab is open, the SSE stream already maintains the badge.
     if (document.hidden) return;
     if (document.querySelector('.tabs button.active')?.dataset.tab === "outputs") return;
     pollGenBadge();
@@ -1005,6 +1041,7 @@ async function loadOutputs() {
   _outPodId = podId;
   _seenDone = new Set();
   stopOutTimer();
+  disconnectJobStream();
   $("#out-active").innerHTML = "";
   loadSaved();
   const list = $("#out-list");
@@ -1014,8 +1051,7 @@ async function loadOutputs() {
   }
   list.innerHTML = `<div class="card muted">Loading outputs…</div>`;
   await loadDone(podId);
-  await tickActive();
-  scheduleOutTick();
+  connectJobStream(podId); // SSE delivers live job state; auto-reconnects on foreground
 }
 
 async function loadDone(podId) {
@@ -1350,45 +1386,15 @@ function jobErrorText(err) {
 // ---- outputs: in-flight generations ----------------------------------------
 const activeCardId = (pid) => "act-" + pid.replace(/[^a-zA-Z0-9_-]/g, "");
 
+// One-shot fetch of in-flight jobs — used as an immediate refresh on resume
+// while the SSE stream reconnects. The SSE stream is the primary live source.
 async function tickActive() {
   const podId = _outPodId;
   if (!podId) return;
   let jobs;
   try { jobs = await getJSON(`/api/pods/${podId}/jobs`); }
   catch (_) { return; }
-
-  const live = new Set();
-  for (const j of jobs) {
-    if (j.status === "done") {
-      if (!_seenDone.has(j.prompt_id)) { _seenDone.add(j.prompt_id); loadDone(podId); }
-      continue; // the finished clip belongs in the done list below
-    }
-    if (j.status === "error") {
-      if (!_seenDone.has(j.prompt_id)) {
-        _seenDone.add(j.prompt_id);
-        toast("Generation failed: " + jobErrorText(j.error), true);
-      }
-      continue;
-    }
-    live.add(j.prompt_id);
-    upsertActiveCard(podId, j);
-  }
-
-  // Drop cards for jobs no longer tracked by the server.
-  // If any cards are removed it means a job finished while the browser was
-  // backgrounded and the 10s "recently done" window already expired — the
-  // done→removed transition was never caught above, so loadDone() was never
-  // called. Refresh the completed list now so the video appears.
-  const orphaned = [...$$("#out-active .out-item")].filter(
-    (c) => !live.has(c.dataset.pid)
-  );
-  orphaned.forEach((c) => c.remove());
-  if (orphaned.length > 0) loadDone(podId);
-
-  // Drive the adaptive poll cadence + the Outputs-tab badge from what's live.
-  _outActivePoll = live.size > 0;
-  setGenBadge(live.size);
-  if (live.size === 0) stopGenBadgePoll();
+  await _applyJobsUpdate(jobs, podId);
 }
 
 function upsertActiveCard(podId, j) {
@@ -2105,10 +2111,10 @@ function resumePolls() {
   if (document.querySelector("#pods-list .pod")) loadPods();
   const activeTab = document.querySelector(".tabs button.active")?.dataset.tab;
   if (activeTab === "outputs" && _outPodId) {
-    // A generation may have finished while we were away without tickActive()
-    // ever seeing the transition — refresh now, then resume the adaptive poll.
+    // Refresh the completed list and do one immediate job fetch while the
+    // SSE stream reconnects (EventSource retries automatically).
     loadDone(_outPodId);
-    tickActive().then(scheduleOutTick);
+    tickActive();
   } else {
     if (activeTab === "generate") onGenPodChange(); // re-check readiness
     // Keep the Outputs-tab badge truthful for a job still running off-tab

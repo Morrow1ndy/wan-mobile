@@ -628,6 +628,59 @@ async def pod_jobs(pod_id: str):
     return out
 
 
+def _jobs_sse_data(pod_id: str) -> str:
+    """Current in-flight jobs for pod_id serialised for an SSE data line."""
+    now = time.time()
+    out = []
+    for pid, job in JOBS.items():
+        if job.get("pod_id") != pod_id:
+            continue
+        fin = job.get("finished_at")
+        if job.get("status") == "running" or (fin and now - fin < 10):
+            out.append(_job_public(pid, job))
+    out.sort(key=lambda j: j.get("started_at") or 0, reverse=True)
+    return json.dumps(out)
+
+
+@app.get("/api/pods/{pod_id}/stream")
+async def job_stream(pod_id: str, request: Request):
+    """SSE stream of in-flight job state for this pod.
+
+    Pushes a JSON jobs array every 1 s while a generation is running, or
+    a keepalive comment every 10 s when idle.  EventSource auto-reconnects
+    on any drop, so the client always gets fresh state within 1 s of
+    foregrounding — no timer-resume or bfcache handling needed in JS.
+    Auth is via the wan_auth cookie set at login (EventSource cannot send
+    custom headers, but the middleware already accepts the cookie).
+    """
+    async def generate():
+        last = None
+        while True:
+            if await request.is_disconnected():
+                break
+            data = _jobs_sse_data(pod_id)
+            if data != last:
+                yield f"data: {data}\n\n"
+                last = data
+            else:
+                yield ": ping\n\n"
+            has_active = any(
+                j.get("pod_id") == pod_id and j.get("status") == "running"
+                for j in JOBS.values()
+            )
+            await asyncio.sleep(1 if has_active else 10)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @app.get("/api/pods/{pod_id}/view")
 async def pod_view(request: Request, pod_id: str, filename: str,
                    subfolder: str = "", type: str = "output"):

@@ -311,6 +311,38 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-25 (SSE job stream)
+
+**Architecture change — replaced timer-based job polling with SSE:**
+- New `GET /api/pods/{pod_id}/stream` SSE endpoint (`main.py`): pushes the current
+  jobs array every 1 s while a generation is active, sends a keepalive comment (`":
+  ping"`) every 10 s when idle. Auth via the `wan_auth` cookie (EventSource cannot
+  send custom headers; the middleware already accepts the cookie).
+- `connectJobStream(podId)` / `disconnectJobStream()` in `app.js`: open/close an
+  `EventSource` on that endpoint. `loadOutputs()` now calls `connectJobStream()`
+  instead of the old `tickActive() + scheduleOutTick()` timer chain.
+- `_applyJobsUpdate(jobs, podId)`: shared DOM-update logic extracted from the old
+  `tickActive()` body; called by both the SSE message handler and the one-shot
+  `tickActive()` (kept as an immediate fallback while the stream reconnects).
+- `scheduleOutTick` and its `_outTimer` / `_outActivePoll`-driven interval removed
+  entirely from the Outputs-tab flow.
+- SW cache bumped to `wan-static-v3`.
+
+**Why this fixes the stale "queued" card permanently:**
+The old approach paused `setInterval`/`setTimeout` on `visibilitychange → hidden`
+and tried to restart them on `visibilitychange → visible` / `pageshow → persisted`.
+iOS has multiple edge cases where neither event fires reliably after bfcache restore,
+leaving the Outputs poll dead and the active card frozen. `EventSource` sidesteps
+all of this: it auto-reconnects on any drop, and the **first SSE message on every
+new connection** delivers current job state — so within ~1 s of foregrounding the
+app the card reflects reality, with no resume logic to get wrong.
+
+Note: JS is frozen by iOS while the PWA is backgrounded, so the card does not
+animate while minimized — updates happen when the user returns. Push notifications
+handle the "fully away" completion signal.
+
+---
+
 ### 2026-06-25 (continued)
 
 **Bugs fixed:**
