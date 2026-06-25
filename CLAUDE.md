@@ -311,6 +311,25 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-25 (late session)
+
+**Features added:**
+- **TikTok-style tap-to-pause** — native video controls removed from expanded tiles;
+  tapping the video area toggles play/pause. Pause shows ⏸ icon (stays visible);
+  resume briefly flashes ▶ then fades. Icon uses `vid-pop` scale animation.
+  Videos now loop automatically. Overlay cleaned up on collapse.
+- **Compact active-gen card** — in-flight generation card now matches the done-video
+  tile layout: same 3-column `out-grid`, `aspect-ratio: 9/16` cover, input image /
+  sampling preview as background. Status badge top-left, thin accent progress bar
+  along bottom edge, ✕ stop button top-right. `#out-active` changed from
+  `card-list` to `out-grid`; orphan selector updated from `.out-item` → `.out-card`.
+
+**Bugs fixed:**
+- **Generate button switches to Outputs tab** — removed `switchTab("outputs")` call
+  after queue. Stays on Generate tab; Outputs badge still updates live.
+
+---
+
 ### 2026-06-25 (bugfixes)
 
 **Bugs fixed:**
