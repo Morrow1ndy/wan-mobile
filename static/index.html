@@ -21,10 +21,11 @@
   <header>
     <h1><span class="seal"></span>Wan Mobile</h1>
     <div class="header-right">
-      <span id="fly-ram" class="ram-chip" title="Fly.io server RAM">—</span>
-      <span id="balance" class="balance" title="RunPod credit balance">—</span>
-      <button id="ram-clear" class="ghost small" title="Clear RAM on active pod" hidden>🎈 RAM</button>
-      <button id="refresh" class="ghost" title="Refresh">&#x21bb;</button>
+      <span id="fly-ram" class="ram-chip" role="status" aria-label="Fly.io server RAM usage" title="Fly.io server RAM">—</span>
+      <span id="balance" class="balance" role="status" aria-label="RunPod credit balance" title="RunPod credit balance">—</span>
+      <button id="ram-clear" class="ghost small" aria-label="Clear RAM on active pod" title="Clear RAM on active pod" hidden>🎈 RAM</button>
+      <button id="notif-btn" class="ghost small notif-btn" aria-label="Push notifications" title="Push notifications">🔔</button>
+      <button id="refresh" class="ghost" aria-label="Refresh pods" title="Refresh">&#x21bb;</button>
     </div>
   </header>
 
@@ -57,7 +58,7 @@
 
       <div class="gpu-grid-head">
         <span class="filter-label">Select a GPU</span>
-        <button id="refresh-gpus" class="ghost small" title="Refresh">&#x21bb;</button>
+        <button id="refresh-gpus" class="ghost small" aria-label="Refresh GPU list" title="Refresh">&#x21bb;</button>
       </div>
       <div id="gpu-grid" class="gpu-grid">
         <div class="muted">Loading GPUs&hellip;</div>
@@ -170,7 +171,7 @@
         <label style="margin:0;flex:1">Pod
           <select id="out-pod"><option value="">No running pod</option></select>
         </label>
-        <button id="out-refresh" class="ghost small" title="Refresh">&#x21bb;</button>
+        <button id="out-refresh" class="ghost small" aria-label="Refresh outputs" title="Refresh">&#x21bb;</button>
       </div>
       <p class="hint">Videos generated on this pod. Tap to play; safe to close and come back.</p>
       <div class="storage-meter" data-storage>

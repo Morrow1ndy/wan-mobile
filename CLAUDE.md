@@ -311,6 +311,85 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-25
+
+**Network traffic reductions (the focus of this session):**
+- **Client-side input-image downscale before upload** — `downscaleImage()` in
+  `app.js` caps the longest edge at 1280px and re-encodes as JPEG (drawing an
+  oriented `<img>` to a canvas, so EXIF rotation is baked in). Wan i2v resizes
+  the input anyway, so this cuts the per-generation upload (phone→Fly→pod) by
+  ~80–95% for typical phone photos. Falls back to the original on any failure.
+- **Immutable caching on all video endpoints** — `serve_saved_file`,
+  `/api/pods/{id}/view`, and `/api/video/{id}` now send
+  `Cache-Control: private, max-age=31536000, immutable` (generated clips are
+  write-once). Re-visiting the Outputs tab no longer re-downloads cover data.
+- **HTTP Range support on pod-proxied video** — `comfy_client.open_view_stream`
+  now forwards the browser's `Range` header to ComfyUI (aiohttp honours it) and
+  returns `(resp, body)`; `main.py` `_proxy_view()` streams it back (no RAM
+  buffer) passing through `Content-Length` / `Content-Range` / `206`. Cover
+  thumbnails (`<video preload>`) and seeks transfer only the bytes needed
+  instead of the whole clip. (This also re-fixes the original
+  StreamingResponse-without-Content-Length playback bug by passing both through.)
+- **Lazy-loaded video cover tiles** — covers render with `preload="none"` +
+  `data-src`; an `IntersectionObserver` (`observeLazyCovers`) sets `src` only
+  when the tile nears the viewport, so off-screen tiles cost nothing.
+- **Adaptive Outputs poll** — `tickActive` no longer runs on a fixed 1s
+  `setInterval`. `scheduleOutTick()` polls every 1s only while a job is in
+  flight, backing off to 6s when the pod is idle (stops needlessly waking the
+  Fly machine).
+- **Merged metrics+events poll** — new `GET /api/pods/{id}/session` returns both
+  in one request (was two every tick); the pod-card poll slowed 4s→5s and skips
+  while the tab is hidden.
+- **All polls pause when the tab is hidden** — `pausePolls()`/`resumePolls()` on
+  `visibilitychange` stop RAM, balance, metrics, Outputs, and readiness timers
+  while backgrounded. The generation keeps running server-side (`_watch` +
+  push), and `resumePolls()` does one authoritative refresh on return — so the
+  vid-gen status still auto-updates with no manual refresh.
+- **Service worker now caches the app shell + fonts** (`sw.js`,
+  `CACHE_VERSION = wan-static-v1`): precache + stale-while-revalidate for static
+  assets and Google Fonts; network-first for navigations; `/api/*` and media are
+  never cached by the SW (immutable HTTP caching handles media). Repeat visits
+  load with ~no network and work offline. **Bump `CACHE_VERSION` on each deploy.**
+- Dropped a redundant `/api/storage` fetch when switching to the Outputs tab.
+
+**UI/UX:**
+- **"Generation running" badge on the Outputs tab** — a count chip
+  (`setGenBadge`) shows in-flight generations even from other tabs. Driven by
+  `tickActive` on the Outputs tab and a cheap ~8s `pollGenBadge` loop elsewhere
+  that self-stops at zero (so it only adds traffic while a job is actually live).
+- **Generate button auto-recovers from "warming up"** — `onGenPodChange` now
+  polls readiness every 5s (`checkGenReady`) and enables the button the moment
+  ComfyUI answers; no manual re-select/refresh. Self-stops on ready / pod change.
+- **Error toasts are dismissible** — longer (8s) and tap-to-dismiss so failures
+  aren't missed.
+- **Accessibility** — `aria-label`s on the icon-only header/refresh buttons
+  (RAM chip, balance, RAM-clear, notifications, all refresh buttons).
+
+**New endpoints:**
+- `GET /api/pods/{id}/session` — `{metrics, events}` bundled (halves poll traffic).
+
+**Deferred (intentionally not done):**
+- Server-side ffmpeg poster JPEGs for saved tiles — folded into Range + caching +
+  lazy-load instead, to avoid heavy video decoding on the 512MB Fly box.
+- Pull-to-refresh — manual ↻ already exists; low value vs. gesture/scroll risk.
+
+---
+
+### 2026-06-20 (continued)
+
+**Bugs fixed:**
+- **Push notifications not firing** — two root causes:
+  1. `send_push` passed the raw PEM string to `pywebpush`, which requires a `Vapid01` instance; now loads PEM into `Vapid01` before calling `webpush()`. Added `[push]` server log lines so success/failure is visible in `fly logs`.
+  2. Push was fire-and-forget (background task) so the Fly machine could auto-stop before the HTTP request to the push service completed. All three terminal states in `_watch` now directly `await asyncio.to_thread(push.send_push, ...)` so the send finishes before the watcher exits. Removed unused `_notify` helper.
+- **Session video playback broken** — `StreamingResponse` (added in previous session) doesn't send `Content-Length` or handle HTTP range requests; browsers need both to play `<video>` inline. Reverted `/api/video/{prompt_id}` and `/api/pods/{pod_id}/view` to buffered `fetch_view()` + `Response` with explicit `Content-Length` + `Accept-Ranges: bytes`. Wan 2.2 clips are ~5–30 MB so no OOM risk. Image thumbnail endpoint (`/api/images/file/`) still streams from GCS (appropriate there).
+- **Pod status stuck on "warming up"** — `checkReady` was called once on first render but the 4s metrics tick never updated the badge. Now the tick checks `checkReady` whenever the badge still shows "warm", so it flips to "ready" automatically without a manual refresh.
+- **iOS nav tabs hidden behind header** — `position: sticky; top: 60px` on `.tabs` was too low: on iPhone with `env(safe-area-inset-top) ≈ 59px` the header is ~107px tall so the tabs slid behind it. Changed to `top: calc(max(16px, env(safe-area-inset-top)) + 56px)` (~115px on iPhone, ~72px on desktop).
+- **Stale "queued" active card after returning from background** — when the browser woke up, `loadDone` showed the completed video but `tickActive` could still see the job as "running" server-side (watcher not yet updated), leaving both visible simultaneously. `loadDone` now removes any active card whose `prompt_id` matches a completed video, and adds it to `_seenDone` so `tickActive` won't re-create it.
+- **Missing timestamp/gen time on session video tiles** — `save_stat` was only called when `started_at` was non-null; if the Fly machine restarted mid-generation, `started_at` was never set and `completed_at` was never persisted. Now `save_stat` is always called at completion (duration is `None` if start time unavailable, but timestamp is always recorded).
+- **🔔 notification status button** — added to header; shows dim (off) / bright (on) / blocked state. Tapping it triggers the permission + subscription flow; shows iOS Home Screen hint if `PushManager` is unavailable in a regular browser tab.
+
+---
+
 ### 2026-06-20
 
 **Features added:**

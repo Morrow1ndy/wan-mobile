@@ -53,6 +53,9 @@ header {
   background: currentColor; flex-shrink: 0; }
 .ram-chip.warn { color: var(--warn); }
 .ram-chip.crit { color: var(--red); }
+.notif-btn { font-size: 14px; padding: 0 6px; opacity: 0.45; transition: opacity .15s; }
+.notif-btn.on  { opacity: 1; }
+.notif-btn.off { opacity: 0.35; }
 header h1 {
   font-size: 17px; margin: 0; font-weight: 600; letter-spacing: -0.01em;
   display: flex; align-items: center; gap: 10px; color: var(--text);
@@ -63,14 +66,22 @@ header h1 {
 /* no backdrop-filter — iOS WebKit/Chrome applies it to the button backgrounds
    during scroll momentum, making inactive tabs appear to have a background.
    Same class of bug as the sticky bottom bars (position:fixed + backdrop-filter). */
-.tabs { display: flex; gap: 4px; padding: 14px 18px 4px; position: sticky; top: 60px; z-index: 9;
+.tabs { display: flex; gap: 4px; padding: 14px 18px 4px; position: sticky; top: calc(max(16px, env(safe-area-inset-top)) + 56px); z-index: 9;
   background: linear-gradient(180deg, #0b0c0e 55%, transparent); }
 .tabs button {
+  position: relative;
   flex: 1; padding: 9px; border: 1px solid transparent; background: transparent;
   color: var(--muted); font-family: var(--f); font-size: 14px; font-weight: 500;
   border-radius: 8px; cursor: pointer; transition: background .15s, color .15s, border-color .15s;
 }
 .tabs button.active { color: var(--text); background: var(--surface-2); border-color: var(--line); }
+/* "generation running" count on the Outputs tab */
+.tab-badge {
+  position: absolute; top: 3px; right: 6px; min-width: 16px; height: 16px;
+  padding: 0 4px; border-radius: 8px; background: var(--accent); color: #0b0c0e;
+  font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+  font-variant-numeric: tabular-nums; box-sizing: border-box;
+}
 
 .tab { display: none; padding: 12px 18px 120px; }
 .tab.active { display: block; animation: fade .25s ease; }

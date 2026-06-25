@@ -137,7 +137,12 @@ function toast(msg, isErr = false) {
   t.className = "toast" + (isErr ? " err" : "");
   t.textContent = msg;
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), isErr ? 5000 : 2800);
+  const timer = setTimeout(() => t.remove(), isErr ? 8000 : 2800);
+  if (isErr) {
+    // Errors are easy to miss — keep them up longer and let a tap dismiss them.
+    t.style.cursor = "pointer";
+    t.addEventListener("click", () => { clearTimeout(timer); t.remove(); });
+  }
 }
 // Like Gmail "undo send" — toast with an Undo button that calls onUndo() if
 // tapped before the timeout. Useful for reversible server-side actions.
@@ -192,7 +197,7 @@ function switchTab(tab) {
       (b) => b.classList.toggle("active", b.dataset.workflow === _selectedWorkflow)
     );
   }
-  if (tab === "generate" || tab === "outputs") loadStorage();
+  if (tab === "generate") loadStorage(); // outputs loads it via loadOutputs()
 }
 $$(".tabs button").forEach((b) =>
   b.addEventListener("click", () => switchTab(b.dataset.tab))
@@ -304,17 +309,19 @@ async function checkReady(p) {
 function startMetrics(podId) {
   const tick = async () => {
     if (!$("#m-" + podId)) { clearInterval(metricsTimers[podId]); return; }
+    if (document.hidden) return; // don't poll a backgrounded tab
     try {
-      const [m, ev] = await Promise.all([
-        getJSON(`/api/pods/${podId}/metrics`),
-        getJSON(`/api/pods/${podId}/events`),
-      ]);
+      // One request for metrics + events (was two) — see /api/pods/{id}/session.
+      const { metrics: m, events: ev } = await getJSON(`/api/pods/${podId}/session`);
       renderMetrics(podId, m);
       renderLog(podId, ev);
+      // Auto-update the readiness badge without waiting for a manual refresh.
+      const badge = $("#b-" + podId);
+      if (badge && badge.classList.contains("warm")) checkReady({ id: podId });
     } catch (_) {}
   };
   tick();
-  metricsTimers[podId] = setInterval(tick, 4000);
+  metricsTimers[podId] = setInterval(tick, 5000);
   // Tick the session-time display every second without re-fetching. Stored so
   // loadPods can clear it on the next render (else these leak, one per call).
   if (uptimeTimers[podId]) clearInterval(uptimeTimers[podId]);
@@ -670,7 +677,36 @@ function collectParams() {
 }
 
 // ---- generate: pod readiness ----------------------------------------------
+let _genReadyTimer = null;
+function stopGenReadyPoll() {
+  if (_genReadyTimer) { clearInterval(_genReadyTimer); _genReadyTimer = null; }
+}
+
+async function checkGenReady(id) {
+  const status = $("#pod-readiness");
+  const btn = $("#generate");
+  try {
+    const s = await getJSON(`/api/pods/${id}`);
+    if (s.comfy_ready) {
+      status.textContent = "ComfyUI ready ✓";
+      status.className = "status ok";
+      btn.disabled = false;
+      return true;
+    }
+    status.textContent = "Pod is warming up — checking automatically…";
+    status.className = "status warm";
+    btn.disabled = true;
+    return false;
+  } catch (e) {
+    status.textContent = "Could not reach pod: " + e.message;
+    status.className = "status err";
+    btn.disabled = true;
+    return false;
+  }
+}
+
 async function onGenPodChange() {
+  stopGenReadyPoll();
   const id = $("#gen-pod").value;
   const status = $("#pod-readiness");
   const btn = $("#generate");
@@ -682,21 +718,16 @@ async function onGenPodChange() {
   }
   status.textContent = "Checking ComfyUI…";
   status.className = "status";
-  try {
-    const s = await getJSON(`/api/pods/${id}`);
-    if (s.comfy_ready) {
-      status.textContent = "ComfyUI ready ✓";
-      status.className = "status ok";
-      btn.disabled = false;
-    } else {
-      status.textContent = "Pod is warming up — try again in a moment.";
-      status.className = "status warm";
-      btn.disabled = true;
-    }
-  } catch (e) {
-    status.textContent = "Could not reach pod: " + e.message;
-    status.className = "status err";
-    btn.disabled = true;
+  const ready = await checkGenReady(id);
+  // Still warming up? Keep polling so the Generate button enables itself the
+  // moment ComfyUI answers — no manual re-select or refresh needed. Self-stops
+  // on ready, on pod change, and pauses while the tab is hidden.
+  if (!ready) {
+    _genReadyTimer = setInterval(async () => {
+      if (document.hidden) return;
+      if ($("#gen-pod").value !== id) { stopGenReadyPoll(); return; }
+      if (await checkGenReady(id)) stopGenReadyPoll();
+    }, 5000);
   }
 }
 $("#gen-pod").addEventListener("change", onGenPodChange);
@@ -713,6 +744,42 @@ $("#image").addEventListener("change", (e) => {
   $("#img-preview-wrap").hidden = false;
 });
 
+// ---- generate: downscale input image before upload -------------------------
+// Phone photos are 3–12 MB but Wan i2v resizes the input to the workflow's
+// target resolution anyway, so uploading the full-res original just wastes
+// bandwidth (phone→Fly→pod, billed twice). Cap the longest edge at 1280px and
+// re-encode as JPEG. Drawing an oriented <img> to a canvas applies EXIF
+// rotation, so the result is upright. Any failure falls back to the original.
+function _loadImageEl(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => resolve({ img, url });
+    img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+    img.src = url;
+  });
+}
+async function downscaleImage(file, maxDim = 1280, quality = 0.9) {
+  if (!file || !file.type || !file.type.startsWith("image/")) return file;
+  try {
+    const { img, url } = await _loadImageEl(file);
+    const w0 = img.naturalWidth, h0 = img.naturalHeight;
+    if (!w0 || !h0 || Math.max(w0, h0) <= maxDim) { URL.revokeObjectURL(url); return file; }
+    const scale = maxDim / Math.max(w0, h0);
+    const w = Math.round(w0 * scale), h = Math.round(h0 * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+    URL.revokeObjectURL(url);
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", quality));
+    if (!blob || blob.size >= file.size) return file; // re-encode didn't help
+    const base = (file.name || "input").replace(/\.[^.]+$/, "");
+    return new File([blob], base + ".jpg", { type: "image/jpeg" });
+  } catch (_) {
+    return file;
+  }
+}
+
 // ---- generate: run ---------------------------------------------------------
 $("#generate").addEventListener("click", async () => {
   const podId = $("#gen-pod").value;
@@ -728,9 +795,11 @@ $("#generate").addEventListener("click", async () => {
   const params = collectParams();
   postJSON("/api/last-params", params).catch(() => {});
 
+  const uploadFile = await downscaleImage(file);
+
   const fd = new FormData();
   fd.append("pod_id", podId);
-  fd.append("image", file);
+  fd.append("image", uploadFile);
   fd.append("params", JSON.stringify(params));
   fd.append("workflow_file", _selectedWorkflow || "");
 
@@ -745,6 +814,8 @@ $("#generate").addEventListener("click", async () => {
     // Jump to Outputs, where the in-flight job now shows live progress.
     const outSel = $("#out-pod");
     if (outSel) outSel.value = podId;
+    setGenBadge(1);          // immediate feedback; refined by the next poll
+    startGenBadgePoll();     // keeps the badge live if the user navigates away
     switchTab("outputs");
   } catch (e) {
     toast(e.message, true);
@@ -757,10 +828,65 @@ $("#generate").addEventListener("click", async () => {
 // ---- outputs gallery -------------------------------------------------------
 let _outPodId = null;
 let _outTimer = null;
+let _outActivePoll = false; // last tick saw an in-flight job → poll fast
 let _seenDone = new Set(); // jobs we've already dropped into the done list
 
 function stopOutTimer() {
-  if (_outTimer) { clearInterval(_outTimer); _outTimer = null; }
+  if (_outTimer) { clearTimeout(_outTimer); _outTimer = null; }
+}
+
+// Self-rescheduling poll: 1s while a generation is in flight, 6s when the pod
+// is idle. Avoids hammering the server (and keeping the Fly machine awake) just
+// because the Outputs tab is open. Paused while the tab is hidden — the
+// visibilitychange handler resumes it with a fresh refresh on return.
+function scheduleOutTick() {
+  stopOutTimer();
+  if (document.hidden || !_outPodId) return;
+  _outTimer = setTimeout(async () => {
+    await tickActive();
+    scheduleOutTick();
+  }, _outActivePoll ? 1000 : 6000);
+}
+
+// ---- "generation running" badge on the Outputs tab -------------------------
+// Lets the user know a clip is still cooking even when they're on another tab.
+// A cheap ~8s poll runs only while a job is actually in flight (it self-stops
+// at zero), so it adds traffic only when there's genuinely progress to report.
+let _genBadgeTimer = null;
+function setGenBadge(n) {
+  const tabBtn = document.querySelector('.tabs button[data-tab="outputs"]');
+  if (!tabBtn) return;
+  let b = tabBtn.querySelector(".tab-badge");
+  if (n > 0) {
+    if (!b) { b = document.createElement("span"); b.className = "tab-badge"; tabBtn.appendChild(b); }
+    b.textContent = String(n);
+  } else if (b) {
+    b.remove();
+  }
+}
+function startGenBadgePoll() {
+  if (_genBadgeTimer) return;
+  _genBadgeTimer = setInterval(() => {
+    // While the Outputs tab is open, tickActive() already maintains the badge.
+    if (document.hidden) return;
+    if (document.querySelector('.tabs button.active')?.dataset.tab === "outputs") return;
+    pollGenBadge();
+  }, 8000);
+}
+function stopGenBadgePoll() {
+  if (_genBadgeTimer) { clearInterval(_genBadgeTimer); _genBadgeTimer = null; }
+}
+async function pollGenBadge() {
+  const podId = _outPodId
+    || ($("#out-pod") && $("#out-pod").value)
+    || ($("#gen-pod") && $("#gen-pod").value);
+  if (!podId) { setGenBadge(0); stopGenBadgePoll(); return; }
+  try {
+    const jobs = await getJSON(`/api/pods/${podId}/jobs`);
+    const n = jobs.filter((j) => j.status === "running").length;
+    setGenBadge(n);
+    if (n > 0) startGenBadgePoll(); else stopGenBadgePoll();
+  } catch (_) {}
 }
 
 // ---- bulk selection ---------------------------------------------------------
@@ -888,7 +1014,7 @@ async function loadOutputs() {
   list.innerHTML = `<div class="card muted">Loading outputs…</div>`;
   await loadDone(podId);
   await tickActive();
-  _outTimer = setInterval(tickActive, 1000);
+  scheduleOutTick();
 }
 
 async function loadDone(podId) {
@@ -900,10 +1026,18 @@ async function loadDone(podId) {
     list.innerHTML = `<div class="card muted">Could not load outputs: ${esc(e.message)}</div>`;
     return;
   }
+  // If a job completed while the browser was backgrounded, the server-side watcher
+  // may still show it as "running" for a moment. Remove any active card that already
+  // appears in the done list so both are never visible simultaneously.
+  for (const it of items) {
+    const activeCard = document.getElementById(activeCardId(it.prompt_id));
+    if (activeCard) { removeCard(activeCard); _seenDone.add(it.prompt_id); }
+  }
   const unsaved = items.filter((it) => !it.is_saved);
   list.innerHTML = unsaved.length
     ? unsaved.map((it) => renderOutput(podId, it)).join("")
     : `<div class="card muted">No videos yet on this pod.</div>`;
+  observeLazyCovers(list);
 }
 
 async function loadSaved() {
@@ -914,7 +1048,36 @@ async function loadSaved() {
   if (!items.length) { section.hidden = true; loadStorage(); return; }
   section.hidden = false;
   list.innerHTML = items.map(renderSavedOutput).join("");
+  observeLazyCovers(list);
   loadStorage();
+}
+
+// Lazy-load video cover posters. A <video> with `src` set fetches its moov
+// atom + first frame right away; for long galleries we hold off until the tile
+// nears the viewport so off-screen tiles cost nothing. (Server-side Range
+// support already makes each on-screen fetch tiny.)
+const _coverObserver = ("IntersectionObserver" in window)
+  ? new IntersectionObserver((entries, obs) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const v = e.target;
+        if (v.dataset.src && !v.getAttribute("src")) {
+          v.preload = "metadata";
+          v.src = v.dataset.src;
+        }
+        obs.unobserve(v);
+      }
+    }, { rootMargin: "300px" })
+  : null;
+
+function observeLazyCovers(root) {
+  if (!root) return;
+  const vids = root.querySelectorAll("video.cover-img[data-src]");
+  if (!_coverObserver) { // no IntersectionObserver → just load them all
+    vids.forEach((v) => { if (!v.getAttribute("src")) v.src = v.dataset.src; });
+    return;
+  }
+  vids.forEach((v) => _coverObserver.observe(v));
 }
 
 function renderSavedOutput(it) {
@@ -924,7 +1087,7 @@ function renderSavedOutput(it) {
   return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
               data-pid="${esc(it.prompt_id)}">
     <div class="out-cover">
-      <video class="cover-img" preload="metadata" muted src="${url}#t=0.1"></video>
+      <video class="cover-img" preload="none" muted data-src="${url}#t=0.1"></video>
       <span class="play-badge">${PLAY_SVG}</span>
       <video class="tile-video" data-src="${url}" playsinline preload="none" controls></video>
       <div class="tile-foot">
@@ -956,7 +1119,7 @@ function renderOutput(podId, it) {
   const thumb = inputThumbUrl(podId, it.input_image);
   const cover = thumb
     ? `<img class="cover-img" src="${thumb}" alt="" loading="lazy" />`
-    : `<video class="cover-img" preload="metadata" muted src="${url}#t=0.1"></video>`;
+    : `<video class="cover-img" preload="none" muted data-src="${url}#t=0.1"></video>`;
   const dt = fmtDatetime(it.completed_at);
   const dur = it.duration_secs ? fmtElapsed(it.duration_secs) : null;
   const starred = it.is_saved;
@@ -1220,6 +1383,11 @@ async function tickActive() {
   );
   orphaned.forEach((c) => c.remove());
   if (orphaned.length > 0) loadDone(podId);
+
+  // Drive the adaptive poll cadence + the Outputs-tab badge from what's live.
+  _outActivePoll = live.size > 0;
+  setGenBadge(live.size);
+  if (live.size === 0) stopGenBadgePoll();
 }
 
 function upsertActiveCard(podId, j) {
@@ -1912,19 +2080,44 @@ function startRamPoll() {
 function stopRamPoll() {
   if (_ramTimer) { clearInterval(_ramTimer); _ramTimer = null; }
 }
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    stopRamPoll();
+// Stop every recurring poll while the tab is backgrounded — nothing needs to
+// update off-screen. The generation itself keeps running server-side (the
+// _watch() task + push notifications), so no progress is lost; resumePolls()
+// does one authoritative refresh on return so the status is up to date without
+// a manual refresh.
+function pausePolls() {
+  stopRamPoll();
+  stopOutTimer();
+  stopGenReadyPoll();
+  if (_balanceTimer) { clearInterval(_balanceTimer); _balanceTimer = null; }
+  Object.values(metricsTimers).forEach(clearInterval);
+  for (const k in metricsTimers) delete metricsTimers[k];
+  Object.values(uptimeTimers).forEach(clearInterval);
+  for (const k in uptimeTimers) delete uptimeTimers[k];
+}
+
+function resumePolls() {
+  startRamPoll();
+  if (!_balanceTimer) { loadBalance(); _balanceTimer = setInterval(loadBalance, 60_000); }
+  // Re-arm pod metrics (paused while hidden) by reloading the pod list.
+  if (document.querySelector("#pods-list .pod")) loadPods();
+  const activeTab = document.querySelector(".tabs button.active")?.dataset.tab;
+  if (activeTab === "outputs" && _outPodId) {
+    // A generation may have finished while we were away without tickActive()
+    // ever seeing the transition — refresh now, then resume the adaptive poll.
+    loadDone(_outPodId);
+    tickActive().then(scheduleOutTick);
   } else {
-    startRamPoll();
-    // iOS backgrounds/throttles JS timers. When the user comes back, the
-    // generation may have finished without tickActive() ever seeing the
-    // done transition. Proactively refresh so the video appears.
-    if ($("#tab-outputs").classList.contains("active") && _outPodId) {
-      loadDone(_outPodId);
-      tickActive();
-    }
+    if (activeTab === "generate") onGenPodChange(); // re-check readiness
+    // Keep the Outputs-tab badge truthful for a job still running off-tab
+    // (pollGenBadge self-manages its loop based on what it finds).
+    pollGenBadge();
   }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) pausePolls();
+  else resumePolls();
 });
 
 // ---- Fly.io storage meter ---------------------------------------------------
@@ -1960,12 +2153,31 @@ async function loadStorage() {
 let _swReg = null;
 let _pushBusy = false;
 
+function _updateNotifBtn(state) {
+  // state: "on" | "off" | "denied" | "unsupported"
+  const btn = $("#notif-btn");
+  if (!btn) return;
+  btn.className = "ghost small notif-btn " + (state === "on" ? "on" : "off");
+  const labels = { on: "🔔 Notifications on", off: "🔔 Tap to enable notifications",
+                   denied: "🔕 Notifications blocked", unsupported: "🔕 Notifications unavailable" };
+  btn.title = labels[state] || "Push notifications";
+}
+
+function _pushState() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)
+      || !("Notification" in window)) return "unsupported";
+  if (Notification.permission === "denied") return "denied";
+  if (Notification.permission === "granted") return "on";
+  return "off";
+}
+
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return null;
   try {
     _swReg = await navigator.serviceWorker.register("/sw.js");
     return _swReg;
-  } catch (_) {
+  } catch (e) {
+    console.warn("SW registration failed", e);
     return null;
   }
 }
@@ -1984,33 +2196,54 @@ function urlB64ToUint8Array(base64) {
 // subscribes once, and re-registers the subscription with the server.
 async function ensurePushSubscription() {
   if (_pushBusy) return;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isStandalone = !!navigator.standalone
+    || window.matchMedia("(display-mode: standalone)").matches;
   if (!("serviceWorker" in navigator) || !("PushManager" in window)
-      || !("Notification" in window)) return;
-  if (Notification.permission === "denied") return;
+      || !("Notification" in window)) {
+    if (isIOS && !isStandalone) {
+      toast("To enable notifications: Share → Add to Home Screen, then open from there.");
+    }
+    _updateNotifBtn("unsupported");
+    return;
+  }
+  if (Notification.permission === "denied") {
+    _updateNotifBtn("denied");
+    toast("Notifications blocked — enable them in your browser settings.", true);
+    return;
+  }
   _pushBusy = true;
   try {
     if (Notification.permission === "default") {
-      if (await Notification.requestPermission() !== "granted") return;
+      const result = await Notification.requestPermission();
+      if (result !== "granted") { _updateNotifBtn("off"); return; }
     }
     const reg = _swReg || (await registerServiceWorker());
-    if (!reg) return;
+    if (!reg) { _updateNotifBtn("off"); return; }
     await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
       const { public_key } = await getJSON("/api/push/vapid");
-      if (!public_key) return; // push disabled server-side
+      if (!public_key) { _updateNotifBtn("off"); return; }
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlB64ToUint8Array(public_key),
       });
     }
     await postJSON("/api/push/subscribe", sub.toJSON ? sub.toJSON() : sub);
+    _updateNotifBtn("on");
   } catch (e) {
-    if (!(e instanceof AuthError)) console.warn("push subscribe failed", e);
+    if (!(e instanceof AuthError)) {
+      console.warn("push subscribe failed", e);
+      toast("Notification setup failed: " + e.message, true);
+    }
+    _updateNotifBtn("off");
   } finally {
     _pushBusy = false;
   }
 }
+
+$("#notif-btn").addEventListener("click", () => ensurePushSubscription());
 
 // ---- boot ------------------------------------------------------------------
 $("#refresh").addEventListener("click", loadPods);
@@ -2035,9 +2268,11 @@ async function init() {
   loadBalance();
   loadStorage();
   startRamPoll();
+  pollGenBadge(); // surface a restored in-flight generation on the Outputs tab
   if (!_balanceTimer) _balanceTimer = setInterval(loadBalance, 60_000);
   // Register the SW now; (re)subscribe to push if the user already granted it.
   // First-time permission is requested on the Generate tap (a user gesture).
+  _updateNotifBtn(_pushState());
   registerServiceWorker();
   if (window.Notification && Notification.permission === "granted") {
     ensurePushSubscription();

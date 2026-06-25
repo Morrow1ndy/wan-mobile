@@ -98,18 +98,27 @@ async def fetch_view(comfy: str, filename: str, subfolder: str = "",
 
 
 async def open_view_stream(comfy: str, filename: str, subfolder: str = "",
-                           type_: str = "output"):
+                           type_: str = "output", range_header: str | None = None):
     """Stream a generated file from ComfyUI without buffering it in RAM.
 
-    Returns an async byte-generator suitable for a StreamingResponse. The
+    Forwards an optional HTTP `Range` header so the browser only pulls the
+    bytes it needs — `<video preload="metadata">` cover tiles fetch just the
+    moov atom + first frame instead of the whole clip, and seeking transfers
+    only the seeked region. ComfyUI serves /view via aiohttp's FileResponse,
+    which honours Range (replies 206 + Content-Range) and otherwise returns
+    200 + Content-Length.
+
+    Returns `(resp, body_generator)`. The caller reads `resp.status_code` and
+    the relevant headers to pass through, then streams `body_generator`. The
     underlying httpx client/response stay open until the generator is fully
-    consumed, then close in its `finally`. raise_for_status runs before the
-    generator is returned so HTTP errors surface to the caller immediately.
+    consumed, then close in its `finally`. raise_for_status runs first so HTTP
+    errors (4xx/5xx) surface immediately; a 206 is not an error.
     """
     client = httpx.AsyncClient(base_url=comfy, timeout=httpx.Timeout(120.0))
+    headers = {"Range": range_header} if range_header else {}
     req = client.build_request("GET", "/view", params={
         "filename": filename, "subfolder": subfolder, "type": type_,
-    })
+    }, headers=headers)
     resp = await client.send(req, stream=True)
     try:
         resp.raise_for_status()
@@ -126,4 +135,4 @@ async def open_view_stream(comfy: str, filename: str, subfolder: str = "",
             await resp.aclose()
             await client.aclose()
 
-    return body()
+    return resp, body()

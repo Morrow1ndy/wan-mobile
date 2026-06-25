@@ -198,12 +198,6 @@ JOBS: dict[str, dict] = {}
 _TASKS: set[asyncio.Task] = set()  # keeps watcher tasks alive until done
 
 
-def _notify(title: str, body: str):
-    """Fire a push notification without blocking the caller."""
-    task = asyncio.create_task(asyncio.to_thread(push.send_push, title, body))
-    _TASKS.add(task)
-    task.add_done_callback(_TASKS.discard)
-
 # Serializes read-modify-write of the saved-videos metadata + its GCS upload so
 # concurrent star/unstar calls can't clobber each other's changes.
 _saved_lock = asyncio.Lock()
@@ -324,6 +318,18 @@ async def pod_metrics(pod_id: str):
 @app.get("/api/pods/{pod_id}/events")
 async def pod_events(pod_id: str):
     return POD_EVENTS.get(pod_id, [])
+
+
+@app.get("/api/pods/{pod_id}/session")
+async def pod_session(pod_id: str):
+    """Live metrics + activity log in a single request.
+
+    The pod card polls this on a timer; bundling both halves the number of
+    phone→Fly round-trips per tick (events are in-memory, so this adds no
+    extra RunPod API calls beyond the metrics lookup).
+    """
+    metrics = await rp.pod_metrics(pod_id)
+    return {"metrics": metrics, "events": POD_EVENTS.get(pod_id, [])}
 
 
 @app.post("/api/pods")
@@ -534,21 +540,44 @@ async def generation_params(prompt_id: str):
     return params
 
 
+# Generated clips are write-once (the filename embeds a unique counter / prompt
+# id), so they never change under a given URL — cache them hard on the device.
+_VIDEO_CACHE = "private, max-age=31536000, immutable"
+
+
+async def _proxy_view(pod_id: str, filename: str, subfolder: str,
+                      type_: str, range_header: str | None):
+    """Stream a pod file to the browser with Range + immutable caching.
+
+    No RAM buffering (streamed straight through), and the client's Range header
+    is forwarded so cover thumbnails and seeks only move the needed bytes.
+    Passes through upstream Content-Length / Content-Range and the 206 status.
+    """
+    resp, body = await comfy.open_view_stream(
+        rp.comfy_url(pod_id), filename, subfolder, type_, range_header)
+    headers = {
+        "Content-Disposition": f'inline; filename="{filename}"',
+        "Accept-Ranges": "bytes",
+        "Cache-Control": _VIDEO_CACHE,
+    }
+    for h in ("content-length", "content-range"):
+        if h in resp.headers:
+            headers[h] = resp.headers[h]
+    return StreamingResponse(
+        body, status_code=resp.status_code,
+        media_type=_content_type({"filename": filename}),
+        headers=headers,
+    )
+
+
 @app.get("/api/video/{prompt_id}")
-async def video(prompt_id: str):
+async def video(request: Request, prompt_id: str):
     job = JOBS.get(prompt_id)
     if not job or not job.get("video"):
         raise HTTPException(404, "no video for this job yet")
     v = job["video"]
-    body = await comfy.open_view_stream(
-        rp.comfy_url(job["pod_id"]), v["filename"], v.get("subfolder", ""),
-        v.get("type", "output"),
-    )
-    return StreamingResponse(
-        body,
-        media_type=v.get("content_type", "video/mp4"),
-        headers={"Content-Disposition": f'inline; filename="{v["filename"]}"'},
-    )
+    return await _proxy_view(job["pod_id"], v["filename"], v.get("subfolder", ""),
+                             v.get("type", "output"), request.headers.get("range"))
 
 
 @app.get("/api/pods/{pod_id}/outputs")
@@ -600,15 +629,15 @@ async def pod_jobs(pod_id: str):
 
 
 @app.get("/api/pods/{pod_id}/view")
-async def pod_view(pod_id: str, filename: str, subfolder: str = "",
-                   type: str = "output"):
-    """Proxy a single output file from the pod by its ComfyUI coordinates."""
-    body = await comfy.open_view_stream(rp.comfy_url(pod_id), filename, subfolder, type)
-    return StreamingResponse(
-        body,
-        media_type=_content_type({"filename": filename}),
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
-    )
+async def pod_view(request: Request, pod_id: str, filename: str,
+                   subfolder: str = "", type: str = "output"):
+    """Proxy a single output file from the pod by its ComfyUI coordinates.
+
+    Streams with Range support so cover thumbnails / seeks transfer only the
+    bytes the browser requests, and caches immutably (outputs are write-once).
+    """
+    return await _proxy_view(pod_id, filename, subfolder, type,
+                             request.headers.get("range"))
 
 
 # ----- cancel / delete -------------------------------------------------------
@@ -724,9 +753,12 @@ async def serve_saved_file(filename: str):
             raise HTTPException(404, "Saved video not found")
     # FileResponse streams from disk in chunks instead of loading the whole
     # video into memory.
+    # FileResponse streams from disk in chunks and honours Range natively.
+    # Saved files are immutable, so cache them hard to avoid re-downloads.
     return FileResponse(
         p, media_type=_content_type({"filename": filename}),
-        headers={"Content-Disposition": f'inline; filename="{filename}"'})
+        headers={"Content-Disposition": f'inline; filename="{filename}"',
+                 "Cache-Control": _VIDEO_CACHE})
 
 
 # ----- system metrics (RAM) --------------------------------------------------
@@ -898,8 +930,9 @@ async def _watch(url: str, client_id: str, prompt_id: str):
                     job["status"], job["error"] = "error", d
                     job["finished_at"] = time.time()
                     log_event(job["pod_id"], "Generation error (ComfyUI)")
-                    _notify("Generation failed", "ComfyUI hit an error — open the app for details.")
                     _persist_jobs()
+                    await asyncio.to_thread(push.send_push,
+                        "Generation failed", "ComfyUI hit an error — open the app for details.")
                     return
     except Exception:
         pass  # fall through to history-based resolution
@@ -921,8 +954,9 @@ async def _watch(url: str, client_id: str, prompt_id: str):
             job["status"], job["error"] = "error", status
             job["finished_at"] = time.time()
             log_event(job["pod_id"], "Generation error (ComfyUI)")
-            _notify("Generation failed", "ComfyUI hit an error — open the app for details.")
             _persist_jobs()
+            await asyncio.to_thread(push.send_push,
+                "Generation failed", "ComfyUI hit an error — open the app for details.")
             return
         if outputs or status.get("completed"):
             job["video"] = _find_video(outputs)
@@ -930,28 +964,31 @@ async def _watch(url: str, client_id: str, prompt_id: str):
             job["finished_at"] = time.time()
             if job["max"]:
                 job["progress"] = job["max"]
-            if job.get("started_at") and job["finished_at"]:
-                ps.save_stat(prompt_id,
-                             round(job["finished_at"] - job["started_at"]),
-                             job["finished_at"])
+            # Always save_stat so completed_at is recorded even without started_at
+            duration = (round(job["finished_at"] - job["started_at"])
+                        if job.get("started_at") else None)
+            ps.save_stat(prompt_id, duration, job["finished_at"])
             _backfill_seed(prompt_id, entry)
             log_event(job["pod_id"],
                       "Video ready ✓" if job["video"] else "Finished (no video output)")
+            _persist_jobs()
             if job["video"]:
                 secs = job.get("finished_at", 0) - (job.get("started_at") or 0)
                 took = f" in {round(secs)}s" if secs > 0 else ""
-                _notify("Your video is ready 🎬", f"Generation finished{took}. Tap to watch.")
+                await asyncio.to_thread(push.send_push,
+                    "Your video is ready 🎬", f"Generation finished{took}. Tap to watch.")
             else:
-                _notify("Generation finished", "No video was produced — open the app to check.")
-            _persist_jobs()
+                await asyncio.to_thread(push.send_push,
+                    "Generation finished", "No video was produced — open the app to check.")
             return
         if time.monotonic() > deadline:
             job["status"] = "error"
             job["error"] = "Timed out waiting for ComfyUI to finish."
             job["finished_at"] = time.time()
             log_event(job["pod_id"], "Generation timed out")
-            _notify("Generation timed out", "ComfyUI didn't finish in time — open the app.")
             _persist_jobs()
+            await asyncio.to_thread(push.send_push,
+                "Generation timed out", "ComfyUI didn't finish in time — open the app.")
             return
         await asyncio.sleep(2)
 

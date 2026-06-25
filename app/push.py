@@ -125,13 +125,29 @@ def send_push(title: str, body: str, url: str = "/", tag: str = "wan-gen"):
     """
     v = _vapid()
     if not v:
+        print("[push] VAPID keys not available — skipping send")
         return
     subs = _load_subs()
     if not subs:
+        print("[push] No subscriptions stored — skipping send")
         return
     try:
         from pywebpush import webpush, WebPushException
-    except Exception:
+        from py_vapid import Vapid01
+    except Exception as e:
+        print(f"[push] pywebpush/py_vapid not available: {e}")
+        return
+
+    # Load private key as a Vapid01 instance — passing the raw PEM string to
+    # webpush() is unreliable across pywebpush versions.
+    try:
+        pem = v["private_pem"]
+        if isinstance(pem, str):
+            pem = pem.encode()
+        vapid = Vapid01()
+        vapid.from_pem(pem)
+    except Exception as e:
+        print(f"[push] Failed to load VAPID private key: {e}")
         return
 
     payload = json.dumps({"title": title, "body": body, "url": url, "tag": tag})
@@ -140,13 +156,15 @@ def send_push(title: str, body: str, url: str = "/", tag: str = "wan-gen"):
             webpush(
                 subscription_info=sub,
                 data=payload,
-                vapid_private_key=v["private_pem"],
+                vapid_private_key=vapid,
                 vapid_claims={"sub": _VAPID_SUBJECT},
                 timeout=10,
             )
+            print(f"[push] Sent '{title}' to {sub.get('endpoint','?')[:60]}…")
         except WebPushException as e:
             status = getattr(getattr(e, "response", None), "status_code", None)
+            print(f"[push] WebPushException status={status}: {e}")
             if status in (404, 410):
                 _remove_endpoint(sub.get("endpoint", ""))
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[push] Unexpected error sending push: {e}")

@@ -68,7 +68,7 @@ def get_stats() -> dict:
     }
 
 
-def save_stat(prompt_id: str, secs: int, completed_at: float):
+def save_stat(prompt_id: str, secs, completed_at: float):
     d = get_stats()
     d[prompt_id] = {"secs": secs, "at": round(completed_at)}
     _write(_STATS, _trim_oldest(d, _MAX_STATS))
