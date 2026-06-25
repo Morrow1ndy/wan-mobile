@@ -891,7 +891,7 @@ async function _applyJobsUpdate(jobs, podId) {
     live.add(j.prompt_id);
     upsertActiveCard(podId, j);
   }
-  const orphaned = [...$$("#out-active .out-item")].filter(
+  const orphaned = [...$$("#out-active .out-card")].filter(
     (c) => !live.has(c.dataset.pid)
   );
   orphaned.forEach((c) => c.remove());
@@ -1517,26 +1517,23 @@ function upsertActiveCard(podId, j) {
   let card = document.getElementById(activeCardId(j.prompt_id));
   if (!card) {
     const thumb = inputThumbUrl(podId, j.input_image);
-    const nameHtml = j.video_name ? `<div class="active-name">${esc(j.video_name)}</div>` : "";
+    const nameHtml = j.video_name ? `<span class="tile-dur">${esc(j.video_name)}</span>` : "";
     $("#out-active").insertAdjacentHTML("afterbegin", `
-      <div class="out-item active" id="${activeCardId(j.prompt_id)}"
+      <div class="out-card out-card-active" id="${activeCardId(j.prompt_id)}"
            data-pid="${esc(j.prompt_id)}">
-        <div class="active-media">
-          <img class="active-img" alt="generating"
+        <div class="out-cover">
+          <img class="cover-img active-img" alt="generating"
                src="${thumb || ""}" data-fallback="${thumb || ""}" />
-          <span class="gen-badge">queued</span>
-        </div>
-        <div class="active-body">
-          ${nameHtml}
-          <div class="active-row">
-            <span class="elapsed muted">queued</span>
-            <span class="step muted"></span>
+          <span class="gen-badge-tile">queued</span>
+          <div class="tile-foot">
+            ${nameHtml}
+            <span class="elapsed tile-dt">queued</span>
+            <span class="step tile-dt"></span>
           </div>
-          <div class="progress-wrap"><div class="progress-bar"></div></div>
-          <div class="active-footer">
-            <div class="node muted"></div>
-            <button class="ghost small stop-btn" data-pid="${esc(j.prompt_id)}" data-pod="${esc(podId)}">✕ Stop</button>
-          </div>
+          <div class="active-prog-wrap"><div class="active-prog-bar"></div></div>
+          <button class="stop-tile-btn stop-btn"
+                  data-pid="${esc(j.prompt_id)}" data-pod="${esc(podId)}"
+                  title="Stop generation">✕</button>
         </div>
       </div>`);
     card = document.getElementById(activeCardId(j.prompt_id));
@@ -1544,27 +1541,14 @@ function upsertActiveCard(podId, j) {
 
   const started = j.started_at;
   const elapsed = started ? (Date.now() / 1000 - started) : null;
-  const badge = card.querySelector(".gen-badge");
-  const elapsedEl = card.querySelector(".elapsed");
 
-  if (elapsed !== null) {
-    badge.textContent = "generating";
-    elapsedEl.textContent = fmtElapsed(elapsed);
-    elapsedEl.classList.remove("muted");
-  } else {
-    badge.textContent = "queued";
-    elapsedEl.textContent = "queued";
-    elapsedEl.classList.add("muted");
-  }
-
-  card.querySelector(".step").textContent =
-    elapsed !== null && j.max ? `step ${j.progress} / ${j.max}` : "";
-  card.querySelector(".progress-bar").style.width =
+  card.querySelector(".gen-badge-tile").textContent = elapsed !== null ? "generating" : "queued";
+  card.querySelector(".elapsed").textContent = elapsed !== null ? fmtElapsed(elapsed) : "queued";
+  card.querySelector(".step").textContent = elapsed !== null && j.max ? `step ${j.progress}/${j.max}` : "";
+  card.querySelector(".active-prog-bar").style.width =
     j.max ? Math.round((j.progress / j.max) * 100) + "%" : "0%";
-  card.querySelector(".node").textContent =
-    elapsed !== null && j.node_title ? `▶ ${j.node_title}` : "";
 
-  // Prefer the live sampling preview; fall back to the input image.
+  // Prefer live sampling preview, fall back to input image thumbnail.
   const img = card.querySelector(".active-img");
   if (j.has_preview) {
     img.src = `/api/preview/${j.prompt_id}?t=${Math.floor(Date.now() / 1000)}`;

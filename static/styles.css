@@ -316,23 +316,35 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .bulk-bar[hidden] { display: none; }
 #bulk-delete { color: var(--red) !important; }
 
-/* In-progress generation card (lives above the finished clips). */
-.out-item { background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
-  padding: 12px; margin: 14px 0; }
-.out-item.active { border-color: var(--accent); }
-.active-media { position: relative; }
-.active-img { width: 100%; max-height: 60vh; object-fit: contain; border-radius: 10px;
-  background: #000; border: 1px solid var(--line); display: block; }
-.gen-badge { position: absolute; top: 10px; left: 10px; font-size: 11px; font-weight: 600;
-  padding: 4px 10px; border-radius: 999px; color: var(--accent);
-  background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(4px); }
-.active-body { margin-top: 10px; }
-.active-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.active-row .elapsed { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
-.active-row .step { font-size: 12px; }
-.active-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
-.active-footer .node { font-size: 12px; word-break: break-word; flex: 1; }
-.stop-btn { flex-shrink: 0; color: var(--red) !important; }
+/* In-progress generation card — same compact tile as finished clips */
+.out-card-active { border-color: var(--accent) !important; }
+.out-card-active .out-cover { cursor: default; }
+.gen-badge-tile {
+  position: absolute; top: 6px; left: 6px; z-index: 2;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.02em;
+  padding: 3px 8px; border-radius: 999px;
+  color: var(--accent); background: rgba(0,0,0,0.62);
+  backdrop-filter: blur(4px);
+}
+/* Thin accent progress bar along the bottom edge of the cover */
+.active-prog-wrap {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 3px;
+  background: rgba(255,255,255,0.12); z-index: 2;
+}
+.active-prog-bar {
+  height: 100%; width: 0; background: var(--accent);
+  transition: width 0.8s linear; border-radius: 0 2px 2px 0;
+}
+/* Stop button — same position/style as the star button */
+.stop-tile-btn {
+  position: absolute; top: 5px; right: 5px; z-index: 3;
+  width: 26px; height: 26px; padding: 0; border: none; border-radius: 50%;
+  background: rgba(0,0,0,0.55); color: var(--red);
+  font-size: 11px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(3px);
+}
+.stop-btn { color: var(--red) !important; }
 .out-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .del-btn { color: var(--muted) !important; font-size: 14px; }
 
@@ -701,12 +713,7 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 }
 .prompt-clear:active { opacity: 1; color: var(--text); }
 
-/* ---- video name ---- */
-.active-name {
-  font-size: 12px; font-weight: 500; color: var(--accent);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  margin-bottom: 6px;
-}
+/* ---- video name (shown in tile-foot / cap-meta) ---- */
 .out-name {
   display: block; font-size: 11px; font-weight: 500; color: var(--accent);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
