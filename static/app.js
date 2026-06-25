@@ -825,9 +825,6 @@ $("#generate").addEventListener("click", async () => {
   fd.append("workflow_file", _selectedWorkflow || "");
 
   try {
-    // Ask for notification permission + push subscription on this user gesture
-    // so we can alert when the video is ready (even with the browser minimised).
-    ensurePushSubscription();
     const r = await apiFetch("/api/generate", { method: "POST", body: fd });
     if (!r.ok) throw new Error((await r.text()) || r.statusText);
     await r.json();

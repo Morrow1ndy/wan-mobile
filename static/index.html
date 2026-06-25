@@ -25,7 +25,6 @@
       <span id="balance" class="balance" role="status" aria-label="RunPod credit balance" title="RunPod credit balance">—</span>
       <button id="ram-clear" class="ghost small" aria-label="Clear RAM on active pod" title="Clear RAM on active pod" hidden>🎈 RAM</button>
       <button id="hard-refresh" class="ghost small hard-refresh-btn" aria-label="Hard refresh (clear cache and reload)" title="Hard refresh">&#x21BA;</button>
-      <button id="refresh" class="ghost" aria-label="Refresh pods" title="Refresh">&#x21bb;</button>
     </div>
   </header>
 
@@ -37,6 +36,10 @@
 
   <!-- POD TAB -->
   <section id="tab-pods" class="tab active">
+    <div class="section-head-row" style="padding:10px 2px 4px">
+      <span style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em">Running pods</span>
+      <button id="refresh" class="ghost small" aria-label="Refresh pods" title="Refresh pods">&#x21bb;</button>
+    </div>
     <div id="pods-list" class="card-list">
       <div class="muted">Loading pods&hellip;</div>
     </div>
