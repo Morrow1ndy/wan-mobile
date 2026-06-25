@@ -875,7 +875,7 @@ async def serve_image_file(path: str):
         media_type=_content_type({"filename": path}),
         headers={
             "Content-Disposition": f'inline; filename="{Path(path).name}"',
-            "Cache-Control": "private, max-age=300",
+            "Cache-Control": "private, max-age=31536000, immutable",
         },
     )
 
