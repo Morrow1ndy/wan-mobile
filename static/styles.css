@@ -747,6 +747,26 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   pointer-events: none;
 }
 
+/* ---- TikTok-style play/pause overlay ---- */
+.vid-play-overlay {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(1);
+  width: 76px; height: 76px; border-radius: 50%;
+  background: rgba(0,0,0,0.52);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 30px; color: #fff; line-height: 1;
+  pointer-events: none; z-index: 44;
+  opacity: 0; transition: opacity 0.35s ease;
+  animation: vid-pop 0.18s ease-out;
+}
+.vid-play-overlay.visible { opacity: 1; }
+.vid-play-overlay.fade    { opacity: 0; }
+@keyframes vid-pop {
+  0%   { transform: translate(-50%, -50%) scale(0.6); }
+  60%  { transform: translate(-50%, -50%) scale(1.1); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+
 /* ---- hard refresh button ---- */
 .hard-refresh-btn { font-size: 17px; padding: 5px 8px; }
 @keyframes hard-spin {

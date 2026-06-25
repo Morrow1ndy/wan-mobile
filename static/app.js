@@ -1144,7 +1144,7 @@ function renderSavedOutput(it) {
     <div class="out-cover">
       <video class="cover-img" preload="none" muted data-src="${url}#t=0.1"></video>
       <span class="play-badge">${PLAY_SVG}</span>
-      <video class="tile-video" data-src="${url}" playsinline preload="none" controls></video>
+      <video class="tile-video" data-src="${url}" playsinline preload="none" loop></video>
       <div class="tile-foot">
         ${dur ? `<span class="tile-dur">⏱ ${dur}</span>` : ""}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
@@ -1186,7 +1186,7 @@ function renderOutput(podId, it) {
     <div class="out-cover">
       ${cover}
       <span class="play-badge">${PLAY_SVG}</span>
-      <video class="tile-video" data-src="${url}" playsinline preload="none" controls></video>
+      <video class="tile-video" data-src="${url}" playsinline preload="none" loop></video>
       <div class="tile-foot">
         ${dur ? `<span class="tile-dur">⏱ ${dur}</span>` : ""}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
@@ -1209,6 +1209,40 @@ function renderOutput(podId, it) {
       </div>
     </div>
   </div>`;
+}
+
+// ---- TikTok-style tap-to-pause overlay -------------------------------------
+function _showVidOverlay(card, state) {
+  const cover = card.querySelector(".out-cover");
+  if (!cover) return;
+  let ov = cover.querySelector(".vid-play-overlay");
+  if (!ov) {
+    ov = document.createElement("div");
+    ov.className = "vid-play-overlay";
+    cover.appendChild(ov);
+  }
+  ov.textContent = state === "pause" ? "⏸" : "▶";
+  ov.classList.remove("fade");
+  ov.classList.add("visible");
+  clearTimeout(ov._t);
+  if (state === "play") {
+    // Brief flash then fade out
+    ov._t = setTimeout(() => ov.classList.add("fade"), 50);
+    ov._t2 = setTimeout(() => ov.classList.remove("visible", "fade"), 600);
+  }
+  // "pause" state: stays visible until next tap
+}
+
+function _toggleVidPlayback(card) {
+  const video = card.querySelector(".tile-video");
+  if (!video || !video.src) return;
+  if (video.paused) {
+    video.play().catch(() => {});
+    _showVidOverlay(card, "play");
+  } else {
+    video.pause();
+    _showVidOverlay(card, "pause");
+  }
 }
 
 // ---- in-place tile expand / collapse ----------------------------------------
@@ -1251,6 +1285,7 @@ function expandTile(card) {
 function collapseTile(card) {
   const video = card.querySelector(".tile-video");
   if (video) { video.pause(); }
+  card.querySelector(".vid-play-overlay")?.remove();
   card.classList.remove("expanded");
   document.body.style.overflow = "";
 }
@@ -1409,9 +1444,13 @@ $("#out-list").addEventListener("click", async (e) => {
     starBtn.disabled = false;
     return;
   }
-  // tap cover → expand
+  // tap cover → expand, or toggle play/pause if already expanded
   const cover = e.target.closest(".out-cover");
-  if (cover) expandTile(cover.closest(".out-card"));
+  if (cover) {
+    const card = cover.closest(".out-card");
+    if (card.classList.contains("expanded")) _toggleVidPlayback(card);
+    else expandTile(card);
+  }
 });
 
 // ---- saved-list: tap cover to expand; star to unstar -------------------------
@@ -1443,7 +1482,11 @@ $("#saved-list").addEventListener("click", async (e) => {
     return;
   }
   const cover = e.target.closest(".out-cover");
-  if (cover) expandTile(cover.closest(".out-card"));
+  if (cover) {
+    const card = cover.closest(".out-card");
+    if (card.classList.contains("expanded")) _toggleVidPlayback(card);
+    else expandTile(card);
+  }
 });
 
 // Pull a human-readable message out of a job's `error` field, which may be a
