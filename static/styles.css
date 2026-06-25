@@ -719,7 +719,7 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
    Arrows at vertical-center sides; counter at top-right near the zoom-back. */
 .tile-nav {
   display: none;
-  position: absolute; inset: 0; z-index: 45;
+  position: fixed; inset: 0; z-index: 45;
   pointer-events: none;
 }
 .out-card.expanded .tile-nav { display: block; }
