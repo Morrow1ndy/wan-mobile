@@ -553,7 +553,7 @@ $("#start-pod").addEventListener("click", async () => {
 // ---- generate: params form -------------------------------------------------
 let FIELDS = [];
 let CFG = {};
-let _selectedWorkflow = localStorage.getItem("wan_workflow") || "";
+let _selectedWorkflow = ""; // always reset to server default (bf16) on each session
 
 // Convert filename to a short display label: "YAW_2.2_GGUF.json" → "GGUF"
 function _workflowLabel(filename) {
@@ -577,7 +577,6 @@ function renderWorkflowTabs(workflows, defaultWorkflow) {
   container.querySelectorAll(".img-mode-tab").forEach((btn) => {
     btn.addEventListener("click", () => {
       _selectedWorkflow = btn.dataset.workflow;
-      localStorage.setItem("wan_workflow", _selectedWorkflow);
       container.querySelectorAll(".img-mode-tab").forEach(
         (b) => b.classList.toggle("active", b === btn)
       );
