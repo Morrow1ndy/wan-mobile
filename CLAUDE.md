@@ -140,18 +140,31 @@ Fly secrets win over the baked-in `.env` when both exist.
 ## Workflow ↔ UI parameter map (FRAGILE — read before editing generation)
 
 `config.py` `PARAM_FIELDS` maps each UI control to specific **node IDs** inside
-`workflows/YAW_2.2_bf16.json` (ComfyUI API format). Key bindings:
+the workflow JSON files. Two workflows are available; the user selects between
+them via the workflow tab in the Generate UI:
+
+| File | Loader | Default? |
+|------|--------|----------|
+| `workflows/YAW_2.2_bf16.json` | UNETLoader (bf16 weights) | ✓ (`WORKFLOW_FILE`) |
+| `workflows/YAW_2.2_GGUF.json` | UnetLoaderGGUF (quantised) | selectable in UI |
+
+**All param node IDs are identical between the two files** — only the model
+loader nodes differ. So `PARAM_FIELDS` (and `IMAGE_NODE` / `OUTPUT_NODE_ID`)
+applies to both workflows without any conditional logic.
+
+Key bindings (same node IDs in both files):
 - `IMAGE_NODE` = node `166` (LoadImage — receives the uploaded image)
 - `OUTPUT_NODE_ID` = node `145` (VHS_VideoCombine — the saved video)
 - Steps/CFG/Last-Step write to **two** source nodes each (an in-graph switch),
   so values apply whichever way the switch is flipped.
 - The `lightx2v` toggle (distill LoRA) selects between two value sets and
   enables/disables the LoRA by setting strength (0 = off). CFG is forced to 1 when on.
-- Seed is auto-randomized every run (hidden `_seed` const → node `158`).
+- Seed is auto-randomized every run (`_seed` field → node `158`).
 
-⚠️ **If you re-export the workflow from ComfyUI, node IDs change** and every
+⚠️ **If you re-export either workflow from ComfyUI, node IDs change** and every
 `node_id` in `PARAM_FIELDS` (plus `IMAGE_NODE` / `OUTPUT_NODE_ID`) must be updated
 or generation silently breaks. `workflow.py` builds the final prompt from this map.
+Re-check **both** files if you update node IDs — they must stay in sync.
 
 ---
 
