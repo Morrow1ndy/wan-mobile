@@ -18,7 +18,12 @@
   the user **explicitly says so** in their message (e.g. "push", "deploy",
   "commit this"). Batch all pending changes into one commit at that point.
 - When committing, `git add -A` to include everything changed in the session.
-- Deploy (`fly deploy`) only when the user asks — don't auto-deploy after a push.
+- **Never run `fly deploy` manually.** Deployment is handled automatically by
+  the GitHub Actions workflow (`.github/workflows/fly-deploy.yml`) on every push
+  to `main` that touches `app/**`, `static/**`, `workflows/**`, `data/**`,
+  `Dockerfile`, `requirements.txt`, or `fly.toml`. Doc-only pushes (CLAUDE.md,
+  README) are skipped. Running `fly deploy` manually is redundant and wastes a
+  build slot.
 
 ---
 
