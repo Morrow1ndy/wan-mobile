@@ -444,6 +444,32 @@ function cudaParam() {
   return selectedCuda.length ? `cuda=${encodeURIComponent(selectedCuda.join(","))}` : "";
 }
 
+// GPU model names that appear in the Favourite GPUs section. For each keyword
+// we pick the single available entry with the highest system RAM; if none are
+// available we show a greyed-out unavailable card instead.
+const FAV_GPU_KEYWORDS = ["5090", "4090"];
+
+function renderFavGpus(allGpus) {
+  const section = $("#fav-gpu-section");
+  const grid    = $("#fav-gpu-grid");
+  const favs = FAV_GPU_KEYWORDS.map((kw) => {
+    const matches = allGpus.filter((g) => g.displayName.includes(kw));
+    if (!matches.length) return null;
+    // Among available ones pick highest RAM; if none available pick highest RAM
+    // unavailable so we still show a greyed-out card rather than hiding it.
+    const avail   = matches.filter((g) => g.available);
+    const pool    = avail.length ? avail : matches;
+    return pool.reduce((best, g) => (g.ram || 0) > (best.ram || 0) ? g : best);
+  }).filter(Boolean);
+
+  if (!favs.length) { section.hidden = true; return; }
+  section.hidden = false;
+  grid.innerHTML = favs.map(renderGpu).join("");
+  $$("#fav-gpu-grid .gpu").forEach((card) => {
+    if (card.dataset.avail === "1") card.addEventListener("click", () => selectGpu(card));
+  });
+}
+
 async function loadGpuGrid() {
   const grid = $("#gpu-grid");
   grid.innerHTML = `<div class="muted">Loading GPUs…</div>`;
@@ -458,6 +484,7 @@ async function loadGpuGrid() {
     grid.innerHTML = `<div class="muted">Could not load GPUs: ${e.message}</div>`;
     return;
   }
+  renderFavGpus(gpus);
   grid.innerHTML = gpus.length
     ? gpus.map(renderGpu).join("")
     : `<div class="muted">No GPUs match.</div>`;
@@ -502,7 +529,8 @@ function ratingRow(label, score, tone) {
 }
 
 function selectGpu(card) {
-  $$("#gpu-grid .gpu").forEach((c) => c.classList.remove("sel"));
+  // Clear selection in both the main grid and the favourites grid.
+  $$("#gpu-grid .gpu, #fav-gpu-grid .gpu").forEach((c) => c.classList.remove("sel"));
   card.classList.add("sel");
   selectedGpu = { id: card.dataset.id, label: card.dataset.label, ram: card.dataset.ram };
   $("#start-pod").disabled = false;

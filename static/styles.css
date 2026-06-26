@@ -425,6 +425,9 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 
 .gpu-grid-head { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 10px; }
 
+/* ---- Favourite GPUs section ---- */
+#fav-gpu-section { padding-bottom: 4px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+
 /* ---- GPU tiles ---- */
 .gpu-grid { display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; }
 @media (min-width: 480px) { .gpu-grid { grid-template-columns: repeat(2, 1fr); } }

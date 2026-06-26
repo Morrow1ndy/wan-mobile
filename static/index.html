@@ -59,7 +59,14 @@
         </label>
       </div>
 
-      <div class="gpu-grid-head">
+      <div id="fav-gpu-section" hidden>
+        <div class="gpu-grid-head" style="margin-top:10px">
+          <span class="filter-label">Favourite GPUs</span>
+        </div>
+        <div id="fav-gpu-grid" class="gpu-grid"></div>
+      </div>
+
+      <div class="gpu-grid-head" style="margin-top:10px">
         <span class="filter-label">Select a GPU</span>
         <button id="refresh-gpus" class="ghost small" aria-label="Refresh GPU list" title="Refresh">&#x21bb;</button>
       </div>
