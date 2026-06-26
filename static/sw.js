@@ -6,7 +6,7 @@
 //      files so the app loads fast and images are instant on repeat visits.
 //   3. Handles Web Push for "video ready" notifications.
 
-const CACHE_VERSION = "wan-static-v18";
+const CACHE_VERSION = "wan-static-v19";
 // Persistent caches — NOT deleted when CACHE_VERSION bumps. Content is either
 // immutable per URL (media) or freshened by stale-while-revalidate (data).
 const MEDIA_CACHE   = "wan-media-v1";
@@ -58,6 +58,7 @@ async function cacheFirst(request, cacheName) {
 
 // Stale-while-revalidate: serve cached copy immediately (fast), then update
 // the cache from the network in the background (always fresh on next visit).
+// Used only for truly immutable or deploy-gated data (e.g. /api/config).
 async function staleWhileRevalidate(request, cacheName) {
   const cache    = await caches.open(cacheName);
   const cached   = await cache.match(request);
@@ -65,6 +66,24 @@ async function staleWhileRevalidate(request, cacheName) {
     .then((resp) => { if (resp && resp.ok) cache.put(request, resp.clone()); return resp; })
     .catch(() => cached);
   return cached || fetching;
+}
+
+// Network-first with cache fallback: always goes to the network so you never
+// see stale data while online; serves the cached copy only when offline.
+// Used for mutable data (saved list, templates, presets, last-params) so that
+// changes from any source (another device, in-app edits) are always reflected
+// on the next open without a stale flash.
+async function networkFirst(request, cacheName) {
+  const cache = await caches.open(cacheName);
+  try {
+    const resp = await fetch(request);
+    if (resp && resp.ok) cache.put(request, resp.clone());
+    return resp;
+  } catch (_) {
+    // Offline fallback — serve whatever we have cached.
+    const cached = await cache.match(request);
+    return cached || Response.error();
+  }
 }
 
 // ---- fetch handler ----------------------------------------------------------
@@ -98,18 +117,25 @@ self.addEventListener("fetch", (event) => {
       return;
     }
 
-    // Small data payloads that gate the UI on open. Stale-while-revalidate:
-    // the cached version renders the UI immediately; the fresh version arrives
-    // in the background and is served on the next visit.
-    const DATA_PATHS = [
-      "/api/config",
+    // /api/config — only changes on server deploy, which installs a new SW
+    // that re-fetches everything. SWR is safe here.
+    if (url.pathname === "/api/config") {
+      event.respondWith(staleWhileRevalidate(req, DATA_CACHE));
+      return;
+    }
+
+    // Mutable data: saved list, templates, presets, last-params.
+    // Network-first so you always see current cloud state on open, with
+    // a cache fallback for offline use. Avoids stale-flash after any change
+    // (in-app edits, another device, server-side updates).
+    const MUTABLE_PATHS = [
+      "/api/saved",
       "/api/templates",
       "/api/param-presets",
       "/api/last-params",
-      "/api/saved",
     ];
-    if (DATA_PATHS.includes(url.pathname)) {
-      event.respondWith(staleWhileRevalidate(req, DATA_CACHE));
+    if (MUTABLE_PATHS.includes(url.pathname)) {
+      event.respondWith(networkFirst(req, DATA_CACHE));
       return;
     }
 
@@ -133,6 +159,17 @@ self.addEventListener("fetch", (event) => {
 });
 
 // ---- push notifications -----------------------------------------------------
+
+// Cache invalidation messages from the app.
+// The app sends {type:"EVICT_IMAGE", url:"..."} after deleting or moving a
+// library image so cache-first doesn't keep serving the stale file.
+self.addEventListener("message", (event) => {
+  const msg = event.data;
+  if (!msg) return;
+  if (msg.type === "EVICT_IMAGE" && msg.url) {
+    caches.open(MEDIA_CACHE).then((c) => c.delete(msg.url)).catch(() => {});
+  }
+});
 
 self.addEventListener("push", (event) => {
   let data = {};

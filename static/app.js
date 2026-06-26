@@ -2402,6 +2402,14 @@ function toggleLibSelect(tile) {
   renderLibSelection();
 }
 
+// Tell the SW to evict a library image from the media cache. Called after a
+// delete or move so the stale entry doesn't linger as a ghost thumbnail.
+function _evictImageCache(path) {
+  if (!navigator.serviceWorker?.controller) return;
+  const url = `/api/images/file/${encPath(path)}`;
+  navigator.serviceWorker.controller.postMessage({ type: "EVICT_IMAGE", url: location.origin + url });
+}
+
 // ---- library bulk delete ----------------------------------------------------
 $("#lib-bulk-delete").addEventListener("click", async () => {
   const n = _libSelected.size;
@@ -2412,7 +2420,7 @@ $("#lib-bulk-delete").addEventListener("click", async () => {
   for (const path of [..._libSelected]) {
     try {
       const r = await apiFetch(`/api/images/file/${encPath(path)}`, { method: "DELETE" });
-      if (r.ok) done++;
+      if (r.ok) { done++; _evictImageCache(path); }
     } catch (_) {}
   }
   toast(`${done} image${done !== 1 ? "s" : ""} deleted`);
@@ -2540,7 +2548,12 @@ $("#save-here-btn").addEventListener("click", async () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ src: srcPath, dest: destPath }),
         });
-        if (r.ok) done++;
+        if (r.ok) {
+          done++;
+          // On move the source is gone; evict its cache entry so the old
+          // thumbnail can't resurface as a ghost. Copy leaves the source intact.
+          if (op === "move") _evictImageCache(srcPath);
+        }
       } catch (_) {}
     }
     toast(`${done} image${done !== 1 ? "s" : ""} ${op === "copy" ? "copied" : "moved"}`);

@@ -311,6 +311,25 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-26 (SW cache conflict fix)
+
+**Bugs fixed:**
+- **Stale data on reopen after cloud changes** — stale-while-revalidate for
+  `/api/saved`, `/api/templates`, `/api/param-presets`, `/api/last-params`
+  would briefly show the old cached version on open, hiding changes made from
+  another device or since the last session. Switched these to **network-first
+  with cache fallback**: always fetches fresh when online (tiny payloads,
+  negligible latency); serves cache only when offline. `/api/config` stays
+  SWR — it only changes on deploy, which installs a new SW that re-fetches.
+- **Deleted/moved library images persisting as ghost thumbnails** — `cacheFirst`
+  for `/api/images/file/*` would keep serving a stale cached entry after the
+  image was deleted or moved. Added `_evictImageCache(path)` helper in `app.js`
+  that sends an `EVICT_IMAGE` message to the SW after a successful delete or
+  move. The SW `message` handler removes the matching entry from `wan-media-v1`.
+  SW cache → `wan-static-v19`.
+
+---
+
 ### 2026-06-26 (PWA media + data caching)
 
 **Performance:**
