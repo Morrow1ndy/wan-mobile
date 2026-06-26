@@ -311,6 +311,30 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-26 (PWA media + data caching)
+
+**Performance:**
+- **Library images and API data now cached by the service worker** — previously
+  the SW had a blanket "never intercept /api/*" rule, so every library image,
+  config, template list, preset list, saved list, and last-params fetched fresh
+  from Fly.io on every open. iOS aggressively evicts the browser HTTP cache for
+  PWA contexts, so repeat visits felt as slow as first loads.
+  New strategy (two persistent caches not deleted on deploy):
+  - `wan-media-v1` — **cache-first** for `/api/images/file/*` (library images,
+    immutable per URL) and Google Fonts. After the first visit, library thumbnails
+    are instant.
+  - `wan-data-v1` — **stale-while-revalidate** for `/api/config`, `/api/saved`,
+    `/api/templates`, `/api/param-presets`, `/api/last-params`. The cached
+    version renders the UI immediately; the network fetch updates the cache for
+    next time.
+  - Range requests (`Range:` header) still bypass the SW — video partial fetches
+    are large and the server's `Cache-Control: immutable` covers them via the
+    browser HTTP cache.
+  - `activate` handler now keeps `wan-media-v1` and `wan-data-v1` alive across
+    deploys (only old `wan-static-*` shells are evicted). SW version → `wan-static-v18`.
+
+---
+
 ### 2026-06-26 (swipe nav fix)
 
 **Bugs fixed:**
