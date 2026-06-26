@@ -1515,77 +1515,82 @@ function _adjCard(card, dir) {
   return null;
 }
 
-// Attach swipe/wheel/keyboard navigation to an expanded card.
-// Called once per expand (old listeners are discarded with the old nav element).
-const _swipeState = {};
+// A swipe (or its spring-back) ends with a synthetic `click` on iOS. Mark the
+// moment so the grid click handlers can ignore that ghost tap (otherwise it
+// re-toggles playback or hits ← Back and the player appears to "close").
+let _lastSwipeAt = 0;
+const _markSwipe = () => { _lastSwipeAt = Date.now(); };
+const _swipeJustHappened = () => Date.now() - _lastSwipeAt < 350;
 
+// Attach swipe/wheel navigation to an expanded card. Listeners live on the card
+// itself (a fixed full-screen box) so a drag anywhere — including over the
+// <video> — is captured. Only the CURRENT card moves during the drag; the
+// incoming card is brought in by slideTo() on release, so a non-committed swipe
+// can never leave a half-loaded neighbour behind.
 function _attachSwipeNav(card) {
-  const cover = card.querySelector(".out-cover");
-  if (!cover) return;
+  // Bind once per card. The listeners no-op unless the card is currently
+  // expanded, so a collapsed card sitting in the grid never hijacks scroll.
+  if (card._swipeBound) return;
+  card._swipeBound = true;
 
-  // --- touch swipe (mobile) ---
-  let t0y = 0, t0x = 0, tracking = false;
+  let startY = 0, startX = 0, axis = null, active = false;
+
+  function reset() {
+    card.style.transition = "";
+    card.style.transform = "";
+  }
 
   function onTouchStart(e) {
-    if (_sliding || e.touches.length !== 1) return;
-    t0y = e.touches[0].clientY;
-    t0x = e.touches[0].clientX;
-    tracking = true;
+    if (_sliding || e.touches.length !== 1 || !card.classList.contains("expanded")) return;
+    startY = e.touches[0].clientY;
+    startX = e.touches[0].clientX;
+    axis = null; active = true;
   }
 
   function onTouchMove(e) {
-    if (!tracking || _sliding || e.touches.length !== 1) return;
-    const dy = e.touches[0].clientY - t0y;
-    const dx = e.touches[0].clientX - t0x;
-    if (Math.abs(dx) > Math.abs(dy)) { tracking = false; return; } // horizontal swipe → ignore
-    e.preventDefault(); // stop page scroll while swiping between clips
-    // Live-drag follow: translate the current card so the gesture feels physical.
-    // Dampen a bit (×0.4) at the edges where there's no next card.
-    const dir = dy < 0 ? "up" : "down";
-    const next = _adjCard(card, dir);
-    const factor = next ? 1 : 0.18;
-    card.style.transition = "none";
-    card.style.transform  = `translateY(${dy * factor}px)`;
-    if (next) {
-      const inY = dir === "up" ? "100vh" : "-100vh";
-      _primeVideo(next);
-      next.classList.add("expanded");
-      next.style.transition = "none";
-      next.style.transform  = `translateY(calc(${inY} + ${dy * factor}px))`;
+    if (!active || _sliding || e.touches.length !== 1) return;
+    const dy = e.touches[0].clientY - startY;
+    const dx = e.touches[0].clientX - startX;
+    if (axis === null) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; // wait for a clear intent
+      axis = Math.abs(dy) >= Math.abs(dx) ? "v" : "h";
     }
+    if (axis !== "v") return;        // horizontal gesture → leave it alone
+    e.preventDefault();              // claim the vertical gesture (no page scroll)
+    const dir  = dy < 0 ? "up" : "down";
+    const damp = _adjCard(card, dir) ? 1 : 0.2; // resist at the first/last clip
+    card.style.transition = "none";
+    card.style.transform  = `translateY(${dy * damp}px)`;
   }
 
   function onTouchEnd(e) {
-    if (!tracking) return;
-    tracking = false;
-    const dy  = (e.changedTouches[0]?.clientY ?? 0) - t0y;
-    const dir = dy < 0 ? "up" : "down";
+    if (!active) return;
+    active = false;
+    if (axis !== "v") { reset(); return; }
+    const dy   = (e.changedTouches[0]?.clientY ?? startY) - startY;
+    const dir  = dy < 0 ? "up" : "down";
     const next = _adjCard(card, dir);
-    const THRESHOLD = 60; // px to commit
-    if (Math.abs(dy) >= THRESHOLD && next) {
-      // Clean up the live-drag style on `next` — slideTo will re-apply properly.
-      next.style.cssText = "";
-      next.classList.remove("expanded");
-      card.style.cssText = "";
+    _markSwipe();
+    if (Math.abs(dy) >= 60 && next) {
+      // slideTo continues smoothly from the current card's dragged offset.
       slideTo(card, next, dir);
     } else {
       // Spring back to centre.
-      if (next) { next.style.cssText = ""; next.classList.remove("expanded"); }
-      card.style.transition = `transform 280ms cubic-bezier(.2,.8,.3,1.1)`;
+      card.style.transition = "transform 280ms cubic-bezier(.2,.8,.3,1.1)";
       card.style.transform  = "translateY(0)";
-      setTimeout(() => { card.style.cssText = ""; }, 300);
-      if (Math.abs(dy) > 20 && !next) _edgeBounce(card, dir);
+      setTimeout(() => { if (!active) reset(); }, 300);
     }
   }
 
-  cover.addEventListener("touchstart", onTouchStart, { passive: true });
-  cover.addEventListener("touchmove",  onTouchMove,  { passive: false });
-  cover.addEventListener("touchend",   onTouchEnd,   { passive: true });
+  card.addEventListener("touchstart",  onTouchStart, { passive: true });
+  card.addEventListener("touchmove",   onTouchMove,  { passive: false });
+  card.addEventListener("touchend",    onTouchEnd,   { passive: true });
+  card.addEventListener("touchcancel", () => { active = false; reset(); }, { passive: true });
 
   // --- scroll wheel / trackpad (desktop) ---
   let wheelTimer = null;
-  function onWheel(e) {
-    if (_sliding) return;
+  card.addEventListener("wheel", (e) => {
+    if (_sliding || !card.classList.contains("expanded")) return;
     e.preventDefault();
     clearTimeout(wheelTimer);
     wheelTimer = setTimeout(() => {
@@ -1594,8 +1599,7 @@ function _attachSwipeNav(card) {
       if (next) slideTo(card, next, dir);
       else _edgeBounce(card, dir);
     }, 80);
-  }
-  card.addEventListener("wheel", onWheel, { passive: false });
+  }, { passive: false });
 }
 
 function expandTile(card) {
@@ -1821,6 +1825,7 @@ $("#out-list").addEventListener("click", async (e) => {
   // tap cover → expand, or toggle play/pause if already expanded
   const cover = e.target.closest(".out-cover");
   if (cover) {
+    if (_swipeJustHappened()) return; // ignore the ghost click after a swipe
     const card = cover.closest(".out-card");
     if (card.classList.contains("expanded")) _toggleVidPlayback(card);
     else expandTile(card);
@@ -1882,6 +1887,7 @@ $("#saved-list").addEventListener("click", async (e) => {
   }
   const cover = e.target.closest(".out-cover");
   if (cover) {
+    if (_swipeJustHappened()) return; // ignore the ghost click after a swipe
     const card = cover.closest(".out-card");
     if (card.classList.contains("expanded")) _toggleVidPlayback(card);
     else expandTile(card);

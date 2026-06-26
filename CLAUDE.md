@@ -311,6 +311,26 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-26 (swipe nav fix)
+
+**Bugs fixed:**
+- **Swipe nav closed the player + left the next tile spinning** — the first cut
+  manipulated the *incoming* card during the drag (`_primeVideo` + `expanded` +
+  transform on `next` inside `touchmove`). A non-committed swipe then left the
+  neighbour half-loaded (spinner) in the grid, and the synthetic post-swipe
+  `click` re-hit the cover/back so the player appeared to close. Root fixes:
+  (1) **only the current card moves during the drag**; the incoming card is
+  brought in solely by `slideTo()` on release (it continues smoothly from the
+  dragged offset). (2) **axis is decided after an 8px movement threshold** so an
+  initial horizontal jitter no longer permanently cancels the swipe. (3) the
+  post-swipe **ghost click is suppressed** (`_swipeJustHappened()` guard on the
+  cover-tap branch). (4) listeners now **bind once per card and no-op unless that
+  card is expanded**, so a collapsed tile in the grid can't hijack scroll or
+  accumulate duplicate handlers. Touch listeners moved from `.out-cover` to the
+  expanded `.out-card`. SW cache → `wan-static-v17`.
+
+---
+
 ### 2026-06-26 (TikTok swipe nav)
 
 **Features added:**
