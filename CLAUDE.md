@@ -311,6 +311,24 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-26 (TikTok swipe strip)
+
+**UI/UX:**
+- **Swipe between videos now shows a seamless connected strip** — previously only
+  the current card moved during the drag, exposing the Outputs grid underneath.
+  Now the incoming card is shown simultaneously via a new `.vid-incoming` class
+  (`position: fixed; inset: 0; z-index: 39` — one below the expanded card at 40)
+  that renders the next clip's cover thumbnail full-screen with no controls. As
+  you drag, both cards move with the same offset so their edges are always flush:
+  `current` at `translateY(dy)`, `next` at `translateY(100vh + dy)`. The Outputs
+  grid is completely hidden throughout. The incoming cover thumbnail starts loading
+  as soon as the drag begins (so it's usually painted before you commit). On
+  commit, `.vid-incoming` swaps to `.expanded` and the animation continues from
+  the dragged positions (no snap-back to 100vh). On cancel/spring-back the
+  `.vid-incoming` class is cleaned up and no ghost cards are left. SW → v20.
+
+---
+
 ### 2026-06-26 (SW cache conflict fix)
 
 **Bugs fixed:**

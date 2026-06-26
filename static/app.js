@@ -1522,22 +1522,25 @@ let _lastSwipeAt = 0;
 const _markSwipe = () => { _lastSwipeAt = Date.now(); };
 const _swipeJustHappened = () => Date.now() - _lastSwipeAt < 350;
 
-// Attach swipe/wheel navigation to an expanded card. Listeners live on the card
-// itself (a fixed full-screen box) so a drag anywhere — including over the
-// <video> — is captured. Only the CURRENT card moves during the drag; the
-// incoming card is brought in by slideTo() on release, so a non-committed swipe
-// can never leave a half-loaded neighbour behind.
+// Attach swipe/wheel navigation to an expanded card.
+// During the drag BOTH the current card and the incoming card move together
+// (like a connected strip), so the Outputs grid is never visible underneath.
+// The incoming card is shown with .vid-incoming (full-screen, cover only, no
+// controls). On commit we swap it to .expanded and animate to final positions
+// directly from the already-dragged offsets — no position jump.
 function _attachSwipeNav(card) {
-  // Bind once per card. The listeners no-op unless the card is currently
-  // expanded, so a collapsed card sitting in the grid never hijacks scroll.
   if (card._swipeBound) return;
   card._swipeBound = true;
 
   let startY = 0, startX = 0, axis = null, active = false;
+  let _nextCard = null; // the incoming card currently shown during a drag
 
-  function reset() {
-    card.style.transition = "";
-    card.style.transform = "";
+  function _detachNext() {
+    if (_nextCard) {
+      _nextCard.classList.remove("vid-incoming");
+      _nextCard.style.cssText = "";
+      _nextCard = null;
+    }
   }
 
   function onTouchStart(e) {
@@ -1549,52 +1552,125 @@ function _attachSwipeNav(card) {
 
   function onTouchMove(e) {
     if (!active || _sliding || e.touches.length !== 1) return;
-    const dy = e.touches[0].clientY - startY;
-    const dx = e.touches[0].clientX - startX;
+    const rawDy = e.touches[0].clientY - startY;
+    const rawDx = e.touches[0].clientX - startX;
     if (axis === null) {
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; // wait for a clear intent
-      axis = Math.abs(dy) >= Math.abs(dx) ? "v" : "h";
+      if (Math.abs(rawDx) < 8 && Math.abs(rawDy) < 8) return;
+      axis = Math.abs(rawDy) >= Math.abs(rawDx) ? "v" : "h";
     }
-    if (axis !== "v") return;        // horizontal gesture → leave it alone
-    e.preventDefault();              // claim the vertical gesture (no page scroll)
-    const dir  = dy < 0 ? "up" : "down";
-    const damp = _adjCard(card, dir) ? 1 : 0.2; // resist at the first/last clip
+    if (axis !== "v") return;
+    e.preventDefault();
+
+    const dir  = rawDy < 0 ? "up" : "down";
+    const next = _adjCard(card, dir);
+    const damp = next ? 1 : 0.2;
+    const dy   = rawDy * damp;
+
+    // Move the current card away.
     card.style.transition = "none";
-    card.style.transform  = `translateY(${dy * damp}px)`;
+    card.style.transform  = `translateY(${dy}px)`;
+
+    if (next) {
+      // Attach the incoming card immediately below/above (z:39, below expanded z:40).
+      // Its top edge is always flush with the current card's bottom edge, so the
+      // two cards form a seamless connected strip — the grid is never exposed.
+      if (_nextCard !== next) {
+        _detachNext();
+        _nextCard = next;
+        next.classList.add("vid-incoming");
+        // Kick off cover thumbnail load so it's visible before the swipe commits.
+        const coverVid = next.querySelector("video.cover-img[data-src]");
+        if (coverVid && !coverVid.src) coverVid.src = coverVid.dataset.src;
+      }
+      const vhOffset = dir === "up" ? "100vh" : "-100vh";
+      next.style.transition = "none";
+      next.style.transform  = `translateY(calc(${vhOffset} + ${dy}px))`;
+    } else {
+      _detachNext();
+    }
   }
 
   function onTouchEnd(e) {
     if (!active) return;
     active = false;
-    if (axis !== "v") { reset(); return; }
+    if (axis !== "v") { _detachNext(); card.style.cssText = ""; return; }
+
     const dy   = (e.changedTouches[0]?.clientY ?? startY) - startY;
     const dir  = dy < 0 ? "up" : "down";
     const next = _adjCard(card, dir);
     _markSwipe();
-    if (Math.abs(dy) >= 60 && next) {
-      // slideTo continues smoothly from the current card's dragged offset.
-      slideTo(card, next, dir);
+
+    if (Math.abs(dy) >= 60 && next && next === _nextCard) {
+      // COMMIT — continue the animation from wherever the drag left off.
+      // Don't snap back to 100vh first; just spring both cards to their
+      // final positions from their current dragged transforms.
+      _sliding = true;
+      _nextCard = null;
+
+      next.classList.remove("vid-incoming");
+      next.classList.add("expanded");
+      _primeVideo(next);
+
+      // Flush layout so the browser sees the current transforms before
+      // we start the transition.
+      next.getBoundingClientRect(); // eslint-disable-line
+
+      const outY = dir === "up" ? "-100vh" : "100vh";
+      const dur  = `${SLIDE_MS}ms cubic-bezier(.36,.66,.04,1)`;
+      card.style.transition = `transform ${dur}`;
+      next.style.transition = `transform ${dur}`;
+      card.style.transform  = `translateY(${outY})`;
+      next.style.transform  = "translateY(0)";
+
+      function onDone() {
+        card.style.cssText = "";
+        next.style.cssText = "";
+        _sliding = false;
+
+        const vid = card.querySelector(".tile-video");
+        if (vid) { vid.pause(); try { vid.currentTime = 0; } catch (_) {} }
+        card.querySelector(".vid-play-overlay")?.remove();
+        card.classList.remove("expanded");
+        // body.overflow stays "hidden" — next is still expanded.
+
+        const nv = next.querySelector(".tile-video");
+        if (nv) {
+          if (nv.readyState < 3) {
+            _showVidSpinner(next);
+            nv.addEventListener("canplay", () => _hideVidSpinner(next), { once: true });
+            nv.addEventListener("error",   () => _hideVidSpinner(next), { once: true });
+          }
+          nv.play().catch(() => {});
+        }
+        _updateNavCounter(next);
+        _attachSwipeNav(next);
+      }
+
+      next.addEventListener("transitionend", onDone, { once: true });
+      setTimeout(() => { if (_sliding) onDone(); }, SLIDE_MS + 80);
+
     } else {
-      // Spring back to centre.
+      // CANCEL — spring everything back.
+      _detachNext();
       card.style.transition = "transform 280ms cubic-bezier(.2,.8,.3,1.1)";
       card.style.transform  = "translateY(0)";
-      setTimeout(() => { if (!active) reset(); }, 300);
+      setTimeout(() => { if (!active) card.style.cssText = ""; }, 300);
     }
   }
 
   card.addEventListener("touchstart",  onTouchStart, { passive: true });
   card.addEventListener("touchmove",   onTouchMove,  { passive: false });
   card.addEventListener("touchend",    onTouchEnd,   { passive: true });
-  card.addEventListener("touchcancel", () => { active = false; reset(); }, { passive: true });
+  card.addEventListener("touchcancel", () => { active = false; _detachNext(); card.style.cssText = ""; }, { passive: true });
 
-  // --- scroll wheel / trackpad (desktop) ---
+  // Wheel/keyboard nav still uses slideTo (no drag offset to continue from).
   let wheelTimer = null;
   card.addEventListener("wheel", (e) => {
     if (_sliding || !card.classList.contains("expanded")) return;
     e.preventDefault();
     clearTimeout(wheelTimer);
     wheelTimer = setTimeout(() => {
-      const dir = e.deltaY > 0 ? "up" : "down";
+      const dir  = e.deltaY > 0 ? "up" : "down";
       const next = _adjCard(card, dir);
       if (next) slideTo(card, next, dir);
       else _edgeBounce(card, dir);

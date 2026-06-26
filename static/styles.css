@@ -243,6 +243,33 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 }
 
 /* ---- expanded tile: fixed fullscreen ---- */
+/* Incoming card during a swipe drag: full-screen cover preview, no controls.
+   z-index 39 (one below expanded 40) so it's visible only in the area exposed
+   as the current card slides away — the two form a seamless connected strip. */
+.out-card.vid-incoming {
+  position: fixed; inset: 0; z-index: 39;
+  border-radius: 0; margin: 0;
+  display: flex; flex-direction: column;
+  background: #000; overflow: hidden;
+}
+.out-card.vid-incoming .out-cover {
+  flex: 1; position: relative; overflow: hidden; background: #000; line-height: 0;
+}
+.out-card.vid-incoming .cover-img {
+  display: block; width: 100%; height: 100%; object-fit: cover;
+}
+/* Hide everything except the cover thumbnail */
+.out-card.vid-incoming .tile-video,
+.out-card.vid-incoming .out-cap,
+.out-card.vid-incoming .star-btn,
+.out-card.vid-incoming .tile-del-btn,
+.out-card.vid-incoming .drag-handle,
+.out-card.vid-incoming .zoom-back,
+.out-card.vid-incoming .play-badge,
+.out-card.vid-incoming .sel-check,
+.out-card.vid-incoming .tile-foot,
+.out-card.vid-incoming .vid-play-overlay { display: none; }
+
 .out-card.expanded {
   position: fixed; inset: 0; z-index: 40;
   border-radius: 0; margin: 0;
