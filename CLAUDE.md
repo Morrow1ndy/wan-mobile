@@ -311,6 +311,26 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-26 (TikTok swipe nav)
+
+**Features added:**
+- **Swipe up/down to navigate between videos** — replaced the `‹`/`›` arrow
+  buttons with TikTok-style swipe up/down navigation. The gesture is physical:
+  during the drag both the current card (slides out) and the incoming card (slides
+  in from below/above) follow the finger in real-time. On release, committing at
+  ≥60px or enough velocity slides to the next clip with a
+  `cubic-bezier(.36,.66,.04,1)` spring (320ms); releasing early springs both
+  cards back. At the list boundary, a rubber-band nudge (48px elastic push +
+  spring-back) signals there's nothing more. The incoming video's `src` is set
+  the moment the drag starts so buffering begins before the animation completes.
+  Counter pill (`2 / 3`) stays in the top-right corner.
+- **Desktop equivalents:** scroll wheel / trackpad (80ms debounce → slide) and
+  `ArrowUp`/`ArrowDown` keys both navigate between clips.
+- Removed the `‹`/`›` button elements and their CSS (`.tile-nav-btn`,
+  `.tile-nav-prev`, `.tile-nav-next`) — no longer needed. SW cache → `wan-static-v16`.
+
+---
+
 ### 2026-06-26 (player UX + saved delete)
 
 **Bugs fixed:**

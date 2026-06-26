@@ -1075,9 +1075,6 @@ const FOLDER_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const PLAY_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style="margin-left:2px"><path d="M8 5v14l11-7z"/></svg>`;
 // rounded play triangle for the tap-to-pause indicator (optically centred)
 const PLAY_TRIANGLE_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="margin-left:3px"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.87l11-6.86a1 1 0 0 0 0-1.74l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>`;
-// thin chevrons for the prev/next video nav
-const CHEVRON_L_SVG = `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-const CHEVRON_R_SVG = `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 function fmtElapsed(sec) {
   sec = Math.max(0, Math.floor(sec));
@@ -1396,6 +1393,211 @@ function _toggleVidPlayback(card) {
 }
 
 // ---- in-place tile expand / collapse ----------------------------------------
+
+// Begin loading a card's video (src assignment) without actually expanding it.
+// Called for the card we're about to slide to so buffering starts immediately.
+function _primeVideo(card) {
+  const v = card.querySelector(".tile-video");
+  if (v && !v.getAttribute("src") && v.dataset.src) {
+    v.src = v.dataset.src;
+    v.addEventListener("waiting", () => _showVidSpinner(card));
+    v.addEventListener("playing", () => _hideVidSpinner(card));
+  }
+}
+
+// Draw/update the "N / total" counter pill on the expanded card.
+function _updateNavCounter(card) {
+  card.querySelectorAll(".tile-nav").forEach((n) => n.remove());
+  const grid = card.closest("#out-list, #saved-list");
+  if (!grid) return;
+  const cards = [...grid.querySelectorAll(".out-card")];
+  const idx = cards.indexOf(card);
+  if (cards.length <= 1) return;
+  const nav = document.createElement("div");
+  nav.className = "tile-nav";
+  nav.innerHTML = `<span class="tile-nav-count">${idx + 1}<span class="nav-sep">/</span>${cards.length}</span>`;
+  card.appendChild(nav);
+}
+
+// TikTok-style slide between expanded cards.
+// dir: "up" (swipe up = next clip) | "down" (swipe down = prev clip).
+// Slides `current` out and `next` in simultaneously via CSS transform, then
+// collapses current and cleans up. While animating, a flag blocks re-entrant calls.
+let _sliding = false;
+const SLIDE_MS = 320;
+
+function slideTo(current, next, dir) {
+  if (_sliding || !next || next === current) return;
+  _sliding = true;
+
+  // The incoming card needs to be expanded (so it gets position:fixed) but
+  // translated off-screen. We set `will-change` to promote it to its own layer
+  // so the GPU handles both movements at once.
+  const outY = dir === "up" ? "-100vh" : "100vh";
+  const inY  = dir === "up" ?  "100vh" : "-100vh";
+
+  // Prime the incoming video so buffering starts before we even see it.
+  _primeVideo(next);
+
+  // Expand the next card (it snaps to position:fixed) but shift it off-screen.
+  next.classList.add("expanded");
+  next.style.transform = `translateY(${inY})`;
+  next.style.transition = "none";
+  next.style.willChange = "transform";
+  current.style.willChange = "transform";
+
+  // Force a layout flush so the "off-screen" position is painted before we
+  // start the transition (otherwise the browser might skip straight to the end).
+  // eslint-disable-next-line no-unused-expressions
+  next.getBoundingClientRect();
+
+  const dur = `${SLIDE_MS}ms cubic-bezier(.36,.66,.04,1)`;
+  current.style.transition = `transform ${dur}`;
+  next.style.transition    = `transform ${dur}`;
+
+  current.style.transform = `translateY(${outY})`;
+  next.style.transform    = "translateY(0)";
+
+  function onDone() {
+    current.style.cssText = "";
+    next.style.cssText    = "";
+    _sliding = false;
+
+    // Collapse the old card without touching body.overflow — the incoming card
+    // is now expanded so scroll must stay locked until the user closes the player.
+    const vid = current.querySelector(".tile-video");
+    if (vid) { vid.pause(); try { vid.currentTime = 0; } catch (_) {} }
+    current.querySelector(".vid-play-overlay")?.remove();
+    current.classList.remove("expanded");
+    // body.overflow stays "hidden" because next is still expanded.
+
+    // Start the new card's video and attach the spinner.
+    const nv = next.querySelector(".tile-video");
+    if (nv) {
+      if (nv.readyState < 3) {
+        _showVidSpinner(next);
+        nv.addEventListener("canplay", () => _hideVidSpinner(next), { once: true });
+        nv.addEventListener("error",   () => _hideVidSpinner(next), { once: true });
+      }
+      nv.play().catch(() => {});
+    }
+
+    _updateNavCounter(next);
+    _attachSwipeNav(next);
+  }
+
+  next.addEventListener("transitionend", onDone, { once: true });
+  // Safety fallback in case transitionend doesn't fire (hidden tab, etc.)
+  setTimeout(() => { if (_sliding) onDone(); }, SLIDE_MS + 80);
+}
+
+// Edge-bounce: when the user tries to swipe past the first/last clip, give a
+// short elastic nudge and spring back to show there's nothing more to see.
+function _edgeBounce(card, dir) {
+  const nudge = dir === "up" ? "-48px" : "48px";
+  card.style.transition = `transform 180ms cubic-bezier(.2,.8,.3,1)`;
+  card.style.transform  = `translateY(${nudge})`;
+  setTimeout(() => {
+    card.style.transition = `transform 260ms cubic-bezier(.2,.8,.3,1)`;
+    card.style.transform  = "translateY(0)";
+    setTimeout(() => { card.style.cssText = ""; }, 280);
+  }, 180);
+}
+
+// Return the adjacent card in the given direction from `card`, or null.
+function _adjCard(card, dir) {
+  const grid = card.closest("#out-list, #saved-list");
+  if (!grid) return null;
+  const cards = [...grid.querySelectorAll(".out-card")];
+  const idx = cards.indexOf(card);
+  if (dir === "up")   return idx < cards.length - 1 ? cards[idx + 1] : null;
+  if (dir === "down") return idx > 0                 ? cards[idx - 1] : null;
+  return null;
+}
+
+// Attach swipe/wheel/keyboard navigation to an expanded card.
+// Called once per expand (old listeners are discarded with the old nav element).
+const _swipeState = {};
+
+function _attachSwipeNav(card) {
+  const cover = card.querySelector(".out-cover");
+  if (!cover) return;
+
+  // --- touch swipe (mobile) ---
+  let t0y = 0, t0x = 0, tracking = false;
+
+  function onTouchStart(e) {
+    if (_sliding || e.touches.length !== 1) return;
+    t0y = e.touches[0].clientY;
+    t0x = e.touches[0].clientX;
+    tracking = true;
+  }
+
+  function onTouchMove(e) {
+    if (!tracking || _sliding || e.touches.length !== 1) return;
+    const dy = e.touches[0].clientY - t0y;
+    const dx = e.touches[0].clientX - t0x;
+    if (Math.abs(dx) > Math.abs(dy)) { tracking = false; return; } // horizontal swipe → ignore
+    e.preventDefault(); // stop page scroll while swiping between clips
+    // Live-drag follow: translate the current card so the gesture feels physical.
+    // Dampen a bit (×0.4) at the edges where there's no next card.
+    const dir = dy < 0 ? "up" : "down";
+    const next = _adjCard(card, dir);
+    const factor = next ? 1 : 0.18;
+    card.style.transition = "none";
+    card.style.transform  = `translateY(${dy * factor}px)`;
+    if (next) {
+      const inY = dir === "up" ? "100vh" : "-100vh";
+      _primeVideo(next);
+      next.classList.add("expanded");
+      next.style.transition = "none";
+      next.style.transform  = `translateY(calc(${inY} + ${dy * factor}px))`;
+    }
+  }
+
+  function onTouchEnd(e) {
+    if (!tracking) return;
+    tracking = false;
+    const dy  = (e.changedTouches[0]?.clientY ?? 0) - t0y;
+    const dir = dy < 0 ? "up" : "down";
+    const next = _adjCard(card, dir);
+    const THRESHOLD = 60; // px to commit
+    if (Math.abs(dy) >= THRESHOLD && next) {
+      // Clean up the live-drag style on `next` — slideTo will re-apply properly.
+      next.style.cssText = "";
+      next.classList.remove("expanded");
+      card.style.cssText = "";
+      slideTo(card, next, dir);
+    } else {
+      // Spring back to centre.
+      if (next) { next.style.cssText = ""; next.classList.remove("expanded"); }
+      card.style.transition = `transform 280ms cubic-bezier(.2,.8,.3,1.1)`;
+      card.style.transform  = "translateY(0)";
+      setTimeout(() => { card.style.cssText = ""; }, 300);
+      if (Math.abs(dy) > 20 && !next) _edgeBounce(card, dir);
+    }
+  }
+
+  cover.addEventListener("touchstart", onTouchStart, { passive: true });
+  cover.addEventListener("touchmove",  onTouchMove,  { passive: false });
+  cover.addEventListener("touchend",   onTouchEnd,   { passive: true });
+
+  // --- scroll wheel / trackpad (desktop) ---
+  let wheelTimer = null;
+  function onWheel(e) {
+    if (_sliding) return;
+    e.preventDefault();
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => {
+      const dir = e.deltaY > 0 ? "up" : "down";
+      const next = _adjCard(card, dir);
+      if (next) slideTo(card, next, dir);
+      else _edgeBounce(card, dir);
+    }, 80);
+  }
+  card.addEventListener("wheel", onWheel, { passive: false });
+}
+
 function expandTile(card) {
   const existing = document.querySelector(".out-card.expanded");
   if (existing && existing !== card) collapseTile(existing);
@@ -1403,14 +1605,12 @@ function expandTile(card) {
   const firstExpand = video && !video.getAttribute("src");
   if (firstExpand) {
     video.src = video.dataset.src;
-    // Attach buffering listeners once (waiting/playing can fire repeatedly).
     video.addEventListener("waiting", () => _showVidSpinner(card));
     video.addEventListener("playing", () => _hideVidSpinner(card));
   }
   card.classList.add("expanded");
   document.body.style.overflow = "hidden";
   if (video) {
-    // Show spinner until the browser has enough data to start playing.
     if (video.readyState < 3) {
       _showVidSpinner(card);
       video.addEventListener("canplay", () => _hideVidSpinner(card), { once: true });
@@ -1418,38 +1618,12 @@ function expandTile(card) {
     }
     video.play().catch(() => {});
   }
-
-  // Prev/next nav — appended to card (not cover) so overflow:hidden and iOS
-  // native video controls can't clip or cover the buttons.
-  card.querySelectorAll(".tile-nav").forEach((n) => n.remove());
-  const grid = card.closest("#out-list, #saved-list");
-  if (grid) {
-    const cards = [...grid.querySelectorAll(".out-card")];
-    const idx = cards.indexOf(card);
-    if (cards.length > 1) {
-      const nav = document.createElement("div");
-      nav.className = "tile-nav";
-      nav.innerHTML = `
-        <button class="tile-nav-btn tile-nav-prev${idx <= 0 ? " tile-hidden" : ""}" aria-label="Previous">${CHEVRON_L_SVG}</button>
-        <span class="tile-nav-count">${idx + 1}<span class="nav-sep">/</span>${cards.length}</span>
-        <button class="tile-nav-btn tile-nav-next${idx >= cards.length - 1 ? " tile-hidden" : ""}" aria-label="Next">${CHEVRON_R_SVG}</button>
-      `;
-      nav.querySelector(".tile-nav-prev").addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (idx > 0) expandTile(cards[idx - 1]);
-      });
-      nav.querySelector(".tile-nav-next").addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (idx < cards.length - 1) expandTile(cards[idx + 1]);
-      });
-      card.appendChild(nav);
-    }
-  }
+  _updateNavCounter(card);
+  _attachSwipeNav(card);
 }
+
 function collapseTile(card) {
   const video = card.querySelector(".tile-video");
-  // Reset to the start so reopening this clip plays from the beginning, not
-  // wherever it was paused/stopped last time.
   if (video) { video.pause(); try { video.currentTime = 0; } catch (_) {} }
   card.querySelector(".vid-play-overlay")?.remove();
   card.classList.remove("expanded");
@@ -1463,12 +1637,21 @@ function removeCard(card) {
   card.remove();
 }
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" && e.key !== "Backspace") return;
-  // Don't hijack Backspace while the user is typing in a field.
-  if (e.key === "Backspace") {
-    const t = e.target;
-    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  const inField = e.target && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
+  // Arrow nav between clips (only when a video is expanded and not in a form field).
+  if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !inField) {
+    const expanded = document.querySelector(".out-card.expanded");
+    if (expanded) {
+      e.preventDefault();
+      const dir  = e.key === "ArrowUp" ? "up" : "down";
+      const next = _adjCard(expanded, dir);
+      if (next) slideTo(expanded, next, dir);
+      else _edgeBounce(expanded, dir);
+    }
+    return;
   }
+  if (e.key !== "Escape" && e.key !== "Backspace") return;
+  if (e.key === "Backspace" && inField) return;
   // Close the topmost layer first: a Details overlay sits above the expanded
   // player, so a single back/escape should dismiss the overlay, not the video
   // underneath it.
