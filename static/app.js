@@ -1073,6 +1073,11 @@ const encPath = (p) => String(p ?? "").split("/").map(encodeURIComponent).join("
 const FOLDER_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
 // play icon: filled triangle, offset 2px right to optically centre inside the circle
 const PLAY_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style="margin-left:2px"><path d="M8 5v14l11-7z"/></svg>`;
+// rounded play triangle for the tap-to-pause indicator (optically centred)
+const PLAY_TRIANGLE_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="margin-left:3px"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.87l11-6.86a1 1 0 0 0 0-1.74l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>`;
+// thin chevrons for the prev/next video nav
+const CHEVRON_L_SVG = `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const CHEVRON_R_SVG = `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 function fmtElapsed(sec) {
   sec = Math.max(0, Math.floor(sec));
@@ -1352,7 +1357,9 @@ function _hideVidSpinner(card) {
   card.querySelector(".vid-loading-ov")?.remove();
 }
 
-// ---- TikTok-style tap-to-pause overlay -------------------------------------
+// ---- RedNote-style tap-to-pause indicator ----------------------------------
+// A soft play triangle: it lingers while paused (the affordance is "tap to
+// play") and gives a quick scale-up "release" flick when playback resumes.
 function _showVidOverlay(card, state) {
   const cover = card.querySelector(".out-cover");
   if (!cover) return;
@@ -1360,18 +1367,18 @@ function _showVidOverlay(card, state) {
   if (!ov) {
     ov = document.createElement("div");
     ov.className = "vid-play-overlay";
+    ov.innerHTML = PLAY_TRIANGLE_SVG;
     cover.appendChild(ov);
   }
-  ov.textContent = state === "pause" ? "⏸" : "▶";
+  clearTimeout(ov._t); clearTimeout(ov._t2);
   ov.classList.remove("fade");
   ov.classList.add("visible");
-  clearTimeout(ov._t);
   if (state === "play") {
-    // Brief flash then fade out
-    ov._t = setTimeout(() => ov.classList.add("fade"), 50);
-    ov._t2 = setTimeout(() => ov.classList.remove("visible", "fade"), 600);
+    // Quick "release" flick, then clear.
+    ov._t = setTimeout(() => ov.classList.add("fade"), 40);
+    ov._t2 = setTimeout(() => ov.classList.remove("visible", "fade"), 460);
   }
-  // "pause" state: stays visible until next tap
+  // "pause" state: lingers until the next tap.
 }
 
 function _toggleVidPlayback(card) {
@@ -1421,9 +1428,9 @@ function expandTile(card) {
       const nav = document.createElement("div");
       nav.className = "tile-nav";
       nav.innerHTML = `
-        <button class="tile-nav-btn tile-nav-prev${idx <= 0 ? " tile-hidden" : ""}" aria-label="Previous">&#x2039;</button>
-        <span class="tile-nav-count">${idx + 1}&thinsp;/&thinsp;${cards.length}</span>
-        <button class="tile-nav-btn tile-nav-next${idx >= cards.length - 1 ? " tile-hidden" : ""}" aria-label="Next">&#x203A;</button>
+        <button class="tile-nav-btn tile-nav-prev${idx <= 0 ? " tile-hidden" : ""}" aria-label="Previous">${CHEVRON_L_SVG}</button>
+        <span class="tile-nav-count">${idx + 1}<span class="nav-sep">/</span>${cards.length}</span>
+        <button class="tile-nav-btn tile-nav-next${idx >= cards.length - 1 ? " tile-hidden" : ""}" aria-label="Next">${CHEVRON_R_SVG}</button>
       `;
       nav.querySelector(".tile-nav-prev").addEventListener("click", (e) => {
         e.stopPropagation();

@@ -311,6 +311,24 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-26 (player controls restyle)
+
+**UI/UX:**
+- **RedNote-style video controls** — replaced the clunky glyph controls in the
+  expanded player with clean SVG icons + a frosted-glass treatment. Tap-to-pause
+  indicator (`.vid-play-overlay`) is now a soft rounded play triangle in a 68px
+  translucent blurred circle that lingers while paused and gives a scale-up
+  "release" flick on resume (pure opacity/transform transitions; dropped the
+  `vid-pop` keyframe). Prev/next nav buttons (`.tile-nav-btn`) shrank 48→40px,
+  swapped the `‹`/`›` glyphs for thin stroked chevron SVGs, and gained the same
+  frosted blur + hairline border + soft shadow; the counter pill matches. New
+  `PLAY_TRIANGLE_SVG` / `CHEVRON_L_SVG` / `CHEVRON_R_SVG` constants in `app.js`.
+  Note: backdrop-filter is safe here despite the iOS rule — the expanded card is
+  a non-scrolling full-screen `position: fixed` view, so the scroll-drift bug
+  doesn't apply. SW cache bumped to `wan-static-v14`.
+
+---
+
 ### 2026-06-26 (video save sheet fix)
 
 **Bugs fixed:**
