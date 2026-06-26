@@ -1217,28 +1217,41 @@ function observeLazyCovers(root) {
 }
 
 // Download / share a video file.
-// On iOS uses Web Share API (shows native "Save to Photos / Files" sheet).
-// Falls back to blob-URL download for desktop browsers.
+// On iOS the Web Share sheet offers "Save Video" (→ Photos) and "Save to Files";
+// desktop falls back to a normal blob download.
 async function saveVideoFile(url, filename, btn) {
   if (btn) { btn.disabled = true; btn.textContent = "↓ …"; }
   try {
     const r = await apiFetch(url);
     if (!r.ok) throw new Error(r.statusText);
     const blob = await r.blob();
-    const file = new File([blob], filename, { type: blob.type || "video/mp4" });
+    // Force a concrete video MIME type + .mp4 name so iOS treats it as media.
+    const type = /^video\//.test(blob.type) ? blob.type : "video/mp4";
+    const ext = type.includes("webm") ? ".webm" : ".mp4";
+    const name = /\.\w{2,4}$/i.test(filename) ? filename : filename + ext;
+    const file = new File([blob], name, { type });
 
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: filename });
-    } else {
-      // Desktop fallback: programmatic anchor click
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(file);
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
+    // Just TRY navigator.share — don't gate on navigator.canShare({files}).
+    // canShare is a false-negative for files inside an installed iOS PWA, and
+    // that false-negative is what was dropping us into the full-screen download
+    // view instead of the share sheet. Share ONLY the file (no title/text), or
+    // iOS treats it as a link share and hides "Save Video"/"Save to Files".
+    if (navigator.share) {
+      try {
+        await navigator.share({ files: [file] });
+        return;
+      } catch (err) {
+        if (err && err.name === "AbortError") return; // user dismissed the sheet
+        // otherwise fall through to a plain download (desktop / no file share)
+      }
     }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(file);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
   } catch (e) {
     if (e.name !== "AbortError") toast("Could not save video: " + e.message, true);
   } finally {

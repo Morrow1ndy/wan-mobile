@@ -311,6 +311,24 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-26 (video save sheet fix)
+
+**Bugs fixed:**
+- **Video "↓ Save" opened a full-screen download view, not the share sheet** —
+  `saveVideoFile` gated the Web Share path on `navigator.canShare({ files })`,
+  which is a **false-negative for files inside an installed iOS PWA**: it
+  returned false, so the code fell into the desktop anchor-download branch,
+  which on iOS opens the file full-screen with no back button. **Fix:** drop the
+  `canShare` gate and just *try* `navigator.share({ files: [file] })`, letting
+  iOS decide; only fall back to the anchor download when `navigator.share` is
+  absent (desktop) or share throws a non-`AbortError`. Also now share **only the
+  file** (removed `title:` — including it makes iOS treat it as a link share and
+  hides "Save Video"/"Save to Files") and force a concrete `video/*` MIME type +
+  `.mp4` name. `AbortError` (user dismissed the sheet) is swallowed. SW cache
+  bumped to `wan-static-v13`.
+
+---
+
 ### 2026-06-26 (drag-handle fix)
 
 **Bugs fixed:**
