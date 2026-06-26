@@ -748,6 +748,9 @@ async def star_video(pod_id: str, prompt_id: str, payload: dict = Body(default={
         "completed_at": stat.get("at"),
         "duration_secs": stat.get("secs"),
         "video_name": _job.get("video_name", ""),
+        # Pod the clip was generated on — lets a permanent "Delete" also purge it
+        # from the pod's ComfyUI history (so it can't reappear in the session).
+        "pod_id": pod_id,
     }
 
     try:

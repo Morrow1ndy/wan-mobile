@@ -311,6 +311,30 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-26 (player UX + saved delete)
+
+**Bugs fixed:**
+- **Video resumed mid-clip after reopening** — `collapseTile` now resets
+  `video.currentTime = 0` when the player closes, so reopening a clip starts from
+  the beginning instead of where it was paused.
+- **Esc/Back closed the video under an open Details overlay** — the global key
+  handler only collapsed the expanded tile, leaving the Details overlay on top.
+  It now closes the **topmost layer first**: a `.details-overlay` is dismissed
+  before the expanded player. Also handles `Backspace` (guarded against form
+  fields) and `preventDefault`s it so it never triggers browser back-nav.
+
+**Features added:**
+- **Delete on saved videos** (permanent) — saved tiles now have a ✕ quick-delete
+  on the cover and a "Delete" button in the expanded actions, mirroring session
+  tiles. **Unstar (★)** = return the clip to the current session (removes the
+  saved copy; relabelled confirm/toast). **Delete** = remove the saved copy AND
+  purge it from the pod's ComfyUI history (`DELETE /api/pods/{pod}/outputs/{pid}`,
+  best-effort) so it's gone for good. `star_video` now records `pod_id` in the
+  saved metadata so Delete knows which pod to purge (old saved entries without
+  `pod_id` just skip the pod-history purge). SW cache → `wan-static-v15`.
+
+---
+
 ### 2026-06-26 (player controls restyle)
 
 **UI/UX:**

@@ -5,7 +5,7 @@
 //   2. Handles Web Push so a "video ready" notification arrives even when the
 //      browser is minimised or closed.
 
-const CACHE_VERSION = "wan-static-v14";
+const CACHE_VERSION = "wan-static-v15";
 // Same-origin static assets to precache on install. Media and /api/* are never
 // cached here (dynamic + auth + large); the browser HTTP cache + immutable
 // Cache-Control on video endpoints handle those.

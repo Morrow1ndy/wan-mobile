@@ -1270,7 +1270,7 @@ function renderSavedOutput(it) {
   const dur = it.duration_secs ? fmtElapsed(it.duration_secs) : null;
   const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
   return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
-              data-pid="${esc(it.prompt_id)}">
+              data-pid="${esc(it.prompt_id)}" data-pod="${esc(it.pod_id||"")}">
     <div class="out-cover">
       <video class="cover-img" preload="none" muted data-src="${url}#t=0.1"></video>
       <span class="play-badge">${PLAY_SVG}</span>
@@ -1282,7 +1282,8 @@ function renderSavedOutput(it) {
       <button class="zoom-back">← Back</button>
       <span class="sel-check"></span>
       <button class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">⠿</button>
-      <button class="star-btn starred" data-pid="${esc(it.prompt_id)}" title="Remove from saved">★</button>
+      <button class="star-btn starred" data-pid="${esc(it.prompt_id)}" title="Unstar — return to current session">★</button>
+      <button class="tile-del-btn" data-pid="${esc(it.prompt_id)}" title="Delete from cloud">✕</button>
     </div>
     <div class="out-cap">
       <div class="cap-meta">
@@ -1293,6 +1294,7 @@ function renderSavedOutput(it) {
       <div class="out-actions">
         <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
         <button class="dl" data-url="${url}" data-filename="${esc(it.filename)}">↓ Save</button>
+        <button class="del-btn ghost small" data-pid="${esc(it.prompt_id)}">Delete</button>
       </div>
     </div>
   </div>`;
@@ -1446,7 +1448,9 @@ function expandTile(card) {
 }
 function collapseTile(card) {
   const video = card.querySelector(".tile-video");
-  if (video) { video.pause(); }
+  // Reset to the start so reopening this clip plays from the beginning, not
+  // wherever it was paused/stopped last time.
+  if (video) { video.pause(); try { video.currentTime = 0; } catch (_) {} }
   card.querySelector(".vid-play-overlay")?.remove();
   card.classList.remove("expanded");
   document.body.style.overflow = "";
@@ -1459,10 +1463,19 @@ function removeCard(card) {
   card.remove();
 }
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    const expanded = document.querySelector(".out-card.expanded");
-    if (expanded) collapseTile(expanded);
+  if (e.key !== "Escape" && e.key !== "Backspace") return;
+  // Don't hijack Backspace while the user is typing in a field.
+  if (e.key === "Backspace") {
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
   }
+  // Close the topmost layer first: a Details overlay sits above the expanded
+  // player, so a single back/escape should dismiss the overlay, not the video
+  // underneath it.
+  const details = document.querySelector(".details-overlay");
+  if (details) { e.preventDefault(); details.remove(); return; }
+  const expanded = document.querySelector(".out-card.expanded");
+  if (expanded) { e.preventDefault(); collapseTile(expanded); }
 });
 
 // ---- generation details popup -----------------------------------------------
@@ -1647,9 +1660,32 @@ $("#saved-list").addEventListener("click", async (e) => {
   if (dlBtn2) { saveVideoFile(dlBtn2.dataset.url, dlBtn2.dataset.filename, dlBtn2); return; }
   const infoBtn = e.target.closest(".info-btn");
   if (infoBtn) { showDetails(infoBtn.dataset.pid); return; }
+  // Permanent delete (✕ on the tile, or "Delete" in the expanded actions):
+  // remove the saved copy AND purge it from the pod's history so it's gone for
+  // good — unlike Unstar, which just returns it to the current session.
+  const delBtn = e.target.closest(".tile-del-btn, .del-btn");
+  if (delBtn) {
+    if (!await showConfirm("Delete this video permanently from the cloud?", { okText: "Delete", danger: true })) return;
+    const card = delBtn.closest(".out-card");
+    const pid = card.dataset.pid;
+    delBtn.disabled = true;
+    try {
+      await deleteJSON(`/api/saved/${pid}`);
+      // Also drop it from the pod's ComfyUI history so it can't reappear in the
+      // session. Best-effort: the pod may be gone, which is fine.
+      if (card.dataset.pod) {
+        try { await deleteJSON(`/api/pods/${card.dataset.pod}/outputs/${pid}`); } catch (_) {}
+      }
+      removeCard(card);
+      if (!$("#saved-list .out-card")) $("#saved-section").hidden = true;
+      if (_outPodId) await loadDone(_outPodId);
+      toast("Deleted");
+    } catch (err) { toast(err.message, true); delBtn.disabled = false; }
+    return;
+  }
   const starBtn = e.target.closest(".star-btn");
   if (starBtn) {
-    if (!await showConfirm("Remove this video from saved?", { okText: "Remove", danger: true })) return;
+    if (!await showConfirm("Unstar this video? It returns to the current session.", { okText: "Unstar" })) return;
     const pid = starBtn.dataset.pid;
     starBtn.disabled = true;
     try {
@@ -1657,7 +1693,7 @@ $("#saved-list").addEventListener("click", async (e) => {
       removeCard(starBtn.closest(".out-card"));
       if (!$("#saved-list .out-card")) $("#saved-section").hidden = true;
       if (_outPodId) await loadDone(_outPodId);
-      toast("Removed from saved");
+      toast("Returned to current session");
     } catch (err) { toast(err.message, true); starBtn.disabled = false; }
     return;
   }
