@@ -847,8 +847,13 @@ let _savedSortable = null;
 let _sessionSortable = null;
 const _SORTABLE_OPTS = {
   animation: 150,
-  delay: 400, delayOnTouchOnly: true, touchStartThreshold: 5,
-  forceFallback: true, fallbackOnBody: true,
+  // Drag only from the explicit grip handle. Whole-card long-press drag is
+  // unreliable on iOS: it fights page scroll and the native long-press callout,
+  // and we can't put `touch-action: none` on the whole (scrolling) tile. A
+  // dedicated handle with `touch-action: none` lets iOS hand the gesture to
+  // SortableJS immediately while taps/scroll still work everywhere else.
+  handle: ".drag-handle",
+  forceFallback: true, fallbackOnBody: true, fallbackTolerance: 4,
   ghostClass: "sortable-ghost",
   chosenClass: "sortable-chosen",
   dragClass: "sortable-drag",
@@ -1258,6 +1263,7 @@ function renderSavedOutput(it) {
       </div>
       <button class="zoom-back">← Back</button>
       <span class="sel-check"></span>
+      <button class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">⠿</button>
       <button class="star-btn starred" data-pid="${esc(it.prompt_id)}" title="Remove from saved">★</button>
     </div>
     <div class="out-cap">
@@ -1300,6 +1306,7 @@ function renderOutput(podId, it) {
       </div>
       <button class="zoom-back">← Back</button>
       <span class="sel-check"></span>
+      <button class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">⠿</button>
       <button class="star-btn${starred ? " starred" : ""}" data-pid="${esc(it.prompt_id)}"
               title="${starred ? "Saved" : "Save to cloud"}">${starred ? "★" : "☆"}</button>
       <button class="tile-del-btn" data-pid="${esc(it.prompt_id)}" title="Delete">✕</button>
@@ -1534,6 +1541,8 @@ $("#out-list").addEventListener("click", async (e) => {
     if (card) _toggleSelect(card);
     return;
   }
+  // drag grip — a tap here (without a drag) must not expand the tile
+  if (e.target.closest(".drag-handle")) return;
   // zoom-back (inside expanded cover)
   if (e.target.closest(".zoom-back")) {
     collapseTile(e.target.closest(".out-card"));
@@ -1609,6 +1618,7 @@ $("#saved-list").addEventListener("click", async (e) => {
     if (card) _toggleSavedSelect(card);
     return;
   }
+  if (e.target.closest(".drag-handle")) return;
   if (e.target.closest(".zoom-back")) {
     collapseTile(e.target.closest(".out-card"));
     return;

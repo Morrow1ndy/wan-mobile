@@ -311,6 +311,28 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-26 (drag-handle fix)
+
+**Bugs fixed:**
+- **Drag-to-reorder didn't work on iOS** — the whole-card long-press drag
+  (`delay: 400`) never started: on an iOS PWA a long-press on a scrolling video
+  tile is claimed by page scroll / the native long-press callout, and you can't
+  put `touch-action: none` on the whole (scrolling) tile to stop that. SortableJS
+  loaded fine (CDN 200) — the gesture just never reached it. **Fix:** switched to
+  a dedicated **drag handle** (`⠿` grip, top-left of each tile) with
+  `handle: ".drag-handle"`; the grip alone gets `touch-action: none` so iOS hands
+  the press straight to SortableJS while taps (expand), scroll, and the other
+  tile buttons keep working. Removed the `delay`/`delayOnTouchOnly`/
+  `touchStartThreshold` opts (the handle disambiguates from tap). Added a
+  `.drag-handle` click guard in both `#out-list` / `#saved-list` handlers so a
+  tap on the grip doesn't expand the tile; grip is hidden when a tile is
+  expanded or in select mode. Verified in a real browser: instance inits with
+  the handle, grips render, a reorder persists to localStorage. Both Session
+  (localStorage) and Saved (`POST /api/saved/reorder`) lists use it. SW cache
+  bumped to `wan-static-v12`.
+
+---
+
 ### 2026-06-26
 
 **Bugs fixed:**

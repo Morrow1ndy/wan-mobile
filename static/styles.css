@@ -199,6 +199,26 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .star-btn.starred { color: #fbbf24; background: rgba(0,0,0,0.6); }
 .star-btn:disabled { opacity: 0.5; }
 
+/* drag-to-reorder grip (top-left of each tile). `touch-action: none` is the
+   key bit: it lets iOS hand the press straight to SortableJS instead of
+   treating it as a scroll, which is why whole-card drag never started. */
+.drag-handle {
+  position: absolute; top: 5px; left: 5px; z-index: 6;
+  width: 26px; height: 26px; padding: 0; border: none; border-radius: 50%;
+  background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.85);
+  font-size: 15px; line-height: 1; display: flex;
+  align-items: center; justify-content: center;
+  cursor: grab; touch-action: none;
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+  backdrop-filter: blur(3px);
+}
+.drag-handle:active { cursor: grabbing; }
+/* Hide the grip where dragging doesn't apply: expanded view + select modes
+   (Sortable is disabled during selection, and sel-check takes the corner). */
+.out-card.expanded .drag-handle,
+.select-mode .drag-handle,
+.saved-select-mode .drag-handle { display: none; }
+
 /* saved section header */
 .section-head {
   display: flex; align-items: center; gap: 8px;
