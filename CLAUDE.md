@@ -329,6 +329,31 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-06-26 (misc fixes + features)
+
+**Features added:**
+- **Favourite GPUs section** — a new "Favourite GPUs" section appears above
+  "Select a GPU" on the Pod tab. Shows the highest-RAM available option for
+  each preferred model (currently 5090 and 4090, configured via
+  `FAV_GPU_KEYWORDS` in `app.js`). If a model has no available entries, its
+  greyed-out card is still shown (not hidden). If neither model appears in the
+  API response at all, the section is hidden. Selecting a card in either section
+  clears the other. Thin divider separates the two sections.
+
+**Bugs fixed / changes:**
+- **bf16 workflow always selected by default** — `_selectedWorkflow` was
+  persisted in `localStorage`, so picking GGUF once made it stick across every
+  future session. Now it starts empty each session and falls back to the
+  server's `default_workflow` (bf16). Users can still switch to GGUF during a
+  session; it resets on next open.
+- **CLAUDE.md: never run `fly deploy` manually** — deploy rule updated to
+  clarify that GitHub Actions handles deployment automatically on push to main.
+- **CLAUDE.md: workflow section covers both bf16 and GGUF** — updated the
+  Workflow ↔ UI parameter map to document both files, note that all param node
+  IDs are identical between them, and warn to re-check both if re-exporting.
+
+---
+
 ### 2026-06-26 (TikTok swipe strip)
 
 **UI/UX:**
