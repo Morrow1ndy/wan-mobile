@@ -1477,16 +1477,28 @@ function _toggleVidPlayback(card) {
 
 // ---- in-place tile expand / collapse ----------------------------------------
 
+// Bind playback listeners (spinner, auto-advance, progress) once per video.
+// This MUST be independent of whether the src was just set or was pre-loaded by
+// the tile IntersectionObserver — otherwise a pre-loaded tile (any tile within
+// 400px of the viewport) never gets the `ended` handler and auto-advance
+// silently never fires. Guarded by a flag so listeners aren't double-added.
+function _bindVideoEvents(card) {
+  const v = card.querySelector(".tile-video");
+  if (!v || v._navBound) return;
+  v._navBound = true;
+  v.addEventListener("waiting", () => _showVidSpinner(card));
+  v.addEventListener("playing", () => _hideVidSpinner(card));
+  v.addEventListener("ended", () => _autoAdvance(card));
+  v.addEventListener("timeupdate", () => _updateProgress(card));
+  v.addEventListener("loadedmetadata", () => _updateProgress(card));
+}
+
 // Begin loading a card's video (src assignment) without actually expanding it.
 // Called for the card we're about to slide to so buffering starts immediately.
 function _primeVideo(card) {
   const v = card.querySelector(".tile-video");
-  if (v && !v.getAttribute("src") && v.dataset.src) {
-    v.src = v.dataset.src;
-    v.addEventListener("waiting", () => _showVidSpinner(card));
-    v.addEventListener("playing", () => _hideVidSpinner(card));
-    v.addEventListener("ended", () => _autoAdvance(card));
-  }
+  if (v && !v.getAttribute("src") && v.dataset.src) v.src = v.dataset.src;
+  _bindVideoEvents(card);
 }
 
 // Direction of the last manual navigation (swipe / wheel / arrow key): "up" =
@@ -1503,7 +1515,44 @@ function _autoAdvance(card) {
   if (next) slideTo(card, next, _lastNavDir);
 }
 
-// Draw/update the "N / total" counter pill + loop toggle on the expanded card.
+// Update the progress-bar fill for the currently-expanded card from the video's
+// playback position. Called on every `timeupdate`.
+function _updateProgress(card) {
+  const v = card.querySelector(".tile-video");
+  const fill = card.querySelector(".vid-progress-fill");
+  if (!v || !fill || !v.duration || !isFinite(v.duration)) return;
+  fill.style.width = Math.min(100, (v.currentTime / v.duration) * 100) + "%";
+}
+
+// Tap / drag the progress track to seek. Fraction is measured against the
+// visible track rect so it matches what the user sees.
+function _bindProgressSeek(wrapper, video) {
+  if (!wrapper || !video) return;
+  const track = wrapper.querySelector(".vid-progress-track");
+  let seeking = false;
+  const seekTo = (clientX) => {
+    const r = (track || wrapper).getBoundingClientRect();
+    if (!r.width) return;
+    const frac = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+    if (video.duration && isFinite(video.duration)) {
+      video.currentTime = frac * video.duration;
+      const fill = wrapper.querySelector(".vid-progress-fill");
+      if (fill) fill.style.width = frac * 100 + "%";
+    }
+  };
+  wrapper.addEventListener("pointerdown", (e) => {
+    seeking = true;
+    try { wrapper.setPointerCapture(e.pointerId); } catch (_) {}
+    seekTo(e.clientX);
+    e.stopPropagation();
+  });
+  wrapper.addEventListener("pointermove", (e) => { if (seeking) seekTo(e.clientX); });
+  wrapper.addEventListener("pointerup",   () => { seeking = false; });
+  wrapper.addEventListener("pointercancel", () => { seeking = false; });
+}
+
+// Draw/update the "N / total" counter pill + loop toggle + progress bar on the
+// expanded card.
 function _updateNavCounter(card) {
   card.querySelectorAll(".tile-nav").forEach((n) => n.remove());
   const grid = card.closest("#out-list, #saved-list");
@@ -1513,17 +1562,21 @@ function _updateNavCounter(card) {
   const video = card.querySelector(".tile-video");
   const nav = document.createElement("div");
   nav.className = "tile-nav";
-  nav.innerHTML = `<div class="tile-nav-topright">
-    <button class="loop-btn${video && video.loop ? " active" : ""}" aria-label="Loop this video" title="Loop this video">${LOOP_SVG}</button>
-    ${cards.length > 1 ? `<span class="tile-nav-count">${idx + 1}<span class="nav-sep">/</span>${cards.length}</span>` : ""}
-  </div>`;
+  nav.innerHTML = `
+    <div class="tile-nav-topright">
+      <button class="loop-btn${video && video.loop ? " active" : ""}" aria-label="Loop this video" title="Loop this video">${LOOP_SVG}</button>
+      ${cards.length > 1 ? `<span class="tile-nav-count">${idx + 1}<span class="nav-sep">/</span>${cards.length}</span>` : ""}
+    </div>
+    <div class="vid-progress"><div class="vid-progress-track"><div class="vid-progress-fill"></div></div></div>`;
   nav.querySelector(".loop-btn").addEventListener("click", (e) => {
     e.stopPropagation();
     if (!video) return;
     video.loop = !video.loop;
     e.currentTarget.classList.toggle("active", video.loop);
   });
+  _bindProgressSeek(nav.querySelector(".vid-progress"), video);
   card.appendChild(nav);
+  _updateProgress(card);
 }
 
 // TikTok-style slide between expanded cards.
@@ -1802,13 +1855,13 @@ function expandTile(card) {
   const existing = document.querySelector(".out-card.expanded");
   if (existing && existing !== card) collapseTile(existing);
   const video = card.querySelector(".tile-video");
-  const firstExpand = video && !video.getAttribute("src");
-  if (firstExpand) {
+  // The tile may already have a src (the IntersectionObserver preloads metadata
+  // for nearby tiles). Set it only if missing, but ALWAYS bind the playback
+  // listeners — that's what makes auto-advance-on-finish work.
+  if (video && !video.getAttribute("src") && video.dataset.src) {
     video.src = video.dataset.src;
-    video.addEventListener("waiting", () => _showVidSpinner(card));
-    video.addEventListener("playing", () => _hideVidSpinner(card));
-    video.addEventListener("ended", () => _autoAdvance(card));
   }
+  _bindVideoEvents(card);
   card.classList.add("expanded");
   document.body.style.overflow = "hidden";
   if (video) {

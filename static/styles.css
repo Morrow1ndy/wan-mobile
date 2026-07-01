@@ -818,6 +818,28 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 }
 .tile-nav-count .nav-sep { opacity: 0.45; margin: 0 3px; font-weight: 400; }
 
+/* ---- playback progress bar (expanded player, bottom) ----
+   The wrapper is a tall, transparent hit area for easy tapping/seeking; the
+   thin visible track + fill live inside it. pointer-events: auto so it takes
+   taps, while the rest of .tile-nav stays pass-through. */
+.vid-progress {
+  position: absolute; left: 0; right: 0;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  height: 22px; padding: 0 14px;
+  display: flex; align-items: center;
+  pointer-events: auto; cursor: pointer; z-index: 46;
+  touch-action: none;
+}
+.vid-progress-track {
+  flex: 1; height: 3px; border-radius: 3px;
+  background: rgba(255,255,255,0.28);
+  overflow: hidden;
+}
+.vid-progress-fill {
+  height: 100%; width: 0;
+  background: #fff; border-radius: 3px;
+}
+
 /* ---- loop-current-video toggle (expanded player, top-right) ---- */
 .loop-btn {
   pointer-events: auto;
