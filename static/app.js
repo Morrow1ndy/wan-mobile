@@ -2650,7 +2650,10 @@ async function useLibraryImage(path) {
     $("#preview").src = URL.createObjectURL(_currentImageFile);
     $("#img-preview-wrap").hidden = false;
     $("#img-star-btn").textContent = "☆ Save to cloud";
-    $$(".img-mode-tab").forEach((b) => b.classList.toggle("active", b.dataset.mode === "upload"));
+    // Scope to buttons with data-mode (Upload/Library row only) — the workflow
+    // bf16/GGUF tabs share the .img-mode-tab class but use data-workflow, so a
+    // global selector here would wrongly clear the workflow tab's active state.
+    $$(".img-mode-tab[data-mode]").forEach((b) => b.classList.toggle("active", b.dataset.mode === "upload"));
     $("#img-upload-panel").hidden = false;
     $("#img-library-panel").hidden = true;
     $("#image-label").textContent = name;
