@@ -329,6 +329,33 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-01 (auto-advance fix + playback progress bar)
+
+**Bugs fixed:**
+- **Auto-advance-on-finish never fired** — the `ended` listener was only attached
+  inside `expandTile`'s first-expand branch, which runs *only when the
+  `tile-video` has no `src` yet*. But the `_tileObserver` IntersectionObserver
+  preloads `tile-video.src` (`preload="metadata"`) for every tile within 400px
+  of the viewport, so by tap time the src was almost always already set → the
+  branch was skipped → no `ended` handler → the clip just stopped at its end
+  instead of advancing. **Fix:** extracted `_bindVideoEvents(card)` (guarded by a
+  `_navBound` flag) that binds `waiting`/`playing`/`ended`/`timeupdate`
+  unconditionally, and call it from both `expandTile` and `_primeVideo`
+  regardless of whether the src was just set or pre-loaded.
+
+**Features added:**
+- **Playback progress bar** — the expanded player now has a seekable progress bar
+  pinned to the bottom (`.vid-progress` → `.vid-progress-track` →
+  `.vid-progress-fill`, built by `_updateNavCounter` alongside the counter/loop
+  controls). It fills as the clip plays (`_updateProgress` on `timeupdate`) and is
+  tap/drag-seekable via pointer events (`_bindProgressSeek`): the wrapper is a
+  22px transparent hit area over a 3px visible track, `pointer-events: auto` so it
+  takes taps while the rest of `.tile-nav` stays pass-through. Seek fraction is
+  measured against the visible track rect.
+- SW cache bumped to `wan-static-v27`.
+
+---
+
 ### 2026-07-01 (video player: date format, auto-advance, loop toggle)
 
 **Features added:**
