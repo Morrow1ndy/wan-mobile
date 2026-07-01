@@ -17,6 +17,10 @@
   coming in the same session. Only commit + push (and deploy if needed) when
   the user **explicitly says so** in their message (e.g. "push", "deploy",
   "commit this"). Batch all pending changes into one commit at that point.
+- **Commit directly to `main` by default.** Don't open feature branches or PRs
+  unless the user explicitly asks. Push straight to `main` (which auto-deploys —
+  see below). If a session starts on some other branch, switch to `main` before
+  committing.
 - When committing, `git add -A` to include everything changed in the session.
 - **Never run `fly deploy` manually.** Deployment is handled automatically by
   the GitHub Actions workflow (`.github/workflows/fly-deploy.yml`) on every push
@@ -326,6 +330,29 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-07-01 (player polish: progress bar placement, expanded ✕, edge hint)
+
+**Changes:**
+- **Progress bar moved above the action bar** — it was appended to the
+  full-screen `.tile-nav` overlay and pinned to the viewport bottom, so it sat
+  *below* the expanded player's action bar (Details / Save / Delete). It's now
+  built into `.out-cover` (the video area) at its bottom edge, so it sits just
+  above the action bar. `_updateNavCounter` now rebuilds it inside the cover;
+  CSS hides it unless the card is `.expanded`.
+- **✕ quick-delete hidden in the expanded player** — `.out-card.expanded
+  .tile-del-btn { display: none }`. It was redundant with the action-bar Delete
+  button and overlapped the video.
+
+**Features added:**
+- **Start/End-of-list hint** — a transient centred pill (`.edge-hint`) shows
+  "End of list" / "Start of list" when navigation reaches a boundary, then
+  auto-dismisses after 1.5s. Fired from `_autoAdvance` (auto-advance-on-finish),
+  `_edgeBounce` (wheel / arrow keys), and a hard boundary swipe in `onTouchEnd`.
+  `_showEdgeHint(dir)` reuses a single element and restarts its fade each time.
+- SW cache bumped to `wan-static-v28`.
 
 ---
 
