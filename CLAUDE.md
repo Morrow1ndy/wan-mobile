@@ -329,6 +329,25 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-01 (swipe gap fix)
+
+**Bugs fixed:**
+- **Big gap between clips during TikTok swipe up/down** — the current and incoming
+  expanded cards are both `position: fixed; inset: 0` (full viewport), but the
+  swipe/slide transforms offset the incoming card by the CSS unit `100vh`. On
+  mobile `100vh` is the *address-bar-hidden* (taller) viewport height, while an
+  `inset: 0` fixed element renders at the current *visual* viewport height — so
+  `translateY(100vh)` pushed the incoming clip down further than the current
+  card's real height, exposing a gap so the two clips weren't connected. **Fix:**
+  new `_cardH(card)` helper returns the card's *measured* pixel height
+  (`getBoundingClientRect().height`), and every `100vh`/`-100vh` offset in the
+  swipe logic now uses it instead: the drag (`onTouchMove`), commit
+  (`onTouchEnd`), and wheel/keyboard (`slideTo`). Incoming card is now always
+  exactly flush with the current one at any address-bar state. Edge-bounce (fixed
+  48px) was already correct. SW cache → `wan-static-v24`.
+
+---
+
 ### 2026-07-01 (default to highest-RAM GPU config)
 
 **Bugs fixed:**

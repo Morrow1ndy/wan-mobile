@@ -1459,6 +1459,16 @@ function _updateNavCounter(card) {
 let _sliding = false;
 const SLIDE_MS = 320;
 
+// Real on-screen height of a full-screen expanded card, in px. We offset the
+// incoming card by THIS, not the CSS `100vh` unit: on mobile `100vh` is the
+// address-bar-hidden (taller) viewport, while the `inset:0` cards actually
+// render at the current visual viewport height — so `translateY(100vh)` pushes
+// the incoming card down further than the current card's real height, leaving a
+// visible gap between the two clips. Measuring the element keeps them flush.
+function _cardH(card) {
+  return (card && card.getBoundingClientRect().height) || window.innerHeight;
+}
+
 function slideTo(current, next, dir) {
   if (_sliding || !next || next === current) return;
   _sliding = true;
@@ -1466,15 +1476,16 @@ function slideTo(current, next, dir) {
   // The incoming card needs to be expanded (so it gets position:fixed) but
   // translated off-screen. We set `will-change` to promote it to its own layer
   // so the GPU handles both movements at once.
-  const outY = dir === "up" ? "-100vh" : "100vh";
-  const inY  = dir === "up" ?  "100vh" : "-100vh";
+  const H    = _cardH(current);
+  const outY = dir === "up" ? -H : H;
+  const inY  = dir === "up" ?  H : -H;
 
   // Prime the incoming video so buffering starts before we even see it.
   _primeVideo(next);
 
   // Expand the next card (it snaps to position:fixed) but shift it off-screen.
   next.classList.add("expanded");
-  next.style.transform = `translateY(${inY})`;
+  next.style.transform = `translateY(${inY}px)`;
   next.style.transition = "none";
   next.style.willChange = "transform";
   current.style.willChange = "transform";
@@ -1488,7 +1499,7 @@ function slideTo(current, next, dir) {
   current.style.transition = `transform ${dur}`;
   next.style.transition    = `transform ${dur}`;
 
-  current.style.transform = `translateY(${outY})`;
+  current.style.transform = `translateY(${outY}px)`;
   next.style.transform    = "translateY(0)";
 
   function onDone() {
@@ -1615,9 +1626,9 @@ function _attachSwipeNav(card) {
         const coverVid = next.querySelector("video.cover-img[data-src]");
         if (coverVid && !coverVid.src) coverVid.src = coverVid.dataset.src;
       }
-      const vhOffset = dir === "up" ? "100vh" : "-100vh";
+      const off = dir === "up" ? _cardH(card) : -_cardH(card);
       next.style.transition = "none";
-      next.style.transform  = `translateY(calc(${vhOffset} + ${dy}px))`;
+      next.style.transform  = `translateY(${off + dy}px)`;
     } else {
       _detachNext();
     }
@@ -1648,11 +1659,11 @@ function _attachSwipeNav(card) {
       // we start the transition.
       next.getBoundingClientRect(); // eslint-disable-line
 
-      const outY = dir === "up" ? "-100vh" : "100vh";
+      const outY = dir === "up" ? -_cardH(card) : _cardH(card);
       const dur  = `${SLIDE_MS}ms cubic-bezier(.36,.66,.04,1)`;
       card.style.transition = `transform ${dur}`;
       next.style.transition = `transform ${dur}`;
-      card.style.transform  = `translateY(${outY})`;
+      card.style.transform  = `translateY(${outY}px)`;
       next.style.transform  = "translateY(0)";
 
       function onDone() {
