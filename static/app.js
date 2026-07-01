@@ -1119,6 +1119,8 @@ const PLAY_TRIANGLE_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hid
 // so it's perfectly centred in the round handle. The `⠿` braille glyph we used
 // before sits high/left in its em box and looked off-centre.
 const GRIP_SVG = `<svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="4" r="1.4"/><circle cx="10.5" cy="4" r="1.4"/><circle cx="5.5" cy="8" r="1.4"/><circle cx="10.5" cy="8" r="1.4"/><circle cx="5.5" cy="12" r="1.4"/><circle cx="10.5" cy="12" r="1.4"/></svg>`;
+// Loop-toggle icon (repeat arrows) shown in the expanded player.
+const LOOP_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true"><path d="M17 2.1l4 4-4 4"/><path d="M3 12.9V12a4 4 0 0 1 4-4h14"/><path d="M7 21.9l-4-4 4-4"/><path d="M21 11.1V12a4 4 0 0 1-4 4H3"/></svg>`;
 
 function fmtElapsed(sec) {
   sec = Math.max(0, Math.floor(sec));
@@ -1126,11 +1128,23 @@ function fmtElapsed(sec) {
   return m ? `${m}m ${String(sec % 60).padStart(2, "0")}s` : `${sec}s`;
 }
 
-function fmtDatetime(ts) {
+// Grid tiles: date only, no time (e.g. "01 Jul 2026").
+function fmtDateOnly(ts) {
   if (!ts) return null;
   const d = new Date(ts * 1000);
-  return d.toLocaleString([], { month: "short", day: "numeric",
-    hour: "2-digit", minute: "2-digit" });
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = d.toLocaleString([], { month: "short" });
+  return `${day} ${month} ${d.getFullYear()}`;
+}
+
+// Expanded full-screen view: full date (with year) + time.
+function fmtDatetimeFull(ts) {
+  if (!ts) return null;
+  const d = new Date(ts * 1000);
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = d.toLocaleString([], { month: "short" });
+  const time = d.toLocaleString([], { hour: "2-digit", minute: "2-digit" });
+  return `${day} ${month} ${d.getFullYear()}, ${time}`;
 }
 
 // Build a /view URL for the uploaded input image (its name may carry a subfolder).
@@ -1328,7 +1342,8 @@ async function saveVideoFile(url, filename, btn) {
 
 function renderSavedOutput(it) {
   const url = `/api/saved/file/${encodeURIComponent(it.filename)}`;
-  const dt = fmtDatetime(it.completed_at);
+  const dt = fmtDateOnly(it.completed_at);
+  const dtFull = fmtDatetimeFull(it.completed_at);
   const dur = it.duration_secs ? fmtElapsed(it.duration_secs) : null;
   const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
   return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
@@ -1336,7 +1351,7 @@ function renderSavedOutput(it) {
     <div class="out-cover">
       <video class="cover-img" preload="none" muted data-src="${url}#t=0.1"></video>
       <span class="play-badge">${PLAY_SVG}</span>
-      <video class="tile-video" data-src="${url}" playsinline preload="none" loop></video>
+      <video class="tile-video" data-src="${url}" playsinline preload="none"></video>
       <div class="tile-foot">
         ${name}
         ${dur ? `<span class="tile-dur">⏱ ${dur}</span>` : ""}
@@ -1351,7 +1366,7 @@ function renderSavedOutput(it) {
     <div class="out-cap">
       <div class="cap-meta">
         ${name}
-        ${dt ? `<span class="out-dt">${dt}</span>` : ""}
+        ${dtFull ? `<span class="out-dt">${dtFull}</span>` : ""}
         ${dur ? `<span class="out-dur">⏱ ${dur}</span>` : ""}
       </div>
       <div class="out-actions">
@@ -1372,7 +1387,8 @@ function renderOutput(podId, it) {
   const cover = thumb
     ? `<img class="cover-img" src="${thumb}" alt="" loading="lazy" />`
     : `<video class="cover-img" preload="none" muted data-src="${url}#t=0.1"></video>`;
-  const dt = fmtDatetime(it.completed_at);
+  const dt = fmtDateOnly(it.completed_at);
+  const dtFull = fmtDatetimeFull(it.completed_at);
   const dur = it.duration_secs ? fmtElapsed(it.duration_secs) : null;
   const starred = it.is_saved;
   const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
@@ -1382,7 +1398,7 @@ function renderOutput(podId, it) {
     <div class="out-cover">
       ${cover}
       <span class="play-badge">${PLAY_SVG}</span>
-      <video class="tile-video" data-src="${url}" playsinline preload="none" loop></video>
+      <video class="tile-video" data-src="${url}" playsinline preload="none"></video>
       <div class="tile-foot">
         ${name}
         ${dur ? `<span class="tile-dur">⏱ ${dur}</span>` : ""}
@@ -1398,7 +1414,7 @@ function renderOutput(podId, it) {
     <div class="out-cap">
       <div class="cap-meta">
         ${name}
-        ${dt ? `<span class="out-dt">${dt}</span>` : ""}
+        ${dtFull ? `<span class="out-dt">${dtFull}</span>` : ""}
         ${dur ? `<span class="out-dur">⏱ ${dur}</span>` : ""}
       </div>
       <div class="out-actions">
@@ -1469,20 +1485,44 @@ function _primeVideo(card) {
     v.src = v.dataset.src;
     v.addEventListener("waiting", () => _showVidSpinner(card));
     v.addEventListener("playing", () => _hideVidSpinner(card));
+    v.addEventListener("ended", () => _autoAdvance(card));
   }
 }
 
-// Draw/update the "N / total" counter pill on the expanded card.
+// Direction of the last manual navigation (swipe / wheel / arrow key): "up" =
+// next clip, "down" = prev clip. Drives auto-advance-on-finish direction.
+// Defaults to "up" (next) until the user has navigated at all.
+let _lastNavDir = "up";
+
+// When a (non-looping) clip finishes playing, continue in whichever direction
+// the user last swiped/scrolled/keyed through the list. Stops silently at the
+// start/end of the list — no wraparound, no bounce.
+function _autoAdvance(card) {
+  if (_sliding || !card.classList.contains("expanded")) return;
+  const next = _adjCard(card, _lastNavDir);
+  if (next) slideTo(card, next, _lastNavDir);
+}
+
+// Draw/update the "N / total" counter pill + loop toggle on the expanded card.
 function _updateNavCounter(card) {
   card.querySelectorAll(".tile-nav").forEach((n) => n.remove());
   const grid = card.closest("#out-list, #saved-list");
   if (!grid) return;
   const cards = [...grid.querySelectorAll(".out-card")];
   const idx = cards.indexOf(card);
-  if (cards.length <= 1) return;
+  const video = card.querySelector(".tile-video");
   const nav = document.createElement("div");
   nav.className = "tile-nav";
-  nav.innerHTML = `<span class="tile-nav-count">${idx + 1}<span class="nav-sep">/</span>${cards.length}</span>`;
+  nav.innerHTML = `<div class="tile-nav-topright">
+    <button class="loop-btn${video && video.loop ? " active" : ""}" aria-label="Loop this video" title="Loop this video">${LOOP_SVG}</button>
+    ${cards.length > 1 ? `<span class="tile-nav-count">${idx + 1}<span class="nav-sep">/</span>${cards.length}</span>` : ""}
+  </div>`;
+  nav.querySelector(".loop-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!video) return;
+    video.loop = !video.loop;
+    e.currentTarget.classList.toggle("active", video.loop);
+  });
   card.appendChild(nav);
 }
 
@@ -1679,6 +1719,7 @@ function _attachSwipeNav(card) {
     _markSwipe();
 
     if (Math.abs(dy) >= 60 && next && next === _nextCard) {
+      _lastNavDir = dir;
       // COMMIT — continue the animation from wherever the drag left off.
       // Don't snap back to 100vh first; just spring both cards to their
       // final positions from their current dragged transforms.
@@ -1750,6 +1791,7 @@ function _attachSwipeNav(card) {
     wheelTimer = setTimeout(() => {
       const dir  = e.deltaY > 0 ? "up" : "down";
       const next = _adjCard(card, dir);
+      _lastNavDir = dir;
       if (next) slideTo(card, next, dir);
       else _edgeBounce(card, dir);
     }, 80);
@@ -1765,6 +1807,7 @@ function expandTile(card) {
     video.src = video.dataset.src;
     video.addEventListener("waiting", () => _showVidSpinner(card));
     video.addEventListener("playing", () => _hideVidSpinner(card));
+    video.addEventListener("ended", () => _autoAdvance(card));
   }
   card.classList.add("expanded");
   document.body.style.overflow = "hidden";
@@ -1803,6 +1846,7 @@ document.addEventListener("keydown", (e) => {
       e.preventDefault();
       const dir  = e.key === "ArrowUp" ? "up" : "down";
       const next = _adjCard(expanded, dir);
+      _lastNavDir = dir;
       if (next) slideTo(expanded, next, dir);
       else _edgeBounce(expanded, dir);
     }
