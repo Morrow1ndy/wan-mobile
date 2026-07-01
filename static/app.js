@@ -1513,6 +1513,25 @@ function _autoAdvance(card) {
   if (_sliding || !card.classList.contains("expanded")) return;
   const next = _adjCard(card, _lastNavDir);
   if (next) slideTo(card, next, _lastNavDir);
+  else _showEdgeHint(_lastNavDir);
+}
+
+// Small transient popup shown when navigation reaches the start/end of the list.
+// Auto-dismisses after 1.5s. dir "up" = tried to go to next past the end;
+// "down" = tried to go to prev before the start.
+let _edgeHintEl = null, _edgeHintTimer = null;
+function _showEdgeHint(dir) {
+  if (!_edgeHintEl) {
+    _edgeHintEl = document.createElement("div");
+    _edgeHintEl.className = "edge-hint";
+    document.body.appendChild(_edgeHintEl);
+  }
+  _edgeHintEl.textContent = dir === "down" ? "Start of list" : "End of list";
+  // reflow so re-triggering restarts the fade-in transition
+  void _edgeHintEl.offsetWidth;
+  _edgeHintEl.classList.add("show");
+  clearTimeout(_edgeHintTimer);
+  _edgeHintTimer = setTimeout(() => _edgeHintEl.classList.remove("show"), 1500);
 }
 
 // Update the progress-bar fill for the currently-expanded card from the video's
@@ -1555,6 +1574,8 @@ function _bindProgressSeek(wrapper, video) {
 // expanded card.
 function _updateNavCounter(card) {
   card.querySelectorAll(".tile-nav").forEach((n) => n.remove());
+  const cover = card.querySelector(".out-cover");
+  cover?.querySelectorAll(".vid-progress").forEach((n) => n.remove());
   const grid = card.closest("#out-list, #saved-list");
   if (!grid) return;
   const cards = [...grid.querySelectorAll(".out-card")];
@@ -1562,20 +1583,26 @@ function _updateNavCounter(card) {
   const video = card.querySelector(".tile-video");
   const nav = document.createElement("div");
   nav.className = "tile-nav";
-  nav.innerHTML = `
-    <div class="tile-nav-topright">
+  nav.innerHTML = `<div class="tile-nav-topright">
       <button class="loop-btn${video && video.loop ? " active" : ""}" aria-label="Loop this video" title="Loop this video">${LOOP_SVG}</button>
       ${cards.length > 1 ? `<span class="tile-nav-count">${idx + 1}<span class="nav-sep">/</span>${cards.length}</span>` : ""}
-    </div>
-    <div class="vid-progress"><div class="vid-progress-track"><div class="vid-progress-fill"></div></div></div>`;
+    </div>`;
   nav.querySelector(".loop-btn").addEventListener("click", (e) => {
     e.stopPropagation();
     if (!video) return;
     video.loop = !video.loop;
     e.currentTarget.classList.toggle("active", video.loop);
   });
-  _bindProgressSeek(nav.querySelector(".vid-progress"), video);
   card.appendChild(nav);
+  // Progress bar lives at the bottom of the video area (.out-cover) so it sits
+  // just above the action bar (.out-cap), not at the viewport bottom.
+  if (cover) {
+    const prog = document.createElement("div");
+    prog.className = "vid-progress";
+    prog.innerHTML = `<div class="vid-progress-track"><div class="vid-progress-fill"></div></div>`;
+    _bindProgressSeek(prog, video);
+    cover.appendChild(prog);
+  }
   _updateProgress(card);
 }
 
@@ -1665,6 +1692,7 @@ function slideTo(current, next, dir) {
 // Edge-bounce: when the user tries to swipe past the first/last clip, give a
 // short elastic nudge and spring back to show there's nothing more to see.
 function _edgeBounce(card, dir) {
+  _showEdgeHint(dir);
   const nudge = dir === "up" ? "-48px" : "48px";
   card.style.transition = `transform 180ms cubic-bezier(.2,.8,.3,1)`;
   card.style.transform  = `translateY(${nudge})`;
@@ -1822,7 +1850,9 @@ function _attachSwipeNav(card) {
       setTimeout(() => { if (_sliding) onDone(); }, SLIDE_MS + 80);
 
     } else {
-      // CANCEL — spring everything back.
+      // CANCEL — spring everything back. If the user swiped hard against a
+      // boundary (no adjacent card), flag that they've hit the start/end.
+      if (!next && Math.abs(dy) >= 60) _showEdgeHint(dir);
       _detachNext();
       card.style.transition = "transform 280ms cubic-bezier(.2,.8,.3,1.1)";
       card.style.transform  = "translateY(0)";
