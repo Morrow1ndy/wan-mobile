@@ -565,7 +565,13 @@ $("#start-pod").addEventListener("click", async () => {
     await postJSON("/api/pods", {
       gpu_type_id: selectedGpu.id,
       gpu_label: selectedGpu.label,
-      min_memory: $("#ram-select").value ? Number($("#ram-select").value) : undefined,
+      // With a RAM filter set, honour it. With RAM = "Any" the card already shows
+      // the model's highest-RAM available config (same price as the lower tiers),
+      // so provision that exact tier — otherwise RunPod breaks the price tie
+      // toward the lowest-RAM config and the card would be lying about what you get.
+      min_memory: $("#ram-select").value
+        ? Number($("#ram-select").value)
+        : (selectedGpu.ram ? Number(selectedGpu.ram) : undefined),
       cuda_versions: selectedCuda.length ? selectedCuda : undefined,
     });
     toast("Pod deploying — it will appear above");

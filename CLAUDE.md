@@ -329,6 +329,33 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-01 (default to highest-RAM GPU config)
+
+**Bugs fixed:**
+- **GPU cards showed the lowest-RAM tier by default (RAM = "Any")** — RunPod's
+  `lowestPrice` GraphQL field returns exactly one config per GPU model, and a
+  model's RAM tiers are all the *same price*, so lowestPrice broke the tie toward
+  the *lowest-RAM* config. A 5090 with a same-price 100GB variant would show 60GB
+  by default, and the frontend's "pick highest RAM" reduce in `renderFavGpus` was
+  a no-op (only one entry per model ever arrived). Both the Favourite GPUs section
+  and the main grid were affected.
+  **Fix (backend, `list_gpu_availability`):** when no RAM is selected, probe every
+  `RAM_OPTIONS` tier (8/16/24/48/80/100) plus the unfiltered baseline **in parallel**
+  (`asyncio.gather` of `to_thread` calls), then merge — for each model keep the
+  entry from the *highest tier where it's still in stock*. The baseline (None)
+  query seeds the model universe so out-of-stock models still get a greyed card.
+  A specific RAM selection still does a single query (unchanged). Costs ~7 RunPod
+  GraphQL calls on grid load/refresh when RAM = "Any", but they run concurrently
+  (~one query's latency).
+- **Deploy provisioned the cheapest tier even when the card showed 100GB** — the
+  Deploy button took `min_memory` only from the RAM dropdown, so with RAM = "Any"
+  RunPod would fall back to the lowest-RAM config and the card was lying about
+  what you'd get. Now, when the dropdown is "Any", deploy uses the *selected
+  card's* RAM (`selectedGpu.ram`) so the provisioned pod matches the card. Same
+  price, more RAM. SW cache → `wan-static-v23`.
+
+---
+
 ### 2026-06-26 (misc fixes + features)
 
 **Features added:**

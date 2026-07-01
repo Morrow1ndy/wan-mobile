@@ -202,7 +202,30 @@ def _gpu_availability_sync(min_memory_gb, cuda_versions=None):
 
 async def list_gpu_availability(min_memory_gb: int | None = None,
                                 cuda_versions: list[str] | None = None):
-    return await asyncio.to_thread(_gpu_availability_sync, min_memory_gb, cuda_versions)
+    # A specific RAM was chosen: one query, RunPod returns the cheapest config
+    # that satisfies it. Nothing to merge.
+    if min_memory_gb is not None:
+        return await asyncio.to_thread(_gpu_availability_sync, min_memory_gb, cuda_versions)
+
+    # RAM = "Any": a model's RAM tiers are all the same price, and RunPod's
+    # `lowestPrice` breaks that tie toward the *lowest-RAM* config — so a model
+    # that also has a same-price 100GB variant shows 60GB by default. There's no
+    # single-query way to ask for the highest-RAM config, so probe every RAM tier
+    # in parallel and keep, per model, the entry from the highest tier where it's
+    # still in stock (same price, more RAM). The unfiltered (None) query seeds the
+    # universe so models with no stock at any tier still get a greyed card.
+    values = [None] + sorted(config.RAM_OPTIONS)
+    results = await asyncio.gather(*[
+        asyncio.to_thread(_gpu_availability_sync, v, cuda_versions) for v in values
+    ])
+    merged = {g["id"]: g for g in results[0]}          # base (None) query
+    for res in results[1:]:                            # ascending tiers → higher wins
+        for g in res:
+            if g["available"]:
+                merged[g["id"]] = g
+    out = list(merged.values())
+    out.sort(key=lambda x: (not x["available"], -(x["price"] or 0)))
+    return out
 
 
 def _pod_metrics_sync(pod_id: str):
