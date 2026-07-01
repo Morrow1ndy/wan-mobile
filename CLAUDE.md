@@ -329,6 +329,36 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-01 (secrets exposure — repo went public)
+
+**Security fix:**
+- **`.env` (real secrets) was tracked in git AND baked into the Docker image** —
+  discovered right after the repo was made public. Root causes: `.gitignore`
+  never listed `.env` (it got committed once and stayed tracked), and
+  `.dockerignore` didn't exclude it either, so `Dockerfile`'s `COPY . .` baked
+  it into every deployed image. Worse: `RUNPOD_API_KEY`, `WAN_AUTH_USER`,
+  `WAN_AUTH_PASS` were **not** set as Fly secrets (only the `GOOGLE_*` vars
+  were) — per `config.py`'s "Fly secrets win over baked-in `.env`" rule, that
+  meant the live app was actually running on the image-baked values, not
+  anything editable via `fly secrets set`, until this fix.
+  **Remediation:**
+  - Rotated `RUNPOD_API_KEY` on RunPod's dashboard (old one revoked/dead).
+  - Rotated `WAN_AUTH_PASS` (old one — same as what's still sitting in git
+    history on `main` — is now dead too).
+  - Set `RUNPOD_API_KEY` / `WAN_AUTH_USER` / `WAN_AUTH_PASS` as **Fly secrets**
+    (`fly secrets set` triggers its own rolling redeploy — took effect
+    immediately, no push/CI needed).
+  - Added `.env` to both `.gitignore` and `.dockerignore`; `git rm --cached .env`.
+  - **Did not** rewrite git history / force-push — once a leaked secret is
+    rotated, its old value in history is dead, so scrubbing wasn't worth the
+    force-push risk on a shared branch.
+  - `GOOGLE_SERVICE_ACCOUNT_JSON` / GCS creds were never in `.env` — unaffected.
+  **Going forward: any new secret env var must be added via `fly secrets set`,
+  not just `.env`** — `fly secrets list` is the source of truth for what's
+  actually live, not `config.py`'s var table.
+
+---
+
 ### 2026-07-01 (output card fixes)
 
 **Bugs fixed:**
