@@ -156,11 +156,16 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
    we must reset it here or the two text lines collapse onto each other. */
 .tile-foot {
   position: absolute; bottom: 0; left: 0; right: 0;
-  padding: 24px 7px 6px;
+  /* right padding clears the ✕ quick-delete button (bottom-right) so the
+     datetime's trailing AM/PM is never hidden behind it. */
+  padding: 24px 34px 6px 7px;
   background: linear-gradient(transparent, rgba(0,0,0,0.62));
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
   line-height: 1.35;
   pointer-events: none;
+}
+.tile-dur, .tile-dt, .tile-foot .out-name {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tile-dur { font-size: 10px; color: rgba(255,255,255,0.92); font-variant-numeric: tabular-nums; }
 .tile-dt  { font-size: 10px; color: rgba(255,255,255,0.55); }
@@ -780,6 +785,9 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   margin-bottom: 2px;
 }
+/* Over the tile cover the name can sit on bright video, so brighten it and add
+   a shadow for legibility (the cap-meta copy keeps the accent colour). */
+.tile-foot .out-name { color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.7); }
 
 /* ---- prev/next nav in expanded tile ----
    Appended to .out-card (the fixed full-screen element), NOT .out-cover,

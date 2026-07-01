@@ -329,6 +329,37 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-01 (output card fixes)
+
+**Bugs fixed:**
+- **✕ quick-delete button hid the datetime's AM/PM** — `.tile-del-btn` is pinned
+  bottom-right of the cover, and the tile-foot datetime is left-aligned on that
+  same bottom line, so a long "…3:11 AM" ran under the button. Gave `.tile-foot`
+  a 34px right padding to reserve space for the button and added
+  `text-overflow: ellipsis` to `.tile-dt`/`.tile-dur`/tile-foot name so they
+  truncate before the button instead of hiding behind it.
+- **6-dot drag grip looked off-centre** — the `⠿` braille glyph sits high/left in
+  its em box, so it never centred in the round handle. Replaced it with a new
+  `GRIP_SVG` (6 dots as 2 cols × 3 rows, symmetric about the viewBox centre) used
+  in both `renderOutput` and `renderSavedOutput` — now perfectly centred.
+- **Video name not shown on cards** — the name only lived in `.out-cap`, which is
+  `display:none` in the grid (shown only when a card is expanded), so a labelled
+  clip showed no name in the gallery. Added the name to the visible `.tile-foot`
+  cover overlay (white + text-shadow for legibility over bright video); the
+  `.out-cap` copy keeps the accent colour. Only rendered when `video_name` is set.
+- **Whole gallery reloaded on every Outputs-tab visit** — `switchTab("outputs")`
+  → `loadOutputs()` unconditionally wiped and rebuilt both lists' `innerHTML`, so
+  every `<video>` re-fetched and the tiles flashed black. Added a **signature
+  guard**: re-entry still re-fetches, but if the clips/order/is_saved/video_name
+  are identical it skips the DOM rewrite entirely (posters stay loaded). Applied
+  to `loadDone` (new `silent` arg), `loadSaved`, and the foreground-return
+  refresh in `resumePolls`. Real changes (new clip, delete, reorder, star) still
+  re-render immediately. On a silent revisit the in-flight `#out-active` cards are
+  also preserved instead of being wiped and rebuilt by the SSE stream.
+  SW cache → `wan-static-v25`.
+
+---
+
 ### 2026-07-01 (swipe gap fix)
 
 **Bugs fixed:**

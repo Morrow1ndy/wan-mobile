@@ -924,6 +924,13 @@ let _outTimer = null;
 let _outActivePoll = false; // last tick saw an in-flight job → poll fast
 let _seenDone = new Set(); // jobs we've already dropped into the done list
 let _jobStream = null; // EventSource for /api/pods/{id}/stream
+// Signatures of the currently-rendered lists. Re-entering the Outputs tab
+// re-fetches, but if the result is identical we skip the innerHTML rewrite so
+// the already-loaded video posters don't flash black and reload. See loadDone/
+// loadSaved.
+let _outLoadedPod = null;
+let _doneSig  = "";
+let _savedSig = "";
 
 function stopOutTimer() {
   if (_outTimer) { clearTimeout(_outTimer); _outTimer = null; }
@@ -1108,6 +1115,10 @@ const FOLDER_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const PLAY_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style="margin-left:2px"><path d="M8 5v14l11-7z"/></svg>`;
 // rounded play triangle for the tap-to-pause indicator (optically centred)
 const PLAY_TRIANGLE_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="margin-left:3px"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.87l11-6.86a1 1 0 0 0 0-1.74l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>`;
+// 6-dot drag grip — an SVG (2 cols × 3 rows, symmetric about the viewBox centre)
+// so it's perfectly centred in the round handle. The `⠿` braille glyph we used
+// before sits high/left in its em box and looked off-centre.
+const GRIP_SVG = `<svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="4" r="1.4"/><circle cx="10.5" cy="4" r="1.4"/><circle cx="5.5" cy="8" r="1.4"/><circle cx="10.5" cy="8" r="1.4"/><circle cx="5.5" cy="12" r="1.4"/><circle cx="10.5" cy="12" r="1.4"/></svg>`;
 
 function fmtElapsed(sec) {
   sec = Math.max(0, Math.floor(sec));
@@ -1134,23 +1145,31 @@ function inputThumbUrl(podId, inputImage) {
 
 async function loadOutputs() {
   const podId = $("#out-pod").value;
+  // Revisit = re-entering the tab for the same pod with cards already on screen.
+  // In that case we do a silent refresh instead of tearing the DOM down (which
+  // would reload every video and flash the whole gallery black).
+  const revisit = !!podId && podId === _outLoadedPod &&
+                  !!$("#out-list").querySelector(".out-card");
   _outPodId = podId;
-  _seenDone = new Set();
   stopOutTimer();
   disconnectJobStream();
-  $("#out-active").innerHTML = "";
   loadSaved();
   const list = $("#out-list");
   if (!podId) {
+    _outLoadedPod = null; _doneSig = "";
     list.innerHTML = `<div class="card muted">No running pod. Start one on the Pod tab.</div>`;
     return;
   }
-  list.innerHTML = `<div class="card muted">Loading outputs…</div>`;
-  await loadDone(podId);
+  if (!revisit) {
+    _seenDone = new Set();
+    $("#out-active").innerHTML = "";
+    list.innerHTML = `<div class="card muted">Loading outputs…</div>`;
+  }
+  await loadDone(podId, revisit);
   connectJobStream(podId); // SSE delivers live job state; auto-reconnects on foreground
 }
 
-async function loadDone(podId) {
+async function loadDone(podId, silent) {
   const list = $("#out-list");
   // Collapse any expanded card before rebuilding to avoid leaving body.overflow
   // locked when a generation completes while the user is previewing a video.
@@ -1184,6 +1203,13 @@ async function loadDone(podId) {
       });
     }
   } catch (_) {}
+  // Skip the rewrite when nothing changed (same clips, order, saved-state) so a
+  // silent revisit doesn't reload every poster. Signature covers pid + order +
+  // is_saved + video_name.
+  const sig = unsaved.map((it) => `${it.prompt_id}|${it.is_saved ? 1 : 0}|${it.video_name || ""}`).join(",");
+  _outLoadedPod = podId;
+  if (silent && sig === _doneSig && list.querySelector(".out-card")) return;
+  _doneSig = sig;
   list.innerHTML = unsaved.length
     ? unsaved.map((it) => renderOutput(podId, it)).join("")
     : `<div class="card muted">No videos yet on this pod.</div>`;
@@ -1196,8 +1222,14 @@ async function loadSaved() {
   const list = $("#saved-list");
   let items;
   try { items = await getJSON("/api/saved"); } catch (_) { return; }
-  if (!items.length) { section.hidden = true; loadStorage(); return; }
+  if (!items.length) {
+    _savedSig = ""; section.hidden = true; loadStorage(); return;
+  }
   section.hidden = false;
+  // Same silent-revisit guard as loadDone: don't rebuild identical saved tiles.
+  const sig = items.map((it) => `${it.prompt_id}|${it.video_name || ""}`).join(",");
+  if (sig === _savedSig && list.querySelector(".out-card")) { loadStorage(); return; }
+  _savedSig = sig;
   list.innerHTML = items.map(renderSavedOutput).join("");
   observeLazyCovers(list);
   initSavedSortable();
@@ -1306,12 +1338,13 @@ function renderSavedOutput(it) {
       <span class="play-badge">${PLAY_SVG}</span>
       <video class="tile-video" data-src="${url}" playsinline preload="none" loop></video>
       <div class="tile-foot">
+        ${name}
         ${dur ? `<span class="tile-dur">⏱ ${dur}</span>` : ""}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
       </div>
       <button class="zoom-back">← Back</button>
       <span class="sel-check"></span>
-      <button class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">⠿</button>
+      <button class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">${GRIP_SVG}</button>
       <button class="star-btn starred" data-pid="${esc(it.prompt_id)}" title="Unstar — return to current session">★</button>
       <button class="tile-del-btn" data-pid="${esc(it.prompt_id)}" title="Delete from cloud">✕</button>
     </div>
@@ -1351,12 +1384,13 @@ function renderOutput(podId, it) {
       <span class="play-badge">${PLAY_SVG}</span>
       <video class="tile-video" data-src="${url}" playsinline preload="none" loop></video>
       <div class="tile-foot">
+        ${name}
         ${dur ? `<span class="tile-dur">⏱ ${dur}</span>` : ""}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
       </div>
       <button class="zoom-back">← Back</button>
       <span class="sel-check"></span>
-      <button class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">⠿</button>
+      <button class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">${GRIP_SVG}</button>
       <button class="star-btn${starred ? " starred" : ""}" data-pid="${esc(it.prompt_id)}"
               title="${starred ? "Saved" : "Save to cloud"}">${starred ? "★" : "☆"}</button>
       <button class="tile-del-btn" data-pid="${esc(it.prompt_id)}" title="Delete">✕</button>
@@ -2808,8 +2842,10 @@ function resumePolls() {
   const activeTab = document.querySelector(".tabs button.active")?.dataset.tab;
   if (activeTab === "outputs" && _outPodId) {
     // Refresh the completed list and do one immediate job fetch while the
-    // SSE stream reconnects (EventSource retries automatically).
-    loadDone(_outPodId);
+    // SSE stream reconnects (EventSource retries automatically). Silent: only
+    // re-render if something actually changed, so returning to the foreground
+    // doesn't flash the whole gallery black.
+    loadDone(_outPodId, true);
     tickActive();
   } else {
     if (activeTab === "generate") onGenPodChange(); // re-check readiness
