@@ -801,10 +801,13 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   pointer-events: none;
 }
 .out-card.expanded .tile-nav { display: block; }
-.tile-nav-count {
+.tile-nav-topright {
   position: absolute;
   top: max(14px, env(safe-area-inset-top));
   right: 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.tile-nav-count {
   background: rgba(18,19,22,0.34);
   -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   border: 0.5px solid rgba(255,255,255,0.14);
@@ -814,6 +817,22 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   box-shadow: 0 2px 12px rgba(0,0,0,0.22);
 }
 .tile-nav-count .nav-sep { opacity: 0.45; margin: 0 3px; font-weight: 400; }
+
+/* ---- loop-current-video toggle (expanded player, top-right) ---- */
+.loop-btn {
+  pointer-events: auto;
+  width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  background: rgba(18,19,22,0.34);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  border: 0.5px solid rgba(255,255,255,0.14);
+  color: rgba(255,255,255,0.92); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.22);
+}
+.loop-btn.active {
+  color: var(--accent); border-color: var(--accent);
+  background: rgba(110,139,255,0.24);
+}
 
 /* ---- video buffering spinner ---- */
 .vid-loading-ov {

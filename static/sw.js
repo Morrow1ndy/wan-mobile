@@ -6,7 +6,7 @@
 //      files so the app loads fast and images are instant on repeat visits.
 //   3. Handles Web Push for "video ready" notifications.
 
-const CACHE_VERSION = "wan-static-v25";
+const CACHE_VERSION = "wan-static-v26";
 // Persistent caches — NOT deleted when CACHE_VERSION bumps. Content is either
 // immutable per URL (media) or freshened by stale-while-revalidate (data).
 const MEDIA_CACHE   = "wan-media-v1";

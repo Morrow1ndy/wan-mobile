@@ -329,6 +329,42 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-01 (video player: date format, auto-advance, loop toggle)
+
+**Features added:**
+- **Auto-advance to next/prev clip on finish** — when an expanded video reaches
+  the end, it now automatically continues in whichever direction the user last
+  navigated (swipe up/down, scroll wheel, or arrow keys): `_lastNavDir` (global,
+  defaults to `"up"`/next until the user has navigated at all) is recorded at
+  every manual-navigation commit point and read by the new `_autoAdvance(card)`,
+  bound to each `<video>`'s `ended` event. At the start/end of the list there's
+  nothing to advance to, so it just stops — no wraparound, no bounce.
+- **Loop-current-video toggle** — a new 🔁 `.loop-btn` button (top-right of the
+  expanded player, next to the `N / total` counter pill) toggles `video.loop`
+  for the currently-expanded clip. Looping a video natively suppresses the
+  `ended` event, so a looped clip is exempt from auto-advance until unlooped.
+  Rendered by `_updateNavCounter` (renamed in intent to also own the loop
+  button) — shown even for a single-video list, where the counter itself is
+  omitted.
+- **Behaviour change:** `<video class="tile-video">` no longer has a hardcoded
+  `loop` attribute (previously ALL clips looped indefinitely by default). Clips
+  now play once and auto-advance per the above; loop is now an explicit
+  per-video opt-in via the button instead of the old always-on default.
+
+**Changes:**
+- **Grid tile timestamp shortened to date-only** — `.tile-dt` on grid cards
+  (both session and saved) now shows `dd MMM yyyy` (e.g. `01 Jul 2026`) via new
+  `fmtDateOnly()`, dropping the time-of-day that used to run under the ✕
+  quick-delete button.
+- **Expanded player shows the full timestamp** — `.out-dt` in the expanded
+  bottom caption now shows date **+ year + time** (e.g. `01 Jul 2026, 3:11 PM`)
+  via new `fmtDatetimeFull()`. Previously both grid and expanded views shared
+  one `fmtDatetime()` (month/day + time, no year); it's been split into the two
+  functions above and removed.
+- SW cache bumped to `wan-static-v26`.
+
+---
+
 ### 2026-07-01 (output card fixes)
 
 **Bugs fixed:**
