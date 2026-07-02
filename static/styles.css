@@ -170,21 +170,13 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .tile-dur { font-size: 10px; color: rgba(255,255,255,0.92); font-variant-numeric: tabular-nums; }
 .tile-dt  { font-size: 10px; color: rgba(255,255,255,0.55); }
 
-/* ---- sampler/scheduler pair badge (replaces the old ⏱ duration display on
-   cards) — one neutral style for every sampler/scheduler combination
-   (Clownshark renders two of these stacked, for its independent High/Low
-   pair). ---- */
-.sched-badge {
-  display: inline-flex; align-items: center;
-  font-size: 10px; font-weight: 700; letter-spacing: .02em;
-  padding: 2px 7px; border-radius: 6px;
-  white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
-  color: var(--muted); background: rgba(255,255,255,0.10);
-}
-.tile-foot .sched-badge { color: #fff; background: rgba(0,0,0,0.4); }
-
-/* ---- sampler-mode badge (Standard/TripleKSampler/Clownshark Sampler),
-   shown above the sampler+scheduler pair badge ---- */
+/* ---- sampler-mode badge (Standard/TripleKSampler/Clownshark Sampler) ----
+   Shown on grid tiles (compact, single line) AND above the sampler/scheduler
+   detail rows in the expanded caption below. The full sampler+scheduler
+   breakdown (which can be two independent pairs, and Clownshark sampler
+   names run 30+ chars) never fits a ~110px 3-col grid tile even truncated
+   usefully, so tiles show only this short mode badge — the full breakdown
+   lives in .cap-sampler below, where there's room to wrap. ---- */
 .mode-badge {
   display: inline-flex; align-items: center;
   font-size: 10px; font-weight: 700; letter-spacing: .02em;
@@ -197,14 +189,30 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 /* ---- tile caption: hidden in grid, shown in expanded ---- */
 .out-card:not(.expanded) .out-cap { display: none; }
 .out-cap {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; flex-direction: column; gap: 10px;
   background: var(--surface); border-top: 1px solid var(--line);
   padding: 14px 16px max(16px, env(safe-area-inset-bottom));
 }
+.cap-row { display: flex; align-items: center; gap: 10px; }
 .cap-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .out-dt  { font-size: 13px; color: var(--muted); display: block; }
 .out-dur { font-size: 13px; color: var(--accent); display: block; font-variant-numeric: tabular-nums; }
 .out-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+/* ---- sampler+scheduler detail rows (expanded caption only) — the full-width
+   home for what won't fit on a grid tile. Label/value rows instead of pills
+   so long sampler names wrap onto a second line instead of truncating.
+   Omitted entirely by the caller (not just empty) when a clip has no
+   sampler-mode data (pre-feature videos). ---- */
+.cap-sampler { display: flex; flex-direction: column; gap: 5px; }
+.sched-row { display: flex; gap: 8px; font-size: 12px; line-height: 1.4; }
+.sched-row-label {
+  flex-shrink: 0; min-width: 62px;
+  color: var(--muted); font-weight: 600; font-size: 11px;
+  text-transform: uppercase; letter-spacing: .03em;
+  padding-top: 1px;
+}
+.sched-row-val { color: var(--text); word-break: break-word; }
 .out-cap .dl {
   display: inline-flex; align-items: center; gap: 4px;
   background: var(--surface-2); border: 1px solid var(--line-2);

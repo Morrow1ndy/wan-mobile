@@ -1265,47 +1265,67 @@ function fmtDatetimeFull(ts) {
 // ---- sampler-mode + sampler/scheduler badges (replaces the old ⏱ duration
 // display on cards) --------------------------------------------------------
 function fmtSchedulerLabel(s) {
-  return String(s).split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  // Clownshark's RES4LYF sampler names are namespaced ("multistep/res_2m");
+  // render the "/" as a visual separator too, not just "_", so long names
+  // read as short capitalized chunks instead of one run-on word.
+  return String(s).split("/")
+    .map((part) => part.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" "))
+    .join(" · ");
 }
 
-// Sampler+scheduler pair badge(s). Standard shows one shared pair; TripleK
-// and Clownshark each show two independent pairs (Base/Lightning and
-// High/Low respectively — different stage names, same "two pairs" shape). No
-// colour-coding — every mode uses the same neutral badge style.
-function samplerPairBadges(it, cls) {
-  const c = cls ? " " + cls : "";
+// Sampler+scheduler detail rows. Standard shows one row ("Sampler"); TripleK
+// and Clownshark each show two independent rows (Base/Lightning and
+// High/Low respectively — different stage names, same "two rows" shape). No
+// colour-coding — every mode uses the same neutral row style.
+//
+// Rendered as label/value rows (not pills) so long values — Clownshark's
+// RES4LYF sampler names run up to 30+ chars — can wrap onto a second line
+// instead of ellipsis-truncating. Grid tiles are too narrow (~110px, 3-col)
+// for this even with wrapping, so it's only used in the expanded player's
+// caption; tiles show just the compact samplerModeBadge().
+function samplerPairRows(it) {
   const pairRows = (pairs) => pairs
     .filter(([, s, sch]) => s || sch)
-    .map(([label, s, sch]) => `${label}: ${[s, sch].filter(Boolean).map(fmtSchedulerLabel).join(" / ")}`);
+    .map(([label, s, sch]) => [label, [s, sch].filter(Boolean).map(fmtSchedulerLabel).join(" / ")]);
 
+  let rows;
   if (it.cs_sampler_h || it.cs_scheduler_h || it.cs_sampler_l || it.cs_scheduler_l) {
-    const rows = pairRows([
+    rows = pairRows([
       ["High", it.cs_sampler_h, it.cs_scheduler_h],
       ["Low", it.cs_sampler_l, it.cs_scheduler_l],
     ]);
-    return rows.map((r) => `<span class="sched-badge${c}">${esc(r)}</span>`).join("");
-  }
-  if (it.sampler_base || it.scheduler_base || it.sampler_lightning || it.scheduler_lightning) {
-    const rows = pairRows([
+  } else if (it.sampler_base || it.scheduler_base || it.sampler_lightning || it.scheduler_lightning) {
+    rows = pairRows([
       ["Base", it.sampler_base, it.scheduler_base],
       ["Lightning", it.sampler_lightning, it.scheduler_lightning],
     ]);
-    return rows.map((r) => `<span class="sched-badge${c}">${esc(r)}</span>`).join("");
+  } else if (it.sampler || it.scheduler) {
+    rows = pairRows([["Sampler", it.sampler, it.scheduler]]);
+  } else {
+    rows = [];
   }
-  if (it.sampler || it.scheduler) {
-    const label = [it.sampler, it.scheduler].filter(Boolean).map(fmtSchedulerLabel).join(" / ");
-    return `<span class="sched-badge${c}">${esc(label)}</span>`;
-  }
-  return "";
+  return rows.map(([label, val]) => `<div class="sched-row">
+    <span class="sched-row-label">${esc(label)}</span><span class="sched-row-val">${esc(val)}</span>
+  </div>`).join("");
 }
+
+// Shortened mode names for the ~110px grid tile, where "Standard Sampler" /
+// "Clownshark Sampler" don't fit even at 10px without ellipsis-truncating.
+// The full name is used everywhere else (expanded caption).
+const TILE_MODE_LABELS = {
+  "Standard Sampler": "Standard",
+  "TripleKSampler": "TripleK",
+  "Clownshark Sampler": "Clownshark",
+};
 
 // "Sampler mode" badge (Standard Sampler / TripleKSampler / Clownshark
 // Sampler), shown above the sampler+scheduler pair. Derived from which
 // workflow file produced the clip — absent for clips generated before this
 // feature (no badge shown, matching the existing "no data, no badge" pattern).
 function samplerModeBadge(it, cls) {
-  const label = (CFG.workflow_labels || {})[it.workflow_file];
-  if (!label) return "";
+  const fullLabel = (CFG.workflow_labels || {})[it.workflow_file];
+  if (!fullLabel) return "";
+  const label = cls === "tile-sched" ? (TILE_MODE_LABELS[fullLabel] || fullLabel) : fullLabel;
   return `<span class="mode-badge${cls ? " " + cls : ""}">${esc(label)}</span>`;
 }
 
@@ -1507,6 +1527,9 @@ function renderSavedOutput(it) {
   const dt = fmtDateOnly(it.completed_at);
   const dtFull = fmtDatetimeFull(it.completed_at);
   const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
+  const modeBadge = samplerModeBadge(it);
+  const schedRows = samplerPairRows(it);
+  const samplerBlock = (modeBadge || schedRows) ? `<div class="cap-sampler">${modeBadge}${schedRows}</div>` : "";
   return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
               data-pid="${esc(it.prompt_id)}" data-pod="${esc(it.pod_id||"")}">
     <div class="out-cover">
@@ -1516,7 +1539,6 @@ function renderSavedOutput(it) {
       <div class="tile-foot">
         ${name}
         ${samplerModeBadge(it, "tile-sched")}
-        ${samplerPairBadges(it, "tile-sched")}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
       </div>
       <button class="zoom-back">← Back</button>
@@ -1526,17 +1548,18 @@ function renderSavedOutput(it) {
       <button class="tile-del-btn" data-pid="${esc(it.prompt_id)}" title="Delete from cloud">✕</button>
     </div>
     <div class="out-cap">
-      <div class="cap-meta">
-        ${name}
-        ${dtFull ? `<span class="out-dt">${dtFull}</span>` : ""}
-        ${samplerModeBadge(it)}
-        ${samplerPairBadges(it)}
+      <div class="cap-row">
+        <div class="cap-meta">
+          ${name}
+          ${dtFull ? `<span class="out-dt">${dtFull}</span>` : ""}
+        </div>
+        <div class="out-actions">
+          <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
+          <button class="dl" data-url="${url}" data-filename="${esc(it.filename)}">↓ Save</button>
+          <button class="del-btn ghost small" data-pid="${esc(it.prompt_id)}">Delete</button>
+        </div>
       </div>
-      <div class="out-actions">
-        <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
-        <button class="dl" data-url="${url}" data-filename="${esc(it.filename)}">↓ Save</button>
-        <button class="del-btn ghost small" data-pid="${esc(it.prompt_id)}">Delete</button>
-      </div>
+      ${samplerBlock}
     </div>
   </div>`;
 }
@@ -1554,6 +1577,9 @@ function renderOutput(podId, it) {
   const dtFull = fmtDatetimeFull(it.completed_at);
   const starred = it.is_saved;
   const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
+  const modeBadge = samplerModeBadge(it);
+  const schedRows = samplerPairRows(it);
+  const samplerBlock = (modeBadge || schedRows) ? `<div class="cap-sampler">${modeBadge}${schedRows}</div>` : "";
   return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
               data-pid="${esc(it.prompt_id)}" data-pod="${esc(podId)}"
               data-file="${esc(it.filename)}" data-sub="${esc(it.subfolder||"")}" data-ftype="${esc(it.type||"output")}">
@@ -1564,7 +1590,6 @@ function renderOutput(podId, it) {
       <div class="tile-foot">
         ${name}
         ${samplerModeBadge(it, "tile-sched")}
-        ${samplerPairBadges(it, "tile-sched")}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
       </div>
       <button class="zoom-back">← Back</button>
@@ -1575,17 +1600,18 @@ function renderOutput(podId, it) {
       <button class="tile-del-btn" data-pid="${esc(it.prompt_id)}" title="Delete">✕</button>
     </div>
     <div class="out-cap">
-      <div class="cap-meta">
-        ${name}
-        ${dtFull ? `<span class="out-dt">${dtFull}</span>` : ""}
-        ${samplerModeBadge(it)}
-        ${samplerPairBadges(it)}
+      <div class="cap-row">
+        <div class="cap-meta">
+          ${name}
+          ${dtFull ? `<span class="out-dt">${dtFull}</span>` : ""}
+        </div>
+        <div class="out-actions">
+          <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
+          <button class="dl" data-url="${url}" data-filename="${esc(it.filename)}">↓ Save</button>
+          <button class="del-btn ghost small" data-pid="${esc(it.prompt_id)}">Delete</button>
+        </div>
       </div>
-      <div class="out-actions">
-        <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
-        <button class="dl" data-url="${url}" data-filename="${esc(it.filename)}">↓ Save</button>
-        <button class="del-btn ghost small" data-pid="${esc(it.prompt_id)}">Delete</button>
-      </div>
+      ${samplerBlock}
     </div>
   </div>`;
 }
@@ -2402,7 +2428,6 @@ function upsertActiveCard(podId, j) {
           <div class="tile-foot">
             ${nameHtml}
             ${samplerModeBadge(j, "tile-sched")}
-            ${samplerPairBadges(j, "tile-sched")}
             <span class="elapsed tile-dt">queued</span>
             <span class="step tile-dt"></span>
           </div>
