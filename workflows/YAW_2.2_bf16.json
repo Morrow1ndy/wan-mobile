@@ -184,8 +184,8 @@
   },
   "139": {
     "inputs": {
-      "Xi": 6,
-      "Xf": 6,
+      "Xi": 5,
+      "Xf": 5,
       "isfloatX": 0
     },
     "class_type": "mxSlider",
@@ -219,7 +219,7 @@
       "lora_2": {
         "on": true,
         "lora": "NSFW-22-H-e8.safetensors",
-        "strength": 0.7
+        "strength": 0.6
       },
       "lora_3": {
         "on": false,
@@ -297,7 +297,7 @@
     "inputs": {
       "frame_rate": 16,
       "loop_count": 0,
-      "filename_prefix": "WANT2V/2026-06-18/210821_",
+      "filename_prefix": "WANT2V/2026-07-02/152600_",
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 19,
@@ -322,7 +322,7 @@
         0
       ],
       "loop_count": 0,
-      "filename_prefix": "output_2026-06-18/210821_IN",
+      "filename_prefix": "output_2026-07-02/152600_IN",
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 19,
@@ -351,7 +351,7 @@
   },
   "158": {
     "inputs": {
-      "seed": -1
+      "seed": 1060826981677734
     },
     "class_type": "Seed (rgthree)",
     "_meta": {
@@ -517,7 +517,7 @@
   },
   "233": {
     "inputs": {
-      "lora_name": "wan2.2_i2v_A14b_low_noise_lora_rank64_lightx2v_4step_1022.safetensors",
+      "lora_name": "Wan_2_2_I2V_A14B_LOW_lightx2v_4step_lora_260412_rank_256_fp16.safetensors",
       "strength_model": 1,
       "model": [
         "108",
@@ -531,7 +531,7 @@
   },
   "234": {
     "inputs": {
-      "lora_name": "wan2.2_i2v_A14b_high_noise_lora_rank64_lightx2v_4step_1022.safetensors",
+      "lora_name": "Wan_2_2_I2V_A14B_HIGH_lightx2v_4step_lora_260412_rank_256_fp16.safetensors",
       "strength_model": 2,
       "model": [
         "107",
@@ -865,7 +865,7 @@
   },
   "351": {
     "inputs": {
-      "text": "直视镜头，纯真却诱人的纯欲风格，羞涩的眼睛一直看着镜头，她慢慢解开衬衫露出赤裸的乳房，温柔地揉捏抚摸自己的胸部，轻轻捏弄敏感的乳头，带着纯真欲望的表情轻咬嘴唇，沉重喘息，轻声娇喘，脸颊潮红，上身微微颤抖，细腻真实皮肤，眼神始终直视镜头",
+      "text": "nsfwsks, looking directly at the camera, innocent pure style, \n\nshy and innocent eyes, soft gaze with a hint of grievance, always staring at the lens with timid affection,\n\nshe actively and slowly uses her own hands to unfasten, unbutton or pull down the straps of her upper garment, then deliberately opens and removes it herself, taking time to slide the fabric off, fully revealing her bare D-Cup breasts step by step,\n\nonly after her breasts are completely exposed, she gently uses both hands to softly present and display her bare breasts toward the camera in a natural way,\n\nexpression of soft innocent arousal, gentle natural blush on her cheeks, soft naturally parted lips with subtle breathing, upper body remains mostly stable with only slight natural trembling, delicate realistic skin, eyes fixed on the camera the whole time, breasts fully visible and exposed",
       "clip": [
         "106",
         0
