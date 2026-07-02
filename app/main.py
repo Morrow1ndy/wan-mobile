@@ -322,11 +322,18 @@ async def pod_session(pod_id: str):
 
 @app.post("/api/pods")
 async def create(payload: dict = Body(default={})):
-    res = await rp.create_pod(
-        gpu_type_id=payload.get("gpu_type_id"),
-        min_memory_gb=payload.get("min_memory"),
-        cuda_versions=payload.get("cuda_versions"),
-    )
+    try:
+        res = await rp.create_pod(
+            gpu_type_id=payload.get("gpu_type_id"),
+            min_memory_gb=payload.get("min_memory"),
+            cuda_versions=payload.get("cuda_versions"),
+        )
+    except Exception as e:
+        # Surface the real RunPod/SDK error instead of a bare 500 so the UI can
+        # show what actually went wrong (e.g. no capacity, bad kwarg, auth).
+        detail = f"{type(e).__name__}: {e}"
+        log_event("system", f"Pod create failed: {detail}")
+        raise HTTPException(502, detail)
     pod_id = (res or {}).get("id")
     if pod_id:
         gpu = payload.get("gpu_label") or payload.get("gpu_type_id") or "GPU"
