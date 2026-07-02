@@ -170,6 +170,20 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .tile-dur { font-size: 10px; color: rgba(255,255,255,0.92); font-variant-numeric: tabular-nums; }
 .tile-dt  { font-size: 10px; color: rgba(255,255,255,0.55); }
 
+/* ---- scheduler badge (replaces the old ⏱ duration display on cards) ----
+   simple / beta / beta57 (the schedulers actually in rotation) each get a
+   distinct colour; every other scheduler shares one common muted colour. */
+.sched-badge {
+  display: inline-flex; align-items: center;
+  font-size: 10px; font-weight: 700; letter-spacing: .02em;
+  padding: 2px 7px; border-radius: 6px;
+  white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
+.sched-badge.sched-beta57 { color: var(--accent); background: rgba(110,139,255,0.18); }
+.sched-badge.sched-beta   { color: var(--good);   background: rgba(74,222,128,0.18); }
+.sched-badge.sched-simple { color: var(--warn);   background: rgba(245,179,74,0.18); }
+.sched-badge.sched-other  { color: var(--muted);  background: rgba(255,255,255,0.10); }
+
 /* ---- tile caption: hidden in grid, shown in expanded ---- */
 .out-card:not(.expanded) .out-cap { display: none; }
 .out-cap {

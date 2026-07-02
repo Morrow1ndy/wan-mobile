@@ -1147,6 +1147,19 @@ function fmtDatetimeFull(ts) {
   return `${day} ${month} ${d.getFullYear()}, ${time}`;
 }
 
+// ---- scheduler badge (replaces the old ⏱ duration display on cards) --------
+// The 3 schedulers actually in rotation (simple / beta / beta57) each get a
+// distinct colour; every other scheduler shares one common "other" colour.
+const SCHED_CLASSES = { beta57: "sched-beta57", beta: "sched-beta", simple: "sched-simple" };
+function fmtSchedulerLabel(s) {
+  return s.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+function schedBadge(scheduler, cls) {
+  if (!scheduler) return "";
+  const variant = SCHED_CLASSES[scheduler] || "sched-other";
+  return `<span class="sched-badge ${variant}${cls ? " " + cls : ""}">${esc(fmtSchedulerLabel(scheduler))}</span>`;
+}
+
 // Build a /view URL for the uploaded input image (its name may carry a subfolder).
 function inputThumbUrl(podId, inputImage) {
   if (!inputImage) return null;
@@ -1344,7 +1357,6 @@ function renderSavedOutput(it) {
   const url = `/api/saved/file/${encodeURIComponent(it.filename)}`;
   const dt = fmtDateOnly(it.completed_at);
   const dtFull = fmtDatetimeFull(it.completed_at);
-  const dur = it.duration_secs ? fmtElapsed(it.duration_secs) : null;
   const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
   return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
               data-pid="${esc(it.prompt_id)}" data-pod="${esc(it.pod_id||"")}">
@@ -1354,7 +1366,7 @@ function renderSavedOutput(it) {
       <video class="tile-video" data-src="${url}" playsinline preload="none"></video>
       <div class="tile-foot">
         ${name}
-        ${dur ? `<span class="tile-dur">⏱ ${dur}</span>` : ""}
+        ${schedBadge(it.scheduler, "tile-sched")}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
       </div>
       <button class="zoom-back">← Back</button>
@@ -1367,7 +1379,7 @@ function renderSavedOutput(it) {
       <div class="cap-meta">
         ${name}
         ${dtFull ? `<span class="out-dt">${dtFull}</span>` : ""}
-        ${dur ? `<span class="out-dur">⏱ ${dur}</span>` : ""}
+        ${schedBadge(it.scheduler)}
       </div>
       <div class="out-actions">
         <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
@@ -1389,7 +1401,6 @@ function renderOutput(podId, it) {
     : `<video class="cover-img" preload="none" muted data-src="${url}#t=0.1"></video>`;
   const dt = fmtDateOnly(it.completed_at);
   const dtFull = fmtDatetimeFull(it.completed_at);
-  const dur = it.duration_secs ? fmtElapsed(it.duration_secs) : null;
   const starred = it.is_saved;
   const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
   return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
@@ -1401,7 +1412,7 @@ function renderOutput(podId, it) {
       <video class="tile-video" data-src="${url}" playsinline preload="none"></video>
       <div class="tile-foot">
         ${name}
-        ${dur ? `<span class="tile-dur">⏱ ${dur}</span>` : ""}
+        ${schedBadge(it.scheduler, "tile-sched")}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
       </div>
       <button class="zoom-back">← Back</button>
@@ -1415,7 +1426,7 @@ function renderOutput(podId, it) {
       <div class="cap-meta">
         ${name}
         ${dtFull ? `<span class="out-dt">${dtFull}</span>` : ""}
-        ${dur ? `<span class="out-dur">⏱ ${dur}</span>` : ""}
+        ${schedBadge(it.scheduler)}
       </div>
       <div class="out-actions">
         <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>

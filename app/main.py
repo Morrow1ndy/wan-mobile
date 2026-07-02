@@ -593,13 +593,16 @@ async def pod_outputs(pod_id: str, limit: int = 30):
             stat = all_stats.get(pid, {})
             duration = round(f - s) if s and f else stat.get("secs")
             completed_at = f or stat.get("at")
+            params = ps.get_params(pid) or {}
             # video_name: try in-memory job first, then fall back to saved params
-            video_name = (job or {}).get("video_name") or \
-                         (ps.get_params(pid) or {}).get("video_name", "")
+            video_name = (job or {}).get("video_name") or params.get("video_name", "")
+            # scheduler: "scheduler" is the current combined field; "scheduler_high"
+            # is the legacy pre-merge key (see 2026-06-25 changelog entry)
+            scheduler = params.get("scheduler") or params.get("scheduler_high") or ""
             items.append({"prompt_id": pid, "input_image": _input_image(entry),
                           "duration_secs": duration, "completed_at": completed_at,
                           "is_saved": pid in saved_ids,
-                          "video_name": video_name, **vid})
+                          "video_name": video_name, "scheduler": scheduler, **vid})
     items.reverse()  # history is chronological -> newest first
     return items
 
@@ -741,6 +744,8 @@ async def star_video(pod_id: str, prompt_id: str, payload: dict = Body(default={
     (ps.SAVED_DIR / local_name).write_bytes(content)
 
     stat = ps.get_stats().get(prompt_id, {})
+    params = ps.get_params(prompt_id) or {}
+    scheduler = params.get("scheduler") or params.get("scheduler_high") or ""
     meta = {
         "prompt_id": prompt_id,
         "filename": local_name,
@@ -748,6 +753,7 @@ async def star_video(pod_id: str, prompt_id: str, payload: dict = Body(default={
         "completed_at": stat.get("at"),
         "duration_secs": stat.get("secs"),
         "video_name": _job.get("video_name", ""),
+        "scheduler": scheduler,
         # Pod the clip was generated on — lets a permanent "Delete" also purge it
         # from the pod's ComfyUI history (so it can't reappear in the session).
         "pod_id": pod_id,

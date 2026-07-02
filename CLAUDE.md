@@ -333,6 +333,29 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-01 (scheduler badge replaces duration on cards)
+
+**Changes:**
+- **⏱ duration badge replaced by a scheduler badge** on both the grid tile
+  (`.tile-foot`) and the expanded/full-screen action bar (`.out-cap
+  .cap-meta`) — same two spots that used to show `⏱ {duration}`. New
+  `schedBadge(scheduler, cls)` in `app.js` renders a coloured pill via
+  `fmtSchedulerLabel()` (underscore-separated values like `sgm_uniform` →
+  "Sgm Uniform"). The 3 schedulers actually in rotation get distinct colours —
+  `beta57` → accent blue, `beta` → green, `simple` → amber — every other
+  scheduler (`karras`, `normal`, etc.) shares one muted "other" colour
+  (`.sched-badge.sched-other`). No badge is rendered when `scheduler` is empty
+  (e.g. very old saved videos from before this field was recorded).
+- **Backend**: `GET /api/pods/{id}/outputs` and `POST /api/saved/{pod}/{pid}`
+  (star) now include a `"scheduler"` field, read from `ps.get_params(pid)` —
+  `scheduler` (current combined field) falling back to the legacy
+  `scheduler_high` key for older recordings. `duration_secs` is still returned
+  by the API (unused by the card UI now, but harmless) in case it's needed
+  elsewhere later.
+- SW cache bumped to `wan-static-v30`.
+
+---
+
 ### 2026-07-01 (player polish: progress bar placement, expanded ✕, edge hint)
 
 **Changes:**
