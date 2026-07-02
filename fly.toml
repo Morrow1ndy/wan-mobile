@@ -6,6 +6,23 @@
 app = 'wan-mobile'
 primary_region = 'sin'
 
+# Non-secret RunPod pod-deploy config. These used to live in the committed
+# .env (baked into the image); when .env was removed for the secrets fix they
+# were dropped and pod creation broke with "Either image_name or template_id
+# must be provided". Keeping them here means they travel with the repo and
+# can't silently vanish on a rebuild. Real secrets (RUNPOD_API_KEY,
+# WAN_AUTH_USER/PASS, GOOGLE_SERVICE_ACCOUNT_JSON) stay in `fly secrets`.
+[env]
+  RUNPOD_TEMPLATE_ID = 'nt4hm6e2ec'
+  RUNPOD_NETWORK_VOLUME_ID = 'gg40rrsa41'
+  RUNPOD_DATA_CENTER_ID = 'EU-RO-1'
+  RUNPOD_VOLUME_MOUNT_PATH = '/workspace'
+  RUNPOD_IMAGE_NAME = 'nextdiffusionai/comfyui-sageattention:cuda12.8-v1'
+  RUNPOD_GPU_TYPE_ID = 'NVIDIA GeForce RTX 4090'
+  RUNPOD_CLOUD_TYPE = 'SECURE'
+  COMFY_PORT = '8188'
+  POD_NAME = 'wan22-i2v'
+
 [build]
 
 [[mounts]]

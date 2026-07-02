@@ -109,9 +109,20 @@ frontend build step — `static/` is served as-is.
 ## Configuration (env vars)
 
 Config is read by `config.py` via `python-dotenv`'s `load_dotenv()`. **Locally**
-these come from `.env` (in repo root). **On Fly** they're set as Fly secrets
-(injected as env vars). `load_dotenv()` does not override already-set env vars, so
-Fly secrets win over the baked-in `.env` when both exist.
+these come from `.env` (in repo root). **On Fly** config comes from two places:
+- **Real secrets** (`RUNPOD_API_KEY`, `WAN_AUTH_USER`, `WAN_AUTH_PASS`,
+  `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_GCS_BUCKET`) → **Fly secrets**
+  (`fly secrets set` / `fly secrets list`).
+- **Non-secret RunPod pod-deploy config** (`RUNPOD_TEMPLATE_ID`,
+  `RUNPOD_NETWORK_VOLUME_ID`, `RUNPOD_DATA_CENTER_ID`, `RUNPOD_VOLUME_MOUNT_PATH`,
+  `RUNPOD_IMAGE_NAME`, `RUNPOD_GPU_TYPE_ID`, `RUNPOD_CLOUD_TYPE`, `COMFY_PORT`,
+  `POD_NAME`) → the **`[env]` block in `fly.toml`** (committed). These used to
+  travel in the committed `.env`; when `.env` was removed for the secrets fix
+  they were dropped and pod creation broke — living in `fly.toml` now, they
+  can't silently vanish on a rebuild.
+
+`load_dotenv()` does not override already-set env vars, so a Fly secret / `[env]`
+value wins over anything in a baked-in `.env`.
 
 **Auth + cloud storage:**
 
@@ -330,6 +341,34 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-07-01 (fix broken pod deploy: RunPod config moved to fly.toml)
+
+**Bugs fixed:**
+- **"Deploy" gave a 500 / pods couldn't be created** — `POST /api/pods` failed
+  with `ValueError: Either image_name or template_id must be provided`. Root
+  cause: the non-secret RunPod pod-config vars (`RUNPOD_TEMPLATE_ID`,
+  `RUNPOD_NETWORK_VOLUME_ID`, `RUNPOD_DATA_CENTER_ID`, `RUNPOD_IMAGE_NAME`, …)
+  used to travel in the committed `.env` (baked into the Docker image). The
+  earlier secrets fix removed `.env` from the repo + image but only migrated the
+  *real* secrets (`RUNPOD_API_KEY`, `WAN_AUTH_*`) to Fly secrets — these
+  pod-config vars were never migrated, so the deployed app booted with them all
+  empty and `runpod.create_pod` got no template and no image. (Read-only GPU
+  listing kept working because it needs none of them.)
+- **Fix:** moved the non-secret pod-config vars into a committed **`[env]` block
+  in `fly.toml`**, so they travel with the repo and can't be dropped on a
+  rebuild. Real secrets stay in `fly secrets`. The GitHub Actions deploy applies
+  `[env]` on the next push (fly.toml is a trigger path).
+- **`POST /api/pods` now surfaces the real error** — it wrapped
+  `rp.create_pod` in try/except and returns HTTP 502 with the RunPod/SDK error
+  text (and logs it) instead of an opaque 500, so deploy failures are
+  diagnosable from the UI.
+
+**Note:** `requirements.txt` still pins `runpod>=1.0.0` (unpinned) — a future
+SDK bump could change `create_pod`'s signature and break deploy again. Consider
+pinning to a known-good version.
 
 ---
 
