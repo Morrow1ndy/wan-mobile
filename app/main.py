@@ -54,21 +54,31 @@ async def _startup():
 
 
 async def _keepalive_loop():
-    """Ping ourselves every 30s while any job is running.
+    """Ping our own public URL every 30s while any job is running.
 
-    Fly auto-stops machines that have no inbound HTTP traffic. A running
-    _watch() task is server-side outbound traffic — Fly doesn't count it.
-    This loop makes an inbound request so Fly sees activity and keeps the
-    machine up until all generations finish.
+    Fly auto-stops machines with no inbound traffic THROUGH THE FLY PROXY.
+    A loopback request to localhost never leaves the VM — it doesn't pass
+    through the proxy at all — so it does NOT register as activity and does
+    NOT prevent auto-stop, despite looking like it should. This was the
+    actual reason the "generating" card kept reverting to "queued" (and
+    duplicating once the pod's job finished) after being away for a while:
+    the app machine auto-stopped mid-generation because this self-ping was
+    silently a no-op, then _restore_jobs() had to reconstruct state on the
+    next request. Pinging the public hostname routes through the proxy like
+    a real client request, so it actually counts.
     """
+    app_name = os.getenv("FLY_APP_NAME")
+    if not app_name:
+        return  # local dev — no Fly proxy, no auto-stop to fight
+    url = f"https://{app_name}.fly.dev/api/balance"
+    auth = (_AUTH_USER, _AUTH_PASS) if _AUTH_USER and _AUTH_PASS else None
     while True:
         await asyncio.sleep(30)
         if any(j.get("status") == "running" for j in JOBS.values()):
             try:
                 import httpx
                 async with httpx.AsyncClient() as client:
-                    await client.get("http://localhost:8000/api/balance",
-                                     timeout=5)
+                    await client.get(url, auth=auth, timeout=10)
             except Exception:
                 pass
 
@@ -1095,6 +1105,53 @@ async def ram_clear(pod_id: str):
 async def _watch(url: str, client_id: str, prompt_id: str):
     """Listen on ComfyUI's websocket for progress, then resolve the output."""
     job = JOBS[prompt_id]
+
+    # Re-sync from ComfyUI's history before opening the websocket. This is a
+    # no-op for a job that was JUST queued (nothing in history yet for it),
+    # but it matters a lot when _restore_jobs() is re-attaching to a job that
+    # was already running before this process restarted (Fly auto-stop, or a
+    # deploy): a freshly-opened websocket only sees FUTURE events, it never
+    # replays "execution_start"/"progress" for work that already happened —
+    # so a prompt that had already finished while we were down would sit
+    # marked "running" until the websocket happened to drop and fall through
+    # to the polling loop below, showing a stuck "queued" ghost card
+    # alongside the real completed card pod_outputs() finds independently by
+    # reading the pod's ComfyUI history directly. And a prompt still
+    # genuinely in progress would show "queued" (not "generating") forever,
+    # since started_at never gets backfilled without a fresh progress event.
+    try:
+        entry = (await comfy.get_history(url, prompt_id)).get(prompt_id) or {}
+    except Exception:
+        entry = {}
+    _status = entry.get("status") or {}
+    _outputs = entry.get("outputs") or {}
+    if _status.get("status_str") == "error":
+        job["status"], job["error"] = "error", _status
+        job["finished_at"] = time.time()
+        log_event(job["pod_id"], "Generation error (ComfyUI)")
+        _persist_jobs()
+        return
+    if _outputs or _status.get("completed"):
+        job["video"] = _find_video(_outputs)
+        job["status"] = "done"
+        job["finished_at"] = time.time()
+        if job["max"]:
+            job["progress"] = job["max"]
+        duration = (round(job["finished_at"] - job["started_at"])
+                    if job.get("started_at") else None)
+        ps.save_stat(prompt_id, duration, job["finished_at"])
+        _backfill_seed(prompt_id, entry)
+        log_event(job["pod_id"],
+                  "Video ready ✓" if job["video"] else "Finished (no video output)")
+        _persist_jobs()
+        return
+    if job["started_at"] is None and _status.get("status_str"):
+        # ComfyUI already has a status for this prompt (it's dequeued/running),
+        # we just don't know exactly when it started — best-effort backfill so
+        # the UI shows "generating" instead of "queued" indefinitely.
+        job["started_at"] = time.time()
+        _persist_jobs()
+
     try:
         async with websockets.connect(comfy.ws_url(url, client_id),
                                        max_size=None) as ws:

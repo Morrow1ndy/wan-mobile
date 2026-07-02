@@ -382,6 +382,53 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-02 (root-caused the recurring "generating → queued" bug)
+
+**Bugs fixed:**
+- **The "generating" card reverting to "queued" (and duplicating a completed
+  clip) after being away for a while — root cause found and fixed.** This
+  exact symptom was patched at the frontend layer at least twice before
+  (2026-06-25's `_seenDone` de-dupe, then the SSE-stream rewrite) but kept
+  coming back, because neither patch touched the actual root cause:
+  1. **`_keepalive_loop()`'s self-ping never worked.** It pinged
+     `http://localhost:8000`, but Fly's `auto_stop_machines` only tracks
+     inbound traffic **through the Fly proxy** — a loopback request never
+     leaves the VM, so it doesn't pass through the proxy and doesn't count as
+     activity. The keepalive has silently been a no-op since it was added;
+     the app machine (not the RunPod pod — the lightweight Fly VM running
+     this FastAPI server) was auto-stopping mid-generation exactly as if the
+     loop didn't exist. Fixed: it now pings the real public URL
+     (`https://{FLY_APP_NAME}.fly.dev/api/balance`, with Basic Auth), which
+     routes through the proxy like a real request and actually prevents
+     auto-stop. (A code deploy also restarts this same machine — the fix
+     below covers that path too, regardless of *why* the process restarted.)
+  2. **`_watch()` re-attaching after a restart never resynced from ComfyUI.**
+     `_restore_jobs()` (runs on every boot) re-opens a *new* websocket
+     connection for any job still marked "running" — but a fresh websocket
+     only delivers *future* events, it never replays `execution_start`/
+     `progress` for work that already happened. A prompt that had **already
+     finished** while the app was down would sit marked "running" until the
+     websocket eventually dropped and fell through to the slower polling
+     fallback — during that window `pod_outputs()` (which reads the pod's
+     ComfyUI history directly, independent of `JOBS`) already showed the
+     finished clip, producing the reported duplicate: a stuck "queued" ghost
+     card next to the real completed one. And a prompt still **genuinely in
+     progress** would show "queued" forever (not "generating"), since
+     `started_at` never gets set without a fresh progress event to trigger it.
+     Fixed: `_watch()` now does one `GET /history/{prompt_id}` against
+     ComfyUI *before* opening the websocket — if the prompt already has
+     outputs/is complete, it resolves immediately (no ghost card, no
+     duplicate); if it's still running, it backfills `started_at` immediately
+     instead of leaving it null. This one history check is a no-op for a
+     normal freshly-queued job (nothing in ComfyUI's history for it yet), so
+     it doesn't change behavior for the common case.
+- Both fixes verified with a standalone async unit test (mocking
+  `comfy.get_history`) covering "already finished while restarted" (resolves
+  to `status: done` with the video immediately) and "still running,
+  `started_at` lost" (gets backfilled instead of staying null).
+
+---
+
 ### 2026-07-02 (sampler card labels: grid tile redesign + in-progress card sync)
 
 **Bugs fixed:**
