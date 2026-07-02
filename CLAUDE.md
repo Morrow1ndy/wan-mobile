@@ -382,6 +382,47 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-02 (sampler card labels: grid tile redesign + in-progress card sync)
+
+**Bugs fixed:**
+- **In-progress "generating…" card had no sampler-mode/pair labels at all** —
+  `_job_public()` only returned bare job state, not the saved params, so the
+  card you see while a clip is generating showed nothing about which sampler
+  mode was in use, unlike the completed/saved card. `_job_public()` now also
+  reads `ps.get_params()` (already persisted at generate time) and returns
+  the same `workflow_file`/`sampler`/`scheduler`/`sampler_base`/`cs_sampler_h`/
+  etc. fields as `pod_outputs()` and `star_video()`, so `upsertActiveCard()`
+  renders the identical badges from the moment a video starts generating
+  through session view through starring.
+- **Clownshark's sampler/scheduler fields converted from free-text to
+  verified dropdowns** — queried `/object_info/ClownsharKSampler_Beta` on a
+  live pod and replaced the 4 unverified text inputs with proper `select`
+  fields: 119 samplers (`_CS_SAMPLER_CHOICES`, RES4LYF namespace) and 11
+  schedulers (`_CS_SCHEDULER_CHOICES`). Baked defaults confirmed valid.
+
+**UI/UX (two iterations, same day):**
+- **Round 1 — mode-only tiles**: the original label redesign packed the full
+  sampler-mode name plus one or two sampler+scheduler pair badges into the
+  ~110px 3-col grid tile, which didn't fit and truncated illegibly (worse
+  with two pairs). First fix: grid tiles dropped to showing only a short mode
+  badge (`TILE_MODE_LABELS`: "Standard"/"TripleK"/"Clownshark"); the full
+  breakdown moved to the expanded caption as label/value rows (`.sched-row`)
+  that wrap instead of truncating.
+- **Round 2 — values back on the tile, smaller font**: mode-only tiles hid
+  too much at a glance, so sampler+scheduler values were added back to the
+  tile itself at a smaller font (8px), still wrapping instead of truncating.
+  Single-pair clips (Standard, and legacy pre-mode videos that only have a
+  `scheduler` value) show just the value with no label — unambiguous with
+  only one pair. Two-pair clips (TripleK's Base/Lightning, Clownshark's
+  High/Low) keep their stage label since that's the only way to tell the two
+  rows apart. Freed up width for this by scoping the ✕ delete-button
+  clearance padding to just the date line (`.tile-dt`) instead of the whole
+  `.tile-foot` column — earlier rows (name, mode badge, sched rows) now use
+  the tile's full width.
+- SW cache bumped to `wan-static-v37`.
+
+---
+
 ### 2026-07-02 (3-way sampler mode: Standard / TripleKSampler / Clownshark)
 
 **Features added:**
