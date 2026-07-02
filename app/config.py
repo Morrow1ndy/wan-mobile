@@ -68,6 +68,122 @@ AVAILABLE_WORKFLOWS: list[str] = sorted([
     if f.name != "ram_clear.json"
 ])
 
+# ---------------------------------------------------------------------------
+# Sampler modes — three selectable workflow files, one per sampler node the
+# graph exposes. Unlike the old bf16/GGUF pair (identical node IDs, only the
+# model loader differed), these three have genuinely different graphs: 56
+# nodes are shared byte-for-byte (steps/cfg/loras/seed/prompt/etc.), but each
+# adds its own distinct sampler node(s):
+#   Standard    -> KSamplerAdvanced x2 (nodes 128 High / 129 Low)
+#   TripleK     -> TripleKSamplerWan22LightningAdvanced x1 (node 290, no High/Low split)
+#   Clownshark  -> ClownsharKSampler_Beta x2 (nodes 209 High / 210 Low)
+# PARAM_FIELDS entries below use a "workflows" key to say which file(s) they
+# apply to; fields with no "workflows" key apply to all three (see
+# workflow.py build_workflow, which skips fields that don't match).
+WF_STANDARD = "YAW_2.2_bf16.json"
+WF_TRIPLEK = "YAW_2.2_bf16_TripleK.json"
+WF_CLOWNSHARK = "YAW_2.2_bf16_Clownshark.json"
+
+# Human-readable labels for the workflow-tab UI and the "sampler mode" card badge.
+WORKFLOW_LABELS = {
+    WF_STANDARD: "Standard Sampler",
+    WF_TRIPLEK: "TripleKSampler",
+    WF_CLOWNSHARK: "Clownshark Sampler",
+}
+
+# Ground-truth sampler/scheduler enums from ComfyUI's /object_info/KSamplerAdvanced
+# on the deployed pod image (nextdiffusionai/comfyui-sageattention:cuda12.8-v1),
+# in ComfyUI's own order. Shared by Standard and TripleKSampler (its baked
+# defaults, "euler"/"simple", are both valid members of these lists). Re-query
+# that endpoint on a live pod if the image is updated. Clownshark uses a
+# different custom node with its own unverified namespace — see its text-input
+# fields further below.
+_SAMPLER_CHOICES = ["euler", "euler_cfg_pp", "euler_ancestral",
+                     "euler_ancestral_cfg_pp", "heun", "heunpp2", "exp_heun_2_x0",
+                     "exp_heun_2_x0_sde", "dpm_2", "dpm_2_ancestral", "lms",
+                     "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral",
+                     "dpmpp_2s_ancestral_cfg_pp", "dpmpp_sde", "dpmpp_sde_gpu",
+                     "dpmpp_2m", "dpmpp_2m_cfg_pp", "dpmpp_2m_sde",
+                     "dpmpp_2m_sde_gpu", "dpmpp_2m_sde_heun", "dpmpp_2m_sde_heun_gpu",
+                     "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm", "lcm", "ipndm",
+                     "ipndm_v", "deis", "res_multistep", "res_multistep_cfg_pp",
+                     "res_multistep_ancestral", "res_multistep_ancestral_cfg_pp",
+                     "gradient_estimation", "gradient_estimation_cfg_pp", "er_sde",
+                     "seeds_2", "seeds_3", "sa_solver", "sa_solver_pece", "ddim",
+                     "uni_pc", "uni_pc_bh2", "legacy_rk", "rk", "rk_beta",
+                     "deis_3m_ode", "deis_2m_ode", "deis_3m", "deis_2m",
+                     "res_6s_ode", "res_5s_ode", "res_3s_ode", "res_2s_ode",
+                     "res_3m_ode", "res_2m_ode", "res_6s", "res_5s", "res_3s",
+                     "res_2s", "res_3m", "res_2m"]
+_SCHEDULER_CHOICES = ["simple", "sgm_uniform", "karras", "exponential",
+                       "ddim_uniform", "beta", "normal", "linear_quadratic",
+                       "kl_optimal", "bong_tangent", "beta57"]
+
+# ClownsharKSampler_Beta's sampler_name/scheduler enums — a different custom
+# node with its own namespace (RES4LYF), verified via /object_info on a live
+# pod (nextdiffusionai/comfyui-sageattention:cuda12.8-v1). Its `scheduler`
+# enum happens to be identical to _SCHEDULER_CHOICES above but is kept
+# separate since the two nodes are independent and could diverge.
+_CS_SAMPLER_CHOICES = ["none", "multistep/res_2m", "multistep/res_3m",
+                        "multistep/dpmpp_2m", "multistep/dpmpp_3m",
+                        "multistep/abnorsett_2m", "multistep/abnorsett_3m",
+                        "multistep/abnorsett_4m", "multistep/deis_2m",
+                        "multistep/deis_3m", "multistep/deis_4m",
+                        "exponential/res_2s_rkmk2e", "exponential/res_2s",
+                        "exponential/res_2s_stable", "exponential/res_3s",
+                        "exponential/res_3s_non-monotonic", "exponential/res_3s_alt",
+                        "exponential/res_3s_cox_matthews", "exponential/res_3s_lie",
+                        "exponential/res_3s_sunstar", "exponential/res_3s_strehmel_weiner",
+                        "exponential/res_4s_krogstad", "exponential/res_4s_krogstad_alt",
+                        "exponential/res_4s_strehmel_weiner", "exponential/res_4s_strehmel_weiner_alt",
+                        "exponential/res_4s_cox_matthews", "exponential/res_4s_cfree4",
+                        "exponential/res_4s_friedli", "exponential/res_4s_minchev",
+                        "exponential/res_4s_munthe-kaas", "exponential/res_5s",
+                        "exponential/res_5s_hochbruck-ostermann", "exponential/res_6s",
+                        "exponential/res_8s", "exponential/res_8s_alt", "exponential/res_10s",
+                        "exponential/res_15s", "exponential/res_16s", "exponential/etdrk2_2s",
+                        "exponential/etdrk3_a_3s", "exponential/etdrk3_b_3s",
+                        "exponential/etdrk4_4s", "exponential/etdrk4_4s_alt",
+                        "exponential/dpmpp_2s", "exponential/dpmpp_sde_2s",
+                        "exponential/dpmpp_3s", "exponential/lawson2a_2s",
+                        "exponential/lawson2b_2s", "exponential/lawson4_4s",
+                        "exponential/lawson41-gen_4s", "exponential/lawson41-gen-mod_4s",
+                        "exponential/ddim", "hybrid/pec423_2h2s", "hybrid/pec433_2h3s",
+                        "hybrid/abnorsett2_1h2s", "hybrid/abnorsett3_2h2s",
+                        "hybrid/abnorsett4_3h2s", "hybrid/lawson42-gen-mod_1h4s",
+                        "hybrid/lawson43-gen-mod_2h4s", "hybrid/lawson44-gen-mod_3h4s",
+                        "hybrid/lawson45-gen-mod_4h4s", "linear/ralston_2s",
+                        "linear/ralston_3s", "linear/ralston_4s", "linear/midpoint_2s",
+                        "linear/heun_2s", "linear/heun_3s", "linear/houwen-wray_3s",
+                        "linear/kutta_3s", "linear/ssprk3_3s", "linear/ssprk4_4s",
+                        "linear/rk38_4s", "linear/rk4_4s", "linear/rk5_7s", "linear/rk6_7s",
+                        "linear/bogacki-shampine_4s", "linear/bogacki-shampine_7s",
+                        "linear/dormand-prince_6s", "linear/dormand-prince_13s",
+                        "linear/tsi_7s", "linear/euler", "diag_implicit/irk_exp_diag_2s",
+                        "diag_implicit/kraaijevanger_spijker_2s", "diag_implicit/qin_zhang_2s",
+                        "diag_implicit/pareschi_russo_2s", "diag_implicit/pareschi_russo_alt_2s",
+                        "diag_implicit/crouzeix_2s", "diag_implicit/crouzeix_3s",
+                        "diag_implicit/crouzeix_3s_alt", "fully_implicit/gauss-legendre_2s",
+                        "fully_implicit/gauss-legendre_3s", "fully_implicit/gauss-legendre_4s",
+                        "fully_implicit/gauss-legendre_4s_alternating_a",
+                        "fully_implicit/gauss-legendre_4s_ascending_a",
+                        "fully_implicit/gauss-legendre_4s_alt", "fully_implicit/gauss-legendre_5s",
+                        "fully_implicit/gauss-legendre_5s_ascending", "fully_implicit/radau_ia_2s",
+                        "fully_implicit/radau_ia_3s", "fully_implicit/radau_iia_2s",
+                        "fully_implicit/radau_iia_3s", "fully_implicit/radau_iia_3s_alt",
+                        "fully_implicit/radau_iia_5s", "fully_implicit/radau_iia_7s",
+                        "fully_implicit/radau_iia_9s", "fully_implicit/radau_iia_11s",
+                        "fully_implicit/lobatto_iiia_2s", "fully_implicit/lobatto_iiia_3s",
+                        "fully_implicit/lobatto_iiia_4s", "fully_implicit/lobatto_iiib_2s",
+                        "fully_implicit/lobatto_iiib_3s", "fully_implicit/lobatto_iiib_4s",
+                        "fully_implicit/lobatto_iiic_2s", "fully_implicit/lobatto_iiic_3s",
+                        "fully_implicit/lobatto_iiic_4s", "fully_implicit/lobatto_iiic_star_2s",
+                        "fully_implicit/lobatto_iiic_star_3s", "fully_implicit/lobatto_iiid_2s",
+                        "fully_implicit/lobatto_iiid_3s"]
+_CS_SCHEDULER_CHOICES = ["simple", "sgm_uniform", "karras", "exponential",
+                          "ddim_uniform", "beta", "normal", "linear_quadratic",
+                          "kl_optimal", "bong_tangent", "beta57"]
+
 
 # ---------------------------------------------------------------------------
 # Workflow parameter map  (wired to workflows/YAW_2.2.json)
@@ -236,44 +352,63 @@ PARAM_FIELDS = [
      "when": {"key": "lora_l_6", "is": True},
      "targets": [{"node_id": "142", "path": ["lora_6", "strength"]}]},
 
-    # ---- sampler / scheduler — single selection writes to both High (128) and Low (129) KSamplers ----
-    # Choices are the exact ground-truth enums from ComfyUI's
-    # /object_info/KSamplerAdvanced on the deployed pod image
-    # (nextdiffusionai/comfyui-sageattention:cuda12.8-v1), in ComfyUI's own
-    # order. Re-query that endpoint on a live pod if the image is updated.
+    # ---- sampler / scheduler ----------------------------------------------
+    # Standard Sampler (KSamplerAdvanced) — one pair for both High (128) and Low (129).
     {"key": "sampler", "label": "Sampler", "type": "select", "fmt": "str",
-     "choices": ["euler", "euler_cfg_pp", "euler_ancestral",
-                 "euler_ancestral_cfg_pp", "heun", "heunpp2", "exp_heun_2_x0",
-                 "exp_heun_2_x0_sde", "dpm_2", "dpm_2_ancestral", "lms",
-                 "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral",
-                 "dpmpp_2s_ancestral_cfg_pp", "dpmpp_sde", "dpmpp_sde_gpu",
-                 "dpmpp_2m", "dpmpp_2m_cfg_pp", "dpmpp_2m_sde",
-                 "dpmpp_2m_sde_gpu", "dpmpp_2m_sde_heun", "dpmpp_2m_sde_heun_gpu",
-                 "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm", "lcm", "ipndm",
-                 "ipndm_v", "deis", "res_multistep", "res_multistep_cfg_pp",
-                 "res_multistep_ancestral", "res_multistep_ancestral_cfg_pp",
-                 "gradient_estimation", "gradient_estimation_cfg_pp", "er_sde",
-                 "seeds_2", "seeds_3", "sa_solver", "sa_solver_pece", "ddim",
-                 "uni_pc", "uni_pc_bh2", "legacy_rk", "rk", "rk_beta",
-                 "deis_3m_ode", "deis_2m_ode", "deis_3m", "deis_2m",
-                 "res_6s_ode", "res_5s_ode", "res_3s_ode", "res_2s_ode",
-                 "res_3m_ode", "res_2m_ode", "res_6s", "res_5s", "res_3s",
-                 "res_2s", "res_3m", "res_2m"],
+     "workflows": [WF_STANDARD],
+     "choices": _SAMPLER_CHOICES,
      "default": "euler",
      "targets": [{"node_id": "128", "input": "sampler_name"},
                  {"node_id": "129", "input": "sampler_name"}]},
 
-    # Scheduler is multi-selectable: the frontend fires one /api/generate
-    # request per selected scheduler (all sharing the same resolved seed), so
-    # each individual request still carries a single plain scheduler string —
+    # Scheduler is multi-selectable (Standard + TripleKSampler's Base scheduler
+    # only — see below): the frontend fires one /api/generate request per
+    # selected scheduler (all sharing the same resolved seed), so each
+    # individual request still carries a single plain scheduler string —
     # "multiselect" only changes how the Generate-tab UI renders/collects it.
     {"key": "scheduler", "label": "Scheduler", "type": "multiselect", "fmt": "str",
-     "choices": ["simple", "sgm_uniform", "karras", "exponential",
-                 "ddim_uniform", "beta", "normal", "linear_quadratic",
-                 "kl_optimal", "bong_tangent", "beta57"],
+     "workflows": [WF_STANDARD],
+     "choices": _SCHEDULER_CHOICES,
      "default": "beta57",
      "targets": [{"node_id": "128", "input": "scheduler"},
                  {"node_id": "129", "input": "scheduler"}]},
+
+    # TripleKSampler (node 290) — two INDEPENDENT pairs (Base / Lightning, its
+    # own terminology — not a High/Low split). Only Base's scheduler is
+    # multi-selectable; Lightning's sampler+scheduler are single-select.
+    {"key": "sampler_base", "label": "Sampler (Base)", "type": "select", "fmt": "str",
+     "workflows": [WF_TRIPLEK], "choices": _SAMPLER_CHOICES, "default": "euler",
+     "targets": [{"node_id": "290", "input": "base_sampler"}]},
+    {"key": "scheduler_base", "label": "Scheduler (Base)", "type": "multiselect", "fmt": "str",
+     "workflows": [WF_TRIPLEK], "choices": _SCHEDULER_CHOICES, "default": "simple",
+     "targets": [{"node_id": "290", "input": "base_scheduler"}]},
+    {"key": "sampler_lightning", "label": "Sampler (Lightning)", "type": "select", "fmt": "str",
+     "workflows": [WF_TRIPLEK], "choices": _SAMPLER_CHOICES, "default": "euler",
+     "targets": [{"node_id": "290", "input": "lightning_sampler"}]},
+    {"key": "scheduler_lightning", "label": "Scheduler (Lightning)", "type": "select", "fmt": "str",
+     "workflows": [WF_TRIPLEK], "choices": _SCHEDULER_CHOICES, "default": "simple",
+     "targets": [{"node_id": "290", "input": "lightning_scheduler"}]},
+
+    # Clownshark Sampler (ClownsharKSampler_Beta, nodes 209 High / 210 Low) —
+    # genuinely independent High/Low pair, and NOT multi-selectable (per
+    # request, multi-scheduler is Standard/TripleK only). Its sampler/scheduler
+    # namespace ("multistep/res_2m", "bong_tangent", ...) is a different node
+    # (ClownsharKSampler_Beta, RES4LYF) from KSamplerAdvanced's — verified via
+    # /object_info/ClownsharKSampler_Beta on a live pod
+    # (nextdiffusionai/comfyui-sageattention:cuda12.8-v1); see
+    # _CS_SAMPLER_CHOICES / _CS_SCHEDULER_CHOICES above.
+    {"key": "cs_sampler_h", "label": "Sampler (High)", "type": "select", "fmt": "str",
+     "workflows": [WF_CLOWNSHARK], "choices": _CS_SAMPLER_CHOICES, "default": "multistep/res_2m",
+     "targets": [{"node_id": "209", "input": "sampler_name"}]},
+    {"key": "cs_scheduler_h", "label": "Scheduler (High)", "type": "select", "fmt": "str",
+     "workflows": [WF_CLOWNSHARK], "choices": _CS_SCHEDULER_CHOICES, "default": "bong_tangent",
+     "targets": [{"node_id": "209", "input": "scheduler"}]},
+    {"key": "cs_sampler_l", "label": "Sampler (Low)", "type": "select", "fmt": "str",
+     "workflows": [WF_CLOWNSHARK], "choices": _CS_SAMPLER_CHOICES, "default": "exponential/res_2s",
+     "targets": [{"node_id": "210", "input": "sampler_name"}]},
+    {"key": "cs_scheduler_l", "label": "Scheduler (Low)", "type": "select", "fmt": "str",
+     "workflows": [WF_CLOWNSHARK], "choices": _CS_SCHEDULER_CHOICES, "default": "bong_tangent",
+     "targets": [{"node_id": "210", "input": "scheduler"}]},
 
     # ---- seed: 0 (or blank) = randomize each run; positive int = fixed seed ----
     {"key": "_seed", "label": "Seed", "type": "seed", "fmt": "seed", "default": 0,

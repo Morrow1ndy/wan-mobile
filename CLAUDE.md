@@ -155,19 +155,22 @@ value wins over anything in a baked-in `.env`.
 ## Workflow ↔ UI parameter map (FRAGILE — read before editing generation)
 
 `config.py` `PARAM_FIELDS` maps each UI control to specific **node IDs** inside
-the workflow JSON files. Two workflows are available; the user selects between
-them via the workflow tab in the Generate UI:
+the workflow JSON files. Three **sampler-mode** workflows are available; the
+user picks one via the workflow tab in the Generate UI. Each mode is a
+genuinely different node graph (ComfyUI's API-format export only serializes
+whichever sampler branch is active), sharing 56 common nodes plus its own
+sampler node(s):
 
-| File | Loader | Default? |
-|------|--------|----------|
-| `workflows/YAW_2.2_bf16.json` | UNETLoader (bf16 weights) | ✓ (`WORKFLOW_FILE`) |
-| `workflows/YAW_2.2_GGUF.json` | UnetLoaderGGUF (quantised) | selectable in UI |
+| File (`WF_*` in `config.py`) | Sampler node(s) | Mode label (`WORKFLOW_LABELS`) | Default? |
+|------|--------|----------|----------|
+| `workflows/YAW_2.2_bf16.json` (`WF_STANDARD`) | `128`/`129` `KSamplerAdvanced` (High/Low) | Standard Sampler | ✓ (`WORKFLOW_FILE`) |
+| `workflows/YAW_2.2_bf16_TripleK.json` (`WF_TRIPLEK`) | `290` `TripleKSamplerWan22LightningAdvanced` | TripleKSampler | selectable in UI |
+| `workflows/YAW_2.2_bf16_Clownshark.json` (`WF_CLOWNSHARK`) | `209`/`210` `ClownsharKSampler_Beta` (High/Low) | Clownshark Sampler | selectable in UI |
 
-**All param node IDs are identical between the two files** — only the model
-loader nodes differ. So `PARAM_FIELDS` (and `IMAGE_NODE` / `OUTPUT_NODE_ID`)
-applies to both workflows without any conditional logic.
+The GGUF workflow/toggle was removed — bf16 only, in all three modes.
 
-Key bindings (same node IDs in both files):
+**Shared nodes** (`IMAGE_NODE` / `OUTPUT_NODE_ID`, identical across all three
+files, no conditional logic needed):
 - `IMAGE_NODE` = node `166` (LoadImage — receives the uploaded image)
 - `OUTPUT_NODE_ID` = node `145` (VHS_VideoCombine — the saved video)
 - Steps/CFG/Last-Step write to **two** source nodes each (an in-graph switch),
@@ -176,10 +179,45 @@ Key bindings (same node IDs in both files):
   enables/disables the LoRA by setting strength (0 = off). CFG is forced to 1 when on.
 - Seed is auto-randomized every run (`_seed` field → node `158`).
 
-⚠️ **If you re-export either workflow from ComfyUI, node IDs change** and every
-`node_id` in `PARAM_FIELDS` (plus `IMAGE_NODE` / `OUTPUT_NODE_ID`) must be updated
-or generation silently breaks. `workflow.py` builds the final prompt from this map.
-Re-check **both** files if you update node IDs — they must stay in sync.
+**Per-mode fields** are scoped with a `"workflows": [WF_*]` key on the
+`PARAM_FIELDS` entry — both `workflow.py`'s `build_workflow()` (skips any
+field whose `workflows` list excludes the resolved workflow file, so a stale
+value from another mode is silently ignored instead of KeyError'ing on a
+node that doesn't exist in that graph) and the frontend's `_visibleFields()`
+enforce this:
+- **Standard**: `sampler`/`scheduler` → both `128` and `129`. `scheduler` is
+  `multiselect` (fires one generation per selected scheduler, same seed).
+- **TripleKSampler**: independent `sampler_base`/`scheduler_base` (→ node
+  `290` `base_sampler`/`base_scheduler`) and `sampler_lightning`/
+  `scheduler_lightning` (→ `lightning_sampler`/`lightning_scheduler`). Only
+  `scheduler_base` is `multiselect` — Lightning stays single-select (avoids
+  an N×M cross-product fan-out).
+- **Clownshark**: independent High (`cs_sampler_h`/`cs_scheduler_h` → node
+  `209`) and Low (`cs_sampler_l`/`cs_scheduler_l` → node `210`) pairs, plain
+  `select` (never multiselect). `sampler_name`/`scheduler` choices
+  (`_CS_SAMPLER_CHOICES` — 119 entries / `_CS_SCHEDULER_CHOICES` — 11 entries)
+  verified against a live pod's `/object_info/ClownsharKSampler_Beta` (a
+  different, RES4LYF-namespaced node from `KSamplerAdvanced`). Confirmed via
+  static graph inspection that `ClownOptions Detail Boost` (node `216`) is
+  **not wired into any of the three workflow files** — dead/unused input in
+  all of them, not just Clownshark.
+
+⚠️ **If you re-export any of the three workflows from ComfyUI, node IDs
+change** and every `node_id` in `PARAM_FIELDS` (plus `IMAGE_NODE` /
+`OUTPUT_NODE_ID`) must be updated or generation silently breaks.
+`workflow.py` builds the final prompt from this map. Re-check **all three**
+files if you update node IDs — the 56 shared nodes must stay in sync.
+
+**Sampler-mode + sampler/scheduler labels on video cards**: every
+prompt_id's chosen `workflow_file` and sampler/scheduler value(s) are
+persisted via `ps.save_params()` at generate time and surfaced identically
+by `_job_public()` (in-progress card), `pod_outputs()` (session/completed
+card), and `star_video()` (saved card) in `main.py` — same field names
+(`workflow_file`, `sampler`, `scheduler`, `sampler_base`, `scheduler_base`,
+`sampler_lightning`, `scheduler_lightning`, `cs_sampler_h`, `cs_scheduler_h`,
+`cs_sampler_l`, `cs_scheduler_l`) from all three, so `app.js`'s
+`samplerModeBadge()` / `samplerPairBadges()` render consistently across
+in-progress, session, and saved cards without special-casing any of them.
 
 ---
 
@@ -341,6 +379,76 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-07-02 (3-way sampler mode: Standard / TripleKSampler / Clownshark)
+
+**Features added:**
+- **Sampler mode switch** — the workflow tab in Generate now switches between
+  three genuinely different node graphs instead of the old bf16/GGUF loader
+  toggle (GGUF dropped entirely — bf16 only, in all three modes):
+  - **Standard Sampler** (`YAW_2.2_bf16.json`) — unchanged: one `sampler` +
+    `scheduler` pair written to both `KSamplerAdvanced` nodes (`128`/`129`).
+    `scheduler` stays `multiselect` (fires one generation per selected
+    scheduler, sharing one seed).
+  - **TripleKSampler** (new `YAW_2.2_bf16_TripleK.json`) — independent
+    **Base** (`sampler_base`/`scheduler_base`) and **Lightning**
+    (`sampler_lightning`/`scheduler_lightning`) pairs, writing to node `290`'s
+    (`TripleKSamplerWan22LightningAdvanced`) `base_*`/`lightning_*` inputs.
+    Only `scheduler_base` is `multiselect`; Lightning stays single-select to
+    avoid an N×M cross-product fan-out.
+  - **Clownshark Sampler** (new `YAW_2.2_bf16_Clownshark.json`) — independent
+    High (`cs_sampler_h`/`cs_scheduler_h` → node `209`) and Low
+    (`cs_sampler_l`/`cs_scheduler_l` → node `210`) pairs on
+    `ClownsharKSampler_Beta`, never multiselect. Confirmed via static graph
+    inspection that `ClownOptions Detail Boost` (node `216`) is unwired in
+    all three workflow files (dead input, not just here).
+  - All three modes share 56 common nodes (`IMAGE_NODE`=`166`,
+    `OUTPUT_NODE_ID`=`145`, steps/CFG/lightx2v/seed, etc.) — see the Workflow
+    ↔ UI parameter map section above for the full field/node breakdown.
+  - `PARAM_FIELDS` entries are scoped to a mode via a new `"workflows": [...]`
+    key; `workflow.py`'s `build_workflow()` skips any field not in the
+    resolved workflow's list (so a stale cross-mode value can't KeyError on
+    a node the graph doesn't have), and the frontend's new `_visibleFields()`
+    does the same for rendering. Switching mode tabs mid-session preserves
+    shared field values (steps/CFG/prompt/etc.) via capture-then-reapply.
+- **Clownshark's sampler/scheduler enums verified against a live pod** —
+  queried `/object_info/ClownsharKSampler_Beta` on the running pod
+  (`nextdiffusionai/comfyui-sageattention:cuda12.8-v1`) and replaced the
+  previously-unverified free-text inputs with proper `select` dropdowns:
+  119 samplers (`_CS_SAMPLER_CHOICES`, RES4LYF namespace — e.g.
+  `multistep/res_2m`, `exponential/res_2s`, distinct from Standard/TripleK's
+  `KSamplerAdvanced` enum) and 11 schedulers (`_CS_SCHEDULER_CHOICES`). The
+  workflow's baked defaults (`multistep/res_2m`, `exponential/res_2s`,
+  `bong_tangent`) were confirmed valid members of the verified lists.
+- **Video card labels reworked** — the old single colour-coded scheduler
+  badge (`schedBadge`/`SCHED_CLASSES`) is replaced by two new badges on every
+  card (grid tile + expanded, session + saved + **in-progress/generating**):
+  a `samplerModeBadge()` showing which mode produced the clip ("Standard
+  Sampler" / "TripleKSampler" / "Clownshark Sampler", from `workflow_file` via
+  `CFG.workflow_labels`) stacked above `samplerPairBadges()` showing the
+  actual sampler+scheduler pair(s) — one pair for Standard, two labelled
+  pairs ("Base"/"Lightning" or "High"/"Low") for TripleK/Clownshark. No more
+  colour-coding by scheduler value; badges are one flat neutral style
+  (`.sched-badge` / `.mode-badge` in `styles.css`).
+- **Generation Time restored to the Details overlay** (between Seed and
+  Prompt) but intentionally **not** shown on any card — `GET /api/params/{id}`
+  now injects `_duration_secs` (computed the same way `pod_outputs()`
+  computes clip duration) alongside the raw saved params; `showDetails()`
+  renders it as a synthesized row that isn't a real `PARAM_FIELD` (nothing to
+  write back).
+- **Labels now consistent across in-progress and completed cards** — the
+  in-progress "generating…" card (`upsertActiveCard()`) previously showed no
+  sampler/mode info at all, since `_job_public()` only returned bare job
+  state. `_job_public()` now also reads `ps.get_params()` (saved at generate
+  time, before the job even starts) and returns the same
+  `workflow_file`/`sampler`/`scheduler`/`sampler_base`/`scheduler_base`/
+  `sampler_lightning`/`scheduler_lightning`/`cs_sampler_h`/`cs_scheduler_h`/
+  `cs_sampler_l`/`cs_scheduler_l` fields as `pod_outputs()` and `star_video()`,
+  so `samplerModeBadge()`/`samplerPairBadges()` render identically on a video
+  from the moment it starts generating through session view through starring.
+- SW cache bumped to `wan-static-v35`.
 
 ---
 

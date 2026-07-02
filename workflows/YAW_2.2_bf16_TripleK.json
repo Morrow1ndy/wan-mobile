@@ -1,0 +1,912 @@
+{
+  "106": {
+    "inputs": {
+      "clip_name": "umt5_xxl_fp16.safetensors",
+      "type": "wan",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "107": {
+    "inputs": {
+      "shift": [
+        "202",
+        0
+      ],
+      "model": [
+        "141",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "ModelSamplingSD3"
+    }
+  },
+  "108": {
+    "inputs": {
+      "shift": [
+        "202",
+        0
+      ],
+      "model": [
+        "142",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "ModelSamplingSD3"
+    }
+  },
+  "117": {
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "126": {
+    "inputs": {
+      "samples": [
+        "299",
+        0
+      ],
+      "vae": [
+        "117",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "131": {
+    "inputs": {
+      "sage_attention": "auto",
+      "allow_compile": false,
+      "model": [
+        "297",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention (High)"
+    }
+  },
+  "132": {
+    "inputs": {
+      "sage_attention": "auto",
+      "allow_compile": false,
+      "model": [
+        "298",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention (Low)"
+    }
+  },
+  "139": {
+    "inputs": {
+      "Xi": 5,
+      "Xf": 5,
+      "isfloatX": 0
+    },
+    "class_type": "mxSlider",
+    "_meta": {
+      "title": "Length (second)"
+    }
+  },
+  "140": {
+    "inputs": {
+      "expression": "a * 16 + 1",
+      "a": [
+        "139",
+        0
+      ]
+    },
+    "class_type": "MathExpression|pysssss",
+    "_meta": {
+      "title": "Math Expression 🐍"
+    }
+  },
+  "141": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "lora_1": {
+        "on": false,
+        "lora": "dr34ml4yI2V14BHIGHV2.xj77.safetensors",
+        "strength": 0.7
+      },
+      "lora_2": {
+        "on": true,
+        "lora": "NSFW-22-H-e8.safetensors",
+        "strength": 0.6
+      },
+      "lora_3": {
+        "on": false,
+        "lora": "HandjobBlowjobCombo-HIGH-v1.safetensors",
+        "strength": 0.8
+      },
+      "lora_4": {
+        "on": false,
+        "lora": "penis_high_noise.safetensors",
+        "strength": 0.9
+      },
+      "lora_5": {
+        "on": false,
+        "lora": "sh00tz_HN_75.safetensors",
+        "strength": 1
+      },
+      "➕ Add Lora": "",
+      "model": [
+        "131",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)",
+    "_meta": {
+      "title": "LoRA (High)"
+    }
+  },
+  "142": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "lora_1": {
+        "on": false,
+        "lora": "dr34ml4yI2V14BLOWV2.4W6g.safetensors",
+        "strength": 0.7
+      },
+      "lora_2": {
+        "on": true,
+        "lora": "NSFW-22-L-e8.safetensors",
+        "strength": 0.3
+      },
+      "lora_3": {
+        "on": false,
+        "lora": "HandjobBlowjobCombo-LOW-v1.safetensors",
+        "strength": 0.6
+      },
+      "lora_4": {
+        "on": false,
+        "lora": "penis_000009750_low_noise.safetensors",
+        "strength": 0.9
+      },
+      "lora_5": {
+        "on": false,
+        "lora": "jfj-deepthroat-W22-I2V-LN.safetensors",
+        "strength": 0.4
+      },
+      "lora_6": {
+        "on": false,
+        "lora": "sh00tz_LN_75.safetensors",
+        "strength": 1
+      },
+      "➕ Add Lora": "",
+      "model": [
+        "132",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)",
+    "_meta": {
+      "title": "LoRA (Low)"
+    }
+  },
+  "143": {
+    "inputs": {
+      "frame_rate": 16,
+      "loop_count": 0,
+      "filename_prefix": "WANT2V/2026-07-02/155223_",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": false,
+      "images": [
+        "126",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Preview before Post Processing"
+    }
+  },
+  "145": {
+    "inputs": {
+      "frame_rate": [
+        "305",
+        0
+      ],
+      "loop_count": 0,
+      "filename_prefix": "output_2026-07-02/155223_IN",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "357",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Final Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "153": {
+    "inputs": {
+      "Number": "30"
+    },
+    "class_type": "Int",
+    "_meta": {
+      "title": "Steps"
+    }
+  },
+  "158": {
+    "inputs": {
+      "seed": 1060826981677734
+    },
+    "class_type": "Seed (rgthree)",
+    "_meta": {
+      "title": "Seed (rgthree)"
+    }
+  },
+  "161": {
+    "inputs": {
+      "model": "gimmvfi_r_arb_lpips_fp32.safetensors",
+      "precision": "bf16",
+      "torch_compile": false
+    },
+    "class_type": "DownloadAndLoadGIMMVFIModel",
+    "_meta": {
+      "title": "Load GIMMVFI Model"
+    }
+  },
+  "162": {
+    "inputs": {
+      "ds_factor": 1,
+      "interpolation_factor": [
+        "302",
+        0
+      ],
+      "seed": 1339131555,
+      "output_flows": false,
+      "gimmvfi_model": [
+        "161",
+        0
+      ],
+      "images": [
+        "214",
+        0
+      ]
+    },
+    "class_type": "GIMMVFI_interpolate",
+    "_meta": {
+      "title": "🎞️ GIMM-VFI Interpolate"
+    }
+  },
+  "163": {
+    "inputs": {
+      "sharpen_radius": 1,
+      "sigma": 0.43,
+      "alpha": 0.31000000000000005,
+      "image": [
+        "316",
+        0
+      ]
+    },
+    "class_type": "ImageSharpen",
+    "_meta": {
+      "title": "🔪 Image Sharpen"
+    }
+  },
+  "166": {
+    "inputs": {
+      "image": "429154407_913344670242095_52449854403438683_n.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Start Image"
+    }
+  },
+  "168": {
+    "inputs": {
+      "mode": "always",
+      "volume": 0.5,
+      "file": "notify.mp3",
+      "any": [
+        "145",
+        0
+      ]
+    },
+    "class_type": "PlaySound|pysssss",
+    "_meta": {
+      "title": "PlaySound 🐍"
+    }
+  },
+  "169": {
+    "inputs": {
+      "aspect_ratio": "9:16",
+      "target_size": 480,
+      "multiple_of": 128
+    },
+    "class_type": "Width and height from aspect ratio 🪴",
+    "_meta": {
+      "title": "Width and height from aspect ratio 🪴"
+    }
+  },
+  "177": {
+    "inputs": {
+      "unet_name": "Wan2_2-I2V-A14B-HIGH_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "178": {
+    "inputs": {
+      "unet_name": "Wan2_2-I2V-A14B-LOW_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "201": {
+    "inputs": {
+      "value": 3.5
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "CFG"
+    }
+  },
+  "202": {
+    "inputs": {
+      "value": 8
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "Model Shift"
+    }
+  },
+  "203": {
+    "inputs": {
+      "Number": "15"
+    },
+    "class_type": "Int",
+    "_meta": {
+      "title": "Last High Noise Step (usually half Steps)"
+    }
+  },
+  "214": {
+    "inputs": {
+      "image": [
+        "126",
+        0
+      ]
+    },
+    "class_type": "GetImageSizeAndCount",
+    "_meta": {
+      "title": "Get Image Size & Count"
+    }
+  },
+  "216": {
+    "inputs": {
+      "weight": 1,
+      "method": "model",
+      "mode": "none",
+      "eta": 0.5,
+      "start_step": 2,
+      "end_step": 15
+    },
+    "class_type": "ClownOptions_DetailBoost_Beta",
+    "_meta": {
+      "title": "ClownOptions Detail Boost"
+    }
+  },
+  "233": {
+    "inputs": {
+      "lora_name": "Wan_2_2_I2V_A14B_LOW_lightx2v_4step_lora_260412_rank_256_fp16.safetensors",
+      "strength_model": 1,
+      "model": [
+        "108",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "lightx2/ning - LoraLoaderModelOnly (Low)"
+    }
+  },
+  "234": {
+    "inputs": {
+      "lora_name": "Wan_2_2_I2V_A14B_HIGH_lightx2v_4step_lora_260412_rank_256_fp16.safetensors",
+      "strength_model": 2,
+      "model": [
+        "107",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "lightx2/ning - LoraLoaderModelOnly (High)"
+    }
+  },
+  "238": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "CFG"
+    }
+  },
+  "241": {
+    "inputs": {
+      "Number": "10"
+    },
+    "class_type": "Int",
+    "_meta": {
+      "title": "Steps"
+    }
+  },
+  "242": {
+    "inputs": {
+      "Number": "5"
+    },
+    "class_type": "Int",
+    "_meta": {
+      "title": "Last High Noise Step (usually half Steps)"
+    }
+  },
+  "276": {
+    "inputs": {
+      "switch_strategy": "I2V boundary"
+    },
+    "class_type": "SwitchStrategySimple",
+    "_meta": {
+      "title": "Switch Strategy I2V"
+    }
+  },
+  "290": {
+    "inputs": {
+      "seed": [
+        "158",
+        0
+      ],
+      "sigma_shift": [
+        "202",
+        0
+      ],
+      "base_quality_threshold": [
+        "153",
+        0
+      ],
+      "base_steps": -1,
+      "base_cfg": [
+        "201",
+        0
+      ],
+      "base_sampler": "euler",
+      "base_scheduler": "simple",
+      "lightning_start": 1,
+      "lightning_steps": [
+        "241",
+        0
+      ],
+      "lightning_cfg": [
+        "238",
+        0
+      ],
+      "lightning_sampler": "euler",
+      "lightning_scheduler": "simple",
+      "switch_strategy": [
+        "301",
+        0
+      ],
+      "switch_step": -1,
+      "switch_boundary": 0.875,
+      "dry_run": null,
+      "base_high": [
+        "141",
+        0
+      ],
+      "lightning_high": [
+        "312",
+        0
+      ],
+      "lightning_low": [
+        "313",
+        0
+      ],
+      "positive": [
+        "330",
+        0
+      ],
+      "negative": [
+        "330",
+        1
+      ],
+      "latent_image": [
+        "330",
+        2
+      ]
+    },
+    "class_type": "TripleKSamplerWan22LightningAdvanced",
+    "_meta": {
+      "title": "TripleKSampler (Advanced)"
+    }
+  },
+  "292": {
+    "inputs": {
+      "input02": [
+        "169",
+        0
+      ]
+    },
+    "class_type": "EG_WXZ_QH",
+    "_meta": {
+      "title": "Width Switch"
+    }
+  },
+  "293": {
+    "inputs": {
+      "input02": [
+        "169",
+        1
+      ]
+    },
+    "class_type": "EG_WXZ_QH",
+    "_meta": {
+      "title": "Height Switch"
+    }
+  },
+  "294": {
+    "inputs": {
+      "input01": [
+        "238",
+        0
+      ],
+      "input02": [
+        "201",
+        0
+      ]
+    },
+    "class_type": "EG_WXZ_QH",
+    "_meta": {
+      "title": "CFG Switch"
+    }
+  },
+  "295": {
+    "inputs": {
+      "input01": [
+        "242",
+        0
+      ],
+      "input02": [
+        "203",
+        0
+      ]
+    },
+    "class_type": "EG_WXZ_QH",
+    "_meta": {
+      "title": "Last Step Switch"
+    }
+  },
+  "296": {
+    "inputs": {
+      "input01": [
+        "241",
+        0
+      ],
+      "input02": [
+        "153",
+        0
+      ]
+    },
+    "class_type": "EG_WXZ_QH",
+    "_meta": {
+      "title": "Steps Switch"
+    }
+  },
+  "297": {
+    "inputs": {
+      "input01": [
+        "177",
+        0
+      ]
+    },
+    "class_type": "EG_WXZ_QH",
+    "_meta": {
+      "title": "Model Switch (High)"
+    }
+  },
+  "298": {
+    "inputs": {
+      "input01": [
+        "178",
+        0
+      ]
+    },
+    "class_type": "EG_WXZ_QH",
+    "_meta": {
+      "title": "Model Switch (Low)"
+    }
+  },
+  "299": {
+    "inputs": {
+      "input03": [
+        "290",
+        0
+      ]
+    },
+    "class_type": "EG_WXZ_QH",
+    "_meta": {
+      "title": "Latent Switch"
+    }
+  },
+  "300": {
+    "inputs": {
+      "input02": [
+        "276",
+        0
+      ]
+    },
+    "class_type": "EG_WXZ_QH",
+    "_meta": {
+      "title": "Strat Switch"
+    }
+  },
+  "301": {
+    "inputs": {
+      "switch_strategy": [
+        "300",
+        0
+      ]
+    },
+    "class_type": "SwitchStrategyAdvanced",
+    "_meta": {
+      "title": "Switch Strategy (Advanced)"
+    }
+  },
+  "302": {
+    "inputs": {
+      "input02": [
+        "304",
+        0
+      ]
+    },
+    "class_type": "EG_WXZ_QH",
+    "_meta": {
+      "title": "Frame Mult Switch"
+    }
+  },
+  "304": {
+    "inputs": {
+      "Number": "4"
+    },
+    "class_type": "Int",
+    "_meta": {
+      "title": "Int: 4"
+    }
+  },
+  "305": {
+    "inputs": {
+      "input02": [
+        "307",
+        0
+      ]
+    },
+    "class_type": "EG_WXZ_QH",
+    "_meta": {
+      "title": "Framerate Switch"
+    }
+  },
+  "307": {
+    "inputs": {
+      "Number": "60"
+    },
+    "class_type": "Int",
+    "_meta": {
+      "title": "Int: 60"
+    }
+  },
+  "312": {
+    "inputs": {
+      "nag_scale": 11,
+      "nag_alpha": 0.25,
+      "nag_tau": 2.5,
+      "input_type": "default",
+      "model": [
+        "234",
+        0
+      ],
+      "conditioning": [
+        "352",
+        0
+      ]
+    },
+    "class_type": "WanVideoNAG",
+    "_meta": {
+      "title": "WanVideoNAG (High)"
+    }
+  },
+  "313": {
+    "inputs": {
+      "nag_scale": 10.993,
+      "nag_alpha": 0.25,
+      "nag_tau": 2.5,
+      "input_type": "default",
+      "model": [
+        "233",
+        0
+      ],
+      "conditioning": [
+        "352",
+        0
+      ]
+    },
+    "class_type": "WanVideoNAG",
+    "_meta": {
+      "title": "WanVideoNAG (Low)"
+    }
+  },
+  "316": {
+    "inputs": {
+      "input01": [
+        "162",
+        0
+      ]
+    },
+    "class_type": "EG_WXZ_QH",
+    "_meta": {
+      "title": "VFI Switch"
+    }
+  },
+  "330": {
+    "inputs": {
+      "width": [
+        "292",
+        0
+      ],
+      "height": [
+        "293",
+        0
+      ],
+      "length": [
+        "140",
+        0
+      ],
+      "batch_size": 1,
+      "positive": [
+        "351",
+        0
+      ],
+      "negative": [
+        "352",
+        0
+      ],
+      "vae": [
+        "117",
+        0
+      ],
+      "start_image": [
+        "166",
+        0
+      ]
+    },
+    "class_type": "WanFirstLastFrameToVideo",
+    "_meta": {
+      "title": "WanFirstLastFrameToVideo"
+    }
+  },
+  "331": {
+    "inputs": {
+      "start": [
+        "335",
+        0
+      ],
+      "stop": [
+        "214",
+        3
+      ],
+      "frames": [
+        "214",
+        0
+      ]
+    },
+    "class_type": "Frames Slice",
+    "_meta": {
+      "title": "Frames Slice"
+    }
+  },
+  "332": {
+    "inputs": {
+      "images": [
+        "331",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Last Frame"
+    }
+  },
+  "335": {
+    "inputs": {
+      "expression": "a - 1",
+      "a": [
+        "214",
+        3
+      ]
+    },
+    "class_type": "MathExpression|pysssss",
+    "_meta": {
+      "title": "Math Expression 🐍"
+    }
+  },
+  "351": {
+    "inputs": {
+      "text": "nsfwsks, looking directly at the camera, innocent pure style, \n\nshy and innocent eyes, soft gaze with a hint of grievance, always staring at the lens with timid affection,\n\nshe actively and slowly uses her own hands to unfasten, unbutton or pull down the straps of her upper garment, then deliberately opens and removes it herself, taking time to slide the fabric off, fully revealing her bare D-Cup breasts step by step,\n\nonly after her breasts are completely exposed, she gently uses both hands to softly present and display her bare breasts toward the camera in a natural way,\n\nexpression of soft innocent arousal, gentle natural blush on her cheeks, soft naturally parted lips with subtle breathing, upper body remains mostly stable with only slight natural trembling, delicate realistic skin, eyes fixed on the camera the whole time, breasts fully visible and exposed",
+      "clip": [
+        "106",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "352": {
+    "inputs": {
+      "text": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，三条腿，倒着走，动漫，动画，3D，2D",
+      "clip": [
+        "106",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "357": {
+    "inputs": {
+      "grain_intensity": 0.01,
+      "saturation": 0.5,
+      "images": [
+        "163",
+        0
+      ]
+    },
+    "class_type": "FilmGrainLTXV",
+    "_meta": {
+      "title": "🌾 FilmGrainLTXV"
+    }
+  }
+}

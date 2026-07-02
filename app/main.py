@@ -257,6 +257,7 @@ async def get_config():
         "container_disk_gb": config.CONTAINER_DISK_GB,
         "workflows": config.AVAILABLE_WORKFLOWS,
         "default_workflow": config.settings.workflow_file,
+        "workflow_labels": config.WORKFLOW_LABELS,
     }
 
 
@@ -464,6 +465,10 @@ async def generate(
     client_id = uuid.uuid4().hex
     prompt_id = await comfy.queue_prompt(url, workflow, client_id)
 
+    # Record which sampler-mode workflow was actually used, so completed/saved
+    # videos can show the right "sampler mode" badge + sampler/scheduler pair
+    # even after this in-memory JOBS entry expires (persisted params outlive it).
+    values["workflow_file"] = chosen
     ps.save_params(prompt_id, values)
     JOBS[prompt_id] = {
         "status": "running", "progress": 0, "max": 0,
@@ -496,6 +501,8 @@ def _node_titles(workflow: dict) -> dict:
 
 def _job_public(prompt_id: str, job: dict) -> dict:
     """JSON-safe view of a job (omits raw preview bytes + the titles map)."""
+    params = ps.get_params(prompt_id) or {}
+    scheduler = params.get("scheduler") or params.get("scheduler_high") or ""
     return {
         "prompt_id": prompt_id,
         "status": job.get("status"),
@@ -508,6 +515,20 @@ def _job_public(prompt_id: str, job: dict) -> dict:
         "video": job.get("video"),
         "error": job.get("error"),
         "video_name": job.get("video_name", ""),
+        # Same sampler-mode fields as pod_outputs()/star_video() so the
+        # in-progress card shows the same mode + sampler/scheduler badges as
+        # the completed/saved card once it lands.
+        "workflow_file": job.get("workflow_file") or params.get("workflow_file", ""),
+        "sampler": params.get("sampler", ""),
+        "scheduler": scheduler,
+        "sampler_base": params.get("sampler_base", ""),
+        "scheduler_base": params.get("scheduler_base", ""),
+        "sampler_lightning": params.get("sampler_lightning", ""),
+        "scheduler_lightning": params.get("scheduler_lightning", ""),
+        "cs_sampler_h": params.get("cs_sampler_h", ""),
+        "cs_scheduler_h": params.get("cs_scheduler_h", ""),
+        "cs_sampler_l": params.get("cs_sampler_l", ""),
+        "cs_scheduler_l": params.get("cs_scheduler_l", ""),
     }
 
 
@@ -535,7 +556,15 @@ async def generation_params(prompt_id: str):
     params = ps.get_params(prompt_id)
     if params is None:
         raise HTTPException(404, "No params saved for this generation")
-    return params
+    # Inject the actual generation time for the Details overlay. Not a real
+    # PARAM_FIELD (nothing to write back into a workflow), and underscore-
+    # prefixed so it's excluded from the overlay's generic field-row loop —
+    # the frontend renders it as its own dedicated row instead.
+    job = JOBS.get(prompt_id) or {}
+    s, f = job.get("started_at"), job.get("finished_at")
+    stat = ps.get_stats().get(prompt_id, {})
+    duration = round(f - s) if s and f else stat.get("secs")
+    return {**params, "_duration_secs": duration}
 
 
 # Generated clips are write-once (the filename embeds a unique counter / prompt
@@ -606,10 +635,26 @@ async def pod_outputs(pod_id: str, limit: int = 30):
             # scheduler: "scheduler" is the current combined field; "scheduler_high"
             # is the legacy pre-merge key (see 2026-06-25 changelog entry)
             scheduler = params.get("scheduler") or params.get("scheduler_high") or ""
-            items.append({"prompt_id": pid, "input_image": _input_image(entry),
-                          "duration_secs": duration, "completed_at": completed_at,
-                          "is_saved": pid in saved_ids,
-                          "video_name": video_name, "scheduler": scheduler, **vid})
+            items.append({
+                "prompt_id": pid, "input_image": _input_image(entry),
+                "duration_secs": duration, "completed_at": completed_at,
+                "is_saved": pid in saved_ids,
+                "video_name": video_name, "scheduler": scheduler,
+                # Which sampler-mode workflow produced this clip (Standard/
+                # TripleK/Clownshark), plus that mode's sampler+scheduler
+                # values — absent on videos generated before this feature.
+                "workflow_file": (job or {}).get("workflow_file") or params.get("workflow_file", ""),
+                "sampler": params.get("sampler", ""),
+                "sampler_base": params.get("sampler_base", ""),
+                "scheduler_base": params.get("scheduler_base", ""),
+                "sampler_lightning": params.get("sampler_lightning", ""),
+                "scheduler_lightning": params.get("scheduler_lightning", ""),
+                "cs_sampler_h": params.get("cs_sampler_h", ""),
+                "cs_scheduler_h": params.get("cs_scheduler_h", ""),
+                "cs_sampler_l": params.get("cs_sampler_l", ""),
+                "cs_scheduler_l": params.get("cs_scheduler_l", ""),
+                **vid,
+            })
     items.reverse()  # history is chronological -> newest first
     return items
 
@@ -761,6 +806,16 @@ async def star_video(pod_id: str, prompt_id: str, payload: dict = Body(default={
         "duration_secs": stat.get("secs"),
         "video_name": _job.get("video_name", ""),
         "scheduler": scheduler,
+        "workflow_file": _job.get("workflow_file") or params.get("workflow_file", ""),
+        "sampler": params.get("sampler", ""),
+        "sampler_base": params.get("sampler_base", ""),
+        "scheduler_base": params.get("scheduler_base", ""),
+        "sampler_lightning": params.get("sampler_lightning", ""),
+        "scheduler_lightning": params.get("scheduler_lightning", ""),
+        "cs_sampler_h": params.get("cs_sampler_h", ""),
+        "cs_scheduler_h": params.get("cs_scheduler_h", ""),
+        "cs_sampler_l": params.get("cs_sampler_l", ""),
+        "cs_scheduler_l": params.get("cs_scheduler_l", ""),
         # Pod the clip was generated on — lets a permanent "Delete" also purge it
         # from the pod's ComfyUI history (so it can't reappear in the session).
         "pod_id": pod_id,

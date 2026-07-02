@@ -53,7 +53,8 @@ def _passes(field: dict, toggles: dict) -> bool:
 
 def build_workflow(values: dict, image_name: str, workflow_file: str | None = None) -> dict:
     """Return a ready-to-queue workflow: template + user values + image."""
-    wf = load_template(workflow_file)
+    resolved_wf = workflow_file or settings.workflow_file
+    wf = load_template(resolved_wf)
 
     _write(wf, {"node_id": config.IMAGE_NODE["node_id"],
                 "input": config.IMAGE_NODE["input"]}, image_name)
@@ -65,6 +66,13 @@ def build_workflow(values: dict, image_name: str, workflow_file: str | None = No
             toggles[f["key"]] = _as_bool(values.get(f["key"], f.get("default", True)))
 
     for field in config.PARAM_FIELDS:
+        # Some fields (currently sampler/scheduler) only apply to specific
+        # workflow files, since e.g. Standard/TripleK/Clownshark each expose a
+        # different sampler node. Skip fields that don't apply here — without
+        # this, a stray "sampler"/"scheduler" key meant for a different mode
+        # would try to write to a node ID that doesn't exist in this graph.
+        if field.get("workflows") and resolved_wf not in field["workflows"]:
+            continue
         if field.get("type") == "toggle" and not field.get("targets"):
             continue                       # pure condition driver; no node to write
         if not _passes(field, toggles):

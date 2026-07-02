@@ -589,44 +589,30 @@ let FIELDS = [];
 let CFG = {};
 let _selectedWorkflow = ""; // always reset to server default (bf16) on each session
 
-// Convert filename to a short display label: "YAW_2.2_GGUF.json" → "GGUF"
+// Convert filename to a short display label: "YAW_2.2_bf16_TripleK.json" → "TRIPLEK"
+// (fallback only — CFG.workflow_labels normally provides the real label).
 function _workflowLabel(filename) {
   return filename.replace(/\.json$/i, "").split("_").pop().toUpperCase();
 }
 
-function renderWorkflowTabs(workflows, defaultWorkflow) {
-  const container = $("#workflow-tabs");
-  if (!container || workflows.length < 2) {
-    if (container) container.hidden = true;
-    return;
-  }
-  // Restore saved selection or fall back to default
-  if (!_selectedWorkflow || !workflows.includes(_selectedWorkflow)) {
-    _selectedWorkflow = defaultWorkflow || workflows[0];
-  }
-  container.innerHTML = workflows.map((wf) =>
-    `<button class="img-mode-tab${wf === _selectedWorkflow ? " active" : ""}"
-             data-workflow="${esc(wf)}">${esc(_workflowLabel(wf))}</button>`
-  ).join("");
-  container.querySelectorAll(".img-mode-tab").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      _selectedWorkflow = btn.dataset.workflow;
-      container.querySelectorAll(".img-mode-tab").forEach(
-        (b) => b.classList.toggle("active", b === btn)
-      );
-    });
-  });
+// Fields visible for the currently-selected sampler-mode workflow: a field
+// with no "workflows" restriction applies to all modes (shared controls like
+// steps/cfg/loras/seed); one with a "workflows" list only shows when
+// _selectedWorkflow is in it (e.g. Standard/TripleK's sampler+scheduler vs
+// Clownshark's independent High/Low text fields).
+function _visibleFields() {
+  return FIELDS.filter((f) => !f.workflows || f.workflows.includes(_selectedWorkflow));
 }
 
-async function loadConfig() {
-  const cfg = await getJSON("/api/config");
-  CFG = cfg;
-  FIELDS = cfg.fields || [];
-  renderWorkflowTabs(cfg.workflows || [], cfg.default_workflow || "");
-  renderPodFilters();
-  const promptField = FIELDS.find((f) => f.key === "positive");
+// Build the Prompt + params sections for the currently-selected sampler mode.
+// Called on initial load AND every time the workflow tab changes, since each
+// sampler mode exposes a different field set (unlike the old bf16/GGUF choice,
+// which only swapped the model loader and never changed visible fields).
+function renderParamFields() {
+  const visible = _visibleFields();
+  const promptField = visible.find((f) => f.key === "positive");
   $("#prompt-field").innerHTML = promptField ? renderField(promptField) : "";
-  $("#params").innerHTML = FIELDS.filter((f) => f.key !== "positive").map(renderField).join("");
+  $("#params").innerHTML = visible.filter((f) => f.key !== "positive").map(renderField).join("");
   // live value labels for sliders
   $$('input[type="range"]').forEach((r) => {
     const out = $("#val-" + r.dataset.key);
@@ -641,7 +627,62 @@ async function loadConfig() {
   $$("textarea").forEach((ta) =>
     ta.addEventListener("input", resizeTextareas)
   );
-  // 🎲 randomise seed button
+  // Video name input (below seed, outside FIELDS so workflow.py ignores it)
+  $("#params").insertAdjacentHTML("beforeend", `
+    <div class="field" data-fkey="video_name">
+      <label>Video name (optional)
+        <input type="text" data-key="video_name" placeholder="Label this clip (shown on the card)" />
+      </label>
+    </div>
+  `);
+  // Drop multi-select state for fields no longer visible in this mode (e.g.
+  // switching away from Standard/TripleK's multi-select scheduler) so a stale
+  // selection can't leak into a later collectParams() for an unrelated mode.
+  for (const key of Object.keys(_multiSelected)) {
+    if (!visible.some((f) => f.key === key)) delete _multiSelected[key];
+  }
+}
+
+function renderWorkflowTabs(workflows, defaultWorkflow) {
+  const container = $("#workflow-tabs");
+  if (!container || workflows.length < 2) {
+    if (container) container.hidden = true;
+    return;
+  }
+  // Restore saved selection or fall back to default
+  if (!_selectedWorkflow || !workflows.includes(_selectedWorkflow)) {
+    _selectedWorkflow = defaultWorkflow || workflows[0];
+  }
+  const labels = CFG.workflow_labels || {};
+  container.innerHTML = workflows.map((wf) =>
+    `<button class="img-mode-tab${wf === _selectedWorkflow ? " active" : ""}"
+             data-workflow="${esc(wf)}">${esc(labels[wf] || _workflowLabel(wf))}</button>`
+  ).join("");
+  container.querySelectorAll(".img-mode-tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.workflow === _selectedWorkflow) return;
+      // Preserve values for fields shared across modes (steps/cfg/loras/seed/
+      // prompt/etc.) instead of resetting the whole form on a mode switch.
+      const carryOver = collectParams();
+      _selectedWorkflow = btn.dataset.workflow;
+      container.querySelectorAll(".img-mode-tab").forEach(
+        (b) => b.classList.toggle("active", b === btn)
+      );
+      renderParamFields();
+      applyParams(carryOver);
+    });
+  });
+}
+
+async function loadConfig() {
+  const cfg = await getJSON("/api/config");
+  CFG = cfg;
+  FIELDS = cfg.fields || [];
+  renderWorkflowTabs(cfg.workflows || [], cfg.default_workflow || "");
+  renderPodFilters();
+  renderParamFields();
+  // 🎲 randomise seed button — delegated on #params so it survives
+  // renderParamFields() re-rendering the section's innerHTML on mode switch.
   $("#params").addEventListener("click", (e) => {
     const btn = e.target.closest(".seed-rand");
     if (!btn) return;
@@ -655,14 +696,6 @@ async function loadConfig() {
     const ta = btn.closest(".prompt-wrap")?.querySelector("textarea");
     if (ta) { ta.value = ""; ta.dispatchEvent(new Event("input")); resizeTextareas(); }
   });
-  // Video name input (below seed, outside FIELDS so workflow.py ignores it)
-  $("#params").insertAdjacentHTML("beforeend", `
-    <div class="field" data-fkey="video_name">
-      <label>Video name (optional)
-        <input type="text" data-key="video_name" placeholder="Label this clip (shown on the card)" />
-      </label>
-    </div>
-  `);
 }
 
 function renderField(f) {
@@ -686,6 +719,8 @@ function renderField(f) {
       .map((c) => `<option value="${c}"${c === f.default ? " selected" : ""}>${c}</option>`)
       .join("");
     inner = `<label>${f.label}<select data-key="${f.key}">${opts}</select></label>`;
+  } else if (f.type === "text") {
+    inner = `<label>${f.label}<input type="text" data-key="${f.key}" value="${esc(f.default ?? "")}" /></label>`;
   } else if (f.type === "multiselect") {
     _initMultiSelect(f);
     const sel = _multiSelected[f.key];
@@ -893,11 +928,14 @@ $("#generate").addEventListener("click", async () => {
   const params = collectParams();
   postJSON("/api/last-params", params).catch(() => {});
 
-  // A multi-select field (currently just "scheduler") fans out into one
-  // /api/generate request per selected value. All requests must share the
-  // same seed — otherwise a blank seed would randomise independently per
-  // request, defeating the point of comparing schedulers on the same noise.
-  const multiField = FIELDS.find((f) => f.type === "multiselect");
+  // A multi-select field (currently just "scheduler", Standard/TripleK only —
+  // Clownshark has no multiselect field so this is naturally a no-op there)
+  // fans out into one /api/generate request per selected value. All requests
+  // must share the same seed — otherwise a blank seed would randomise
+  // independently per request, defeating the point of comparing schedulers on
+  // the same noise. Scoped to fields actually visible in the current mode so a
+  // stale global match can't fire multi-generation for the wrong workflow.
+  const multiField = _visibleFields().find((f) => f.type === "multiselect");
   const multiKey = multiField?.key;
   const variants = multiKey && Array.isArray(params[multiKey]) && params[multiKey].length
     ? params[multiKey]
@@ -1224,17 +1262,51 @@ function fmtDatetimeFull(ts) {
   return `${day} ${month} ${d.getFullYear()}, ${time}`;
 }
 
-// ---- scheduler badge (replaces the old ⏱ duration display on cards) --------
-// The 3 schedulers actually in rotation (simple / beta / beta57) each get a
-// distinct colour; every other scheduler shares one common "other" colour.
-const SCHED_CLASSES = { beta57: "sched-beta57", beta: "sched-beta", simple: "sched-simple" };
+// ---- sampler-mode + sampler/scheduler badges (replaces the old ⏱ duration
+// display on cards) --------------------------------------------------------
 function fmtSchedulerLabel(s) {
-  return s.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  return String(s).split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
-function schedBadge(scheduler, cls) {
-  if (!scheduler) return "";
-  const variant = SCHED_CLASSES[scheduler] || "sched-other";
-  return `<span class="sched-badge ${variant}${cls ? " " + cls : ""}">${esc(fmtSchedulerLabel(scheduler))}</span>`;
+
+// Sampler+scheduler pair badge(s). Standard shows one shared pair; TripleK
+// and Clownshark each show two independent pairs (Base/Lightning and
+// High/Low respectively — different stage names, same "two pairs" shape). No
+// colour-coding — every mode uses the same neutral badge style.
+function samplerPairBadges(it, cls) {
+  const c = cls ? " " + cls : "";
+  const pairRows = (pairs) => pairs
+    .filter(([, s, sch]) => s || sch)
+    .map(([label, s, sch]) => `${label}: ${[s, sch].filter(Boolean).map(fmtSchedulerLabel).join(" / ")}`);
+
+  if (it.cs_sampler_h || it.cs_scheduler_h || it.cs_sampler_l || it.cs_scheduler_l) {
+    const rows = pairRows([
+      ["High", it.cs_sampler_h, it.cs_scheduler_h],
+      ["Low", it.cs_sampler_l, it.cs_scheduler_l],
+    ]);
+    return rows.map((r) => `<span class="sched-badge${c}">${esc(r)}</span>`).join("");
+  }
+  if (it.sampler_base || it.scheduler_base || it.sampler_lightning || it.scheduler_lightning) {
+    const rows = pairRows([
+      ["Base", it.sampler_base, it.scheduler_base],
+      ["Lightning", it.sampler_lightning, it.scheduler_lightning],
+    ]);
+    return rows.map((r) => `<span class="sched-badge${c}">${esc(r)}</span>`).join("");
+  }
+  if (it.sampler || it.scheduler) {
+    const label = [it.sampler, it.scheduler].filter(Boolean).map(fmtSchedulerLabel).join(" / ");
+    return `<span class="sched-badge${c}">${esc(label)}</span>`;
+  }
+  return "";
+}
+
+// "Sampler mode" badge (Standard Sampler / TripleKSampler / Clownshark
+// Sampler), shown above the sampler+scheduler pair. Derived from which
+// workflow file produced the clip — absent for clips generated before this
+// feature (no badge shown, matching the existing "no data, no badge" pattern).
+function samplerModeBadge(it, cls) {
+  const label = (CFG.workflow_labels || {})[it.workflow_file];
+  if (!label) return "";
+  return `<span class="mode-badge${cls ? " " + cls : ""}">${esc(label)}</span>`;
 }
 
 // Build a /view URL for the uploaded input image (its name may carry a subfolder).
@@ -1443,7 +1515,8 @@ function renderSavedOutput(it) {
       <video class="tile-video" data-src="${url}" playsinline preload="none"></video>
       <div class="tile-foot">
         ${name}
-        ${schedBadge(it.scheduler, "tile-sched")}
+        ${samplerModeBadge(it, "tile-sched")}
+        ${samplerPairBadges(it, "tile-sched")}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
       </div>
       <button class="zoom-back">← Back</button>
@@ -1456,7 +1529,8 @@ function renderSavedOutput(it) {
       <div class="cap-meta">
         ${name}
         ${dtFull ? `<span class="out-dt">${dtFull}</span>` : ""}
-        ${schedBadge(it.scheduler)}
+        ${samplerModeBadge(it)}
+        ${samplerPairBadges(it)}
       </div>
       <div class="out-actions">
         <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
@@ -1489,7 +1563,8 @@ function renderOutput(podId, it) {
       <video class="tile-video" data-src="${url}" playsinline preload="none"></video>
       <div class="tile-foot">
         ${name}
-        ${schedBadge(it.scheduler, "tile-sched")}
+        ${samplerModeBadge(it, "tile-sched")}
+        ${samplerPairBadges(it, "tile-sched")}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
       </div>
       <button class="zoom-back">← Back</button>
@@ -1503,7 +1578,8 @@ function renderOutput(podId, it) {
       <div class="cap-meta">
         ${name}
         ${dtFull ? `<span class="out-dt">${dtFull}</span>` : ""}
-        ${schedBadge(it.scheduler)}
+        ${samplerModeBadge(it)}
+        ${samplerPairBadges(it)}
       </div>
       <div class="out-actions">
         <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
@@ -2056,7 +2132,7 @@ async function showDetails(promptId) {
   // Label aliases for legacy (pre-combined) sampler/scheduler keys
   const LEGACY_LABELS = { sampler_high: "Sampler", scheduler_high: "Scheduler" };
   // Keys to always hide in details (redundant, internal, or metadata-only)
-  const HIDDEN_KEYS = new Set(["sampler_low", "scheduler_low", "video_name"]);
+  const HIDDEN_KEYS = new Set(["sampler_low", "scheduler_low", "video_name", "workflow_file"]);
 
   function _detailBool(v) {
     if (v === true || v === 1) return true;
@@ -2075,30 +2151,42 @@ async function showDetails(promptId) {
     }
     return true;
   }
+  function buildRow([key, val]) {
+    const field = fields.find((f) => f.key === key);
+    const label = LEGACY_LABELS[key] || (field ? field.label : key.replace(/_/g, " "));
+    const isSeed = key === "_seed";
+    const seedNum = isSeed ? Number(val) : 0;
+    const display = isSeed && seedNum <= 0 ? "— (not captured)" : esc(String(val));
+    const useBtn = isSeed && seedNum > 0
+      ? `<button class="ghost small detail-use-seed" data-seed="${seedNum}" style="margin-top:6px;font-size:12px">↑ Use this seed</button>`
+      : "";
+    return `<div class="detail-row">
+      <span class="detail-key">${esc(label)}</span>
+      <span class="detail-val">${display}</span>
+      ${useBtn}
+    </div>`;
+  }
 
+  // Row order: seed, then generation time (not a real PARAM_FIELD — injected
+  // by the backend, nothing to write back), then prompt, then everything else.
   const entries = Object.entries(params);
-  const sorted = [
-    ...entries.filter(([k]) => k === "_seed"),
-    ...entries.filter(([k]) => k === "positive"),
-    ...entries.filter(([k]) => k !== "_seed" && k !== "positive"),
-  ];
-  const rows = sorted
-    .filter(([key]) => _shouldShow(key))
-    .map(([key, val]) => {
-      const field = fields.find((f) => f.key === key);
-      const label = LEGACY_LABELS[key] || (field ? field.label : key.replace(/_/g, " "));
-      const isSeed = key === "_seed";
-      const seedNum = isSeed ? Number(val) : 0;
-      const display = isSeed && seedNum <= 0 ? "— (not captured)" : esc(String(val));
-      const useBtn = isSeed && seedNum > 0
-        ? `<button class="ghost small detail-use-seed" data-seed="${seedNum}" style="margin-top:6px;font-size:12px">↑ Use this seed</button>`
-        : "";
-      return `<div class="detail-row">
-        <span class="detail-key">${esc(label)}</span>
-        <span class="detail-val">${display}</span>
-        ${useBtn}
-      </div>`;
-    }).join("");
+  const seedEntry = entries.find(([k]) => k === "_seed");
+  const positiveEntry = entries.find(([k]) => k === "positive");
+  const restEntries = entries.filter(([k]) => k !== "_seed" && k !== "positive" && k !== "_duration_secs");
+
+  const durationRow = params._duration_secs != null
+    ? `<div class="detail-row">
+        <span class="detail-key">Generation Time</span>
+        <span class="detail-val">${esc(fmtElapsed(params._duration_secs))}</span>
+      </div>`
+    : "";
+
+  const rows = [
+    seedEntry && _shouldShow("_seed") ? buildRow(seedEntry) : "",
+    durationRow,
+    positiveEntry && _shouldShow("positive") ? buildRow(positiveEntry) : "",
+    ...restEntries.filter(([key]) => _shouldShow(key)).map(buildRow),
+  ].join("");
 
   const existing = document.querySelector(".details-overlay");
   if (existing) existing.remove();
@@ -2313,6 +2401,8 @@ function upsertActiveCard(podId, j) {
           <span class="gen-badge-tile">queued</span>
           <div class="tile-foot">
             ${nameHtml}
+            ${samplerModeBadge(j, "tile-sched")}
+            ${samplerPairBadges(j, "tile-sched")}
             <span class="elapsed tile-dt">queued</span>
             <span class="step tile-dt"></span>
           </div>
