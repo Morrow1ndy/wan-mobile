@@ -782,6 +782,38 @@ async def list_saved():
     return ps.get_saved()
 
 
+@app.post("/api/saved/backfill-scheduler")
+async def backfill_scheduler():
+    """One-time migration: fill in the `scheduler` field on saved videos that
+    predate it, from the generation params recorded at the time (falling back
+    to the legacy `scheduler_high` key). Idempotent — already-set entries are
+    left untouched. Params older than the last 500 generations (see
+    persistence._MAX_PARAMS) are no longer available, so those entries are
+    left without a scheduler and simply show no badge in the UI.
+    """
+    updated = skipped = not_found = 0
+    async with _saved_lock:
+        saved = ps.get_saved()
+        for item in saved:
+            if item.get("scheduler"):
+                skipped += 1
+                continue
+            params = ps.get_params(item["prompt_id"]) or {}
+            scheduler = params.get("scheduler") or params.get("scheduler_high") or ""
+            if scheduler:
+                item["scheduler"] = scheduler
+                updated += 1
+            else:
+                not_found += 1
+        ps.save_saved(saved)
+        try:
+            await asyncio.to_thread(drive.upload_metadata, saved)
+        except Exception:
+            pass
+    return {"updated": updated, "already_set": skipped, "no_params_found": not_found,
+            "total": len(saved)}
+
+
 @app.delete("/api/saved/{prompt_id}")
 async def unstar_video(prompt_id: str):
     async with _saved_lock:
