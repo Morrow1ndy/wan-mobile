@@ -233,6 +233,15 @@ in-progress, session, and saved cards without special-casing any of them.
 
 **Image library state:** `_libPrefix`, `_libSelectMode`, `_libSelected` — library browser with folder navigation, select mode, bulk delete.
 
+**Live job updates:** `connectJobStream(podId)` opens an `EventSource` on
+`GET /api/pods/{pod_id}/stream` (SSE) — this is the only mechanism that
+drives the in-progress "generating…" card; there is no polling `setInterval`
+for it anymore (replaced 2026-06-25). `EventSource` auto-reconnects on any
+drop (background/foreground, network blip), and the first message on every
+new connection carries current server state, so the card self-heals within
+~1s of reconnecting. `tickActive()` (one-shot fetch of `/api/pods/{id}/jobs`)
+still exists only as an immediate fallback while the stream is reconnecting.
+
 **Key state variables:**
 ```js
 _authHeader        // "Basic base64..." or null
@@ -253,7 +262,34 @@ _libSelectMode     // bulk select for image library
 
 **Startup sync** (`_drive_startup_sync`): runs as a background task (not blocking uvicorn startup). Downloads GCS metadata → writes local JSON → streams missing videos to volume. Videos missing at serve time are fetched on demand by `serve_saved_file`.
 
-**Job persistence** (`active_jobs.json`): written at queue/start/terminal states. `_restore_jobs()` on startup re-watches any `status=running` jobs. Jobs auto-expire (only running + last 60s after finish are persisted).
+**In-flight job lifecycle** (`JOBS` dict, `active_jobs.json`, `_watch()`) — this
+is the current mechanism as of 2026-07-02; see that changelog entry for why
+it changed:
+- `_watch()` is the single source of truth for a job's progress: opens a
+  ComfyUI websocket for live progress/preview, and falls back to polling
+  `/history/{prompt_id}` every 2s if the socket drops or never connects.
+- **On every attach** (a fresh `queue_prompt`, or `_restore_jobs()`
+  re-attaching after this process restarts) `_watch()` does **one**
+  `/history/{prompt_id}` check *before* touching the websocket. A fresh
+  websocket only delivers *future* events, so without this check a prompt
+  that already finished while the app was down would sit stuck as
+  `status=running` (duplicating the real completed clip that `pod_outputs()`
+  finds independently), and a prompt still genuinely running would show
+  "queued" forever since `started_at` never gets set without a live progress
+  event. The pre-check resolves an already-finished prompt immediately and
+  backfills `started_at` for one still in progress. It's a no-op for a
+  normal freshly-queued prompt (nothing in ComfyUI's history for it yet).
+- `active_jobs.json`: written at queue/start/terminal states via
+  `_persist_jobs()`. `_restore_jobs()` on startup re-attaches `_watch()` to
+  any `status=running` job. Jobs auto-expire from the file (only running +
+  last 60s after finish are persisted).
+- `_keepalive_loop()`: self-pings this app's **public** Fly URL (not
+  `localhost` — a loopback request never reaches the Fly proxy, so it never
+  counted as inbound traffic and was a silent no-op for months) every 30s
+  while any job is running, so Fly's `auto_stop_machines` doesn't stop this
+  app machine (not the RunPod pod) mid-generation.
+- Client-side delivery is via SSE (`GET /api/pods/{pod_id}/stream`), see
+  "Live job updates" under Frontend Architecture above — not polling.
 
 **Saved video concurrency** (`_saved_lock`): `asyncio.Lock()` serializes star/unstar metadata read-modify-write + GCS upload so concurrent operations don't clobber.
 
