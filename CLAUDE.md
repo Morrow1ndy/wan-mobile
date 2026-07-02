@@ -344,6 +344,23 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-02 (full sampler/scheduler lists from live ComfyUI)
+
+**Changes:**
+- **Sampler + scheduler dropdowns now list the full set** the pod's ComfyUI
+  actually supports. The hand-maintained lists in `config.py` were stale —
+  only 13 of 63 samplers and 10 of 11 schedulers. Spun up a pod once and read
+  the ground truth from `/object_info/KSamplerAdvanced` on the deployed image
+  (`nextdiffusionai/comfyui-sageattention:cuda12.8-v1`), then replaced both
+  `choices` lists verbatim (ComfyUI's own ordering). Samplers → 63 (adds the
+  `_cfg_pp`/`_gpu` variants, `dpm_2*`, `lms`, `deis*`, `res_*` family, `seeds_*`,
+  `sa_solver*`, `rk*`, etc.); schedulers → 11 (adds `bong_tangent`). Defaults
+  unchanged (`euler` / `beta57`). Re-query that endpoint if the pod image is
+  ever updated. SW cache bumped to `wan-static-v32` so clients re-fetch
+  `/api/config`.
+
+---
+
 ### 2026-07-01 (fix broken pod deploy: RunPod config moved to fly.toml)
 
 **Bugs fixed:**
