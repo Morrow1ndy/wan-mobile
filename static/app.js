@@ -1512,6 +1512,15 @@ function _primeVideo(card) {
   _bindVideoEvents(card);
 }
 
+// If a Generation Details overlay is open when the expanded card changes (auto-
+// advance, manual swipe, wheel, or arrow keys), re-open it for the new card
+// instead of leaving it showing the previous clip's params.
+function _refreshOpenDetails(card) {
+  if (document.querySelector(".details-overlay") && card?.dataset.pid) {
+    showDetails(card.dataset.pid);
+  }
+}
+
 // Direction of the last manual navigation (swipe / wheel / arrow key): "up" =
 // next clip, "down" = prev clip. Drives auto-advance-on-finish direction.
 // Defaults to "up" (next) until the user has navigated at all.
@@ -1693,6 +1702,7 @@ function slideTo(current, next, dir) {
 
     _updateNavCounter(next);
     _attachSwipeNav(next);
+    _refreshOpenDetails(next);
   }
 
   next.addEventListener("transitionend", onDone, { once: true });
@@ -1855,6 +1865,7 @@ function _attachSwipeNav(card) {
         }
         _updateNavCounter(next);
         _attachSwipeNav(next);
+        _refreshOpenDetails(next);
       }
 
       next.addEventListener("transitionend", onDone, { once: true });
@@ -1990,8 +2001,9 @@ async function showDetails(promptId) {
 
   const entries = Object.entries(params);
   const sorted = [
+    ...entries.filter(([k]) => k === "_seed"),
     ...entries.filter(([k]) => k === "positive"),
-    ...entries.filter(([k]) => k !== "positive"),
+    ...entries.filter(([k]) => k !== "_seed" && k !== "positive"),
   ];
   const rows = sorted
     .filter(([key]) => _shouldShow(key))

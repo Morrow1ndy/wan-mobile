@@ -333,6 +333,27 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-01 (details overlay: seed to top, follows auto-advance)
+
+**Changes:**
+- **Seed row moved to the top of Generation Details** — `showDetails()`'s row
+  ordering was `positive` first, then insertion order; now it's `_seed` first,
+  then `positive`, then everything else, so the seed value + "↑ Use this seed"
+  button are the first thing you see instead of scrolling past the prompt.
+
+**Bugs fixed:**
+- **Details overlay went stale when the video auto-switched underneath it** —
+  opening Generation Details while a clip plays, then letting it finish and
+  auto-advance (or manually swiping/scrolling/arrow-keying) to the next/prev
+  clip, left the overlay showing the *old* clip's params instead of the new
+  one's. New `_refreshOpenDetails(card)` re-invokes `showDetails()` for the
+  newly-expanded card whenever a `.details-overlay` is present; called from
+  both `slideTo`'s `onDone()` and the touch-swipe commit path's `onDone()`, so
+  it covers auto-advance, wheel, arrow keys, and manual swipes alike.
+- SW cache bumped to `wan-static-v31`.
+
+---
+
 ### 2026-07-01 (scheduler badge replaces duration on cards)
 
 **Changes:**
