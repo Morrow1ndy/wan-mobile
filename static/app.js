@@ -1280,9 +1280,12 @@ function fmtSchedulerLabel(s) {
 //
 // Rendered as label/value rows (not pills) so long values — Clownshark's
 // RES4LYF sampler names run up to 30+ chars — can wrap onto a second line
-// instead of ellipsis-truncating. Grid tiles are too narrow (~110px, 3-col)
-// for this even with wrapping, so it's only used in the expanded player's
-// caption; tiles show just the compact samplerModeBadge().
+// instead of ellipsis-truncating. Shown on both the grid tile (compact) and
+// the expanded caption (roomier). A single pair (Standard, or a legacy
+// pre-mode video with just "scheduler") has no ambiguity about which stage
+// it is, so it skips the label and shows only the value; two independent
+// pairs (TripleK's Base/Lightning, Clownshark's High/Low) keep their stage
+// label since that's the only way to tell them apart.
 function samplerPairRows(it) {
   const pairRows = (pairs) => pairs
     .filter(([, s, sch]) => s || sch)
@@ -1300,12 +1303,12 @@ function samplerPairRows(it) {
       ["Lightning", it.sampler_lightning, it.scheduler_lightning],
     ]);
   } else if (it.sampler || it.scheduler) {
-    rows = pairRows([["Sampler", it.sampler, it.scheduler]]);
+    rows = pairRows([[null, it.sampler, it.scheduler]]);
   } else {
     rows = [];
   }
   return rows.map(([label, val]) => `<div class="sched-row">
-    <span class="sched-row-label">${esc(label)}</span><span class="sched-row-val">${esc(val)}</span>
+    ${label ? `<span class="sched-row-label">${esc(label)}</span>` : ""}<span class="sched-row-val">${esc(val)}</span>
   </div>`).join("");
 }
 
@@ -1539,6 +1542,7 @@ function renderSavedOutput(it) {
       <div class="tile-foot">
         ${name}
         ${samplerModeBadge(it, "tile-sched")}
+        ${schedRows}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
       </div>
       <button class="zoom-back">← Back</button>
@@ -1590,6 +1594,7 @@ function renderOutput(podId, it) {
       <div class="tile-foot">
         ${name}
         ${samplerModeBadge(it, "tile-sched")}
+        ${schedRows}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
       </div>
       <button class="zoom-back">← Back</button>
@@ -2428,6 +2433,7 @@ function upsertActiveCard(podId, j) {
           <div class="tile-foot">
             ${nameHtml}
             ${samplerModeBadge(j, "tile-sched")}
+            ${samplerPairRows(j)}
             <span class="elapsed tile-dt">queued</span>
             <span class="step tile-dt"></span>
           </div>
