@@ -263,7 +263,11 @@ PARAM_FIELDS = [
      "targets": [{"node_id": "128", "input": "sampler_name"},
                  {"node_id": "129", "input": "sampler_name"}]},
 
-    {"key": "scheduler", "label": "Scheduler", "type": "select", "fmt": "str",
+    # Scheduler is multi-selectable: the frontend fires one /api/generate
+    # request per selected scheduler (all sharing the same resolved seed), so
+    # each individual request still carries a single plain scheduler string —
+    # "multiselect" only changes how the Generate-tab UI renders/collects it.
+    {"key": "scheduler", "label": "Scheduler", "type": "multiselect", "fmt": "str",
      "choices": ["simple", "sgm_uniform", "karras", "exponential",
                  "ddim_uniform", "beta", "normal", "linear_quadratic",
                  "kl_optimal", "bong_tangent", "beta57"],

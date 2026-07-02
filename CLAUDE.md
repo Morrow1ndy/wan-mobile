@@ -344,6 +344,36 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-02 (multi-select scheduler: N generations, one shared seed)
+
+**Features added:**
+- **Scheduler is now multi-selectable** — `config.py`'s `scheduler` field is
+  `"type": "multiselect"` (was `"select"`); the Generate tab renders it as a
+  row of toggle chips (reusing the existing `.chip.toggle` style from the CUDA
+  filter) instead of a single dropdown. At least one must stay selected.
+- **Selecting multiple schedulers fans out into multiple generations** — e.g.
+  picking `simple`, `beta`, `beta57` and tapping Generate fires 3
+  `/api/generate` requests, one per scheduler, so you get 3 clips to compare.
+  **All of them share the same seed**, resolved client-side once *before* the
+  first request: if the seed field is blank/0, a random seed is generated in
+  the browser and written back into the seed input (so you can see + reuse
+  it), then that exact value is sent with every request — a blank seed can no
+  longer randomise independently per scheduler. Toast shows `N/M generations
+  queued`; a plain single selection behaves exactly as before (one request,
+  scheduler sent as a plain string, "Generation queued").
+- No backend changes were needed — each individual `/api/generate` call still
+  receives `scheduler` as a single string, exactly as pre-existing
+  `workflow.py`/`_coerce` expects; "multiselect" only changes how the
+  Generate-tab UI renders/collects the field client-side. `_multiSelected`
+  (a `{fieldKey: Set<string>}` map) backs the chip state; `collectParams()`
+  reads it in since chips aren't real form controls, and `applyParams()`
+  restores it (used by template/preset apply, Details "Apply to Generate",
+  and Undo/revert) — verified round-tripping through capture/revert correctly
+  reselects the right chips.
+- SW cache bumped to `wan-static-v33`.
+
+---
+
 ### 2026-07-02 (full sampler/scheduler lists from live ComfyUI)
 
 **Changes:**

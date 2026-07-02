@@ -686,6 +686,13 @@ function renderField(f) {
       .map((c) => `<option value="${c}"${c === f.default ? " selected" : ""}>${c}</option>`)
       .join("");
     inner = `<label>${f.label}<select data-key="${f.key}">${opts}</select></label>`;
+  } else if (f.type === "multiselect") {
+    _initMultiSelect(f);
+    const sel = _multiSelected[f.key];
+    const chips = (f.choices || []).map((c) =>
+      `<span class="chip toggle${sel.has(c) ? " on" : ""}" data-multi-key="${f.key}" data-value="${esc(c)}">${esc(fmtSchedulerLabel(c))}</span>`
+    ).join("");
+    inner = `<label>${f.label}<div class="chips" data-multiselect="${f.key}">${chips}</div></label>`;
   } else if (f.type === "seed") {
     inner = `<label>${f.label}
       <div class="seed-row">
@@ -718,6 +725,39 @@ function applyConditions() {
   });
 }
 
+// ---- multi-select fields (e.g. scheduler) -----------------------------------
+// Chips aren't form controls, so their selection lives in JS state (Set per
+// field key) rather than being read directly from the DOM by collectParams.
+const _multiSelected = {}; // { fieldKey: Set<string> }
+
+function _initMultiSelect(field) {
+  const initial = Array.isArray(field.default) ? field.default : [field.default];
+  _multiSelected[field.key] = new Set(initial.filter(Boolean));
+}
+
+function _renderMultiSelectChips(fieldKey) {
+  const wrap = document.querySelector(`.chips[data-multiselect="${fieldKey}"]`);
+  if (!wrap) return;
+  wrap.querySelectorAll(".chip").forEach((chip) => {
+    chip.classList.toggle("on", _multiSelected[fieldKey]?.has(chip.dataset.value));
+  });
+}
+
+$("#params").addEventListener("click", (e) => {
+  const chip = e.target.closest(".chip[data-multi-key]");
+  if (!chip) return;
+  const key = chip.dataset.multiKey;
+  const val = chip.dataset.value;
+  const set = _multiSelected[key] || (_multiSelected[key] = new Set());
+  if (set.has(val)) {
+    if (set.size === 1) return toast("Select at least one", true);
+    set.delete(val);
+  } else {
+    set.add(val);
+  }
+  _renderMultiSelectChips(key);
+});
+
 function collectParams() {
   const out = {};
   // Explicitly select only form controls — buttons (e.g. the 🎲 seed-rand
@@ -726,6 +766,10 @@ function collectParams() {
   $$("input[data-key], textarea[data-key], select[data-key]").forEach((el) => {
     out[el.dataset.key] = el.type === "checkbox" ? el.checked : el.value;
   });
+  // Multi-select fields (chips, not form controls) are read from JS state.
+  for (const key in _multiSelected) {
+    out[key] = [..._multiSelected[key]];
+  }
   return out;
 }
 
@@ -849,26 +893,59 @@ $("#generate").addEventListener("click", async () => {
   const params = collectParams();
   postJSON("/api/last-params", params).catch(() => {});
 
+  // A multi-select field (currently just "scheduler") fans out into one
+  // /api/generate request per selected value. All requests must share the
+  // same seed — otherwise a blank seed would randomise independently per
+  // request, defeating the point of comparing schedulers on the same noise.
+  const multiField = FIELDS.find((f) => f.type === "multiselect");
+  const multiKey = multiField?.key;
+  const variants = multiKey && Array.isArray(params[multiKey]) && params[multiKey].length
+    ? params[multiKey]
+    : null;
+
+  const seedInput = document.querySelector('input[data-key="_seed"]');
+  let seedVal = Number(params._seed);
+  if (!seedVal || seedVal <= 0) {
+    seedVal = Math.floor(Math.random() * 2 ** 32);
+    if (seedInput) seedInput.value = seedVal;
+  }
+  params._seed = seedVal;
+
   const uploadFile = await downscaleImage(file);
 
-  const fd = new FormData();
-  fd.append("pod_id", podId);
-  fd.append("image", uploadFile);
-  fd.append("params", JSON.stringify(params));
-  fd.append("workflow_file", _selectedWorkflow || "");
-
-  try {
+  async function fireOne(variantValue) {
+    const p = { ...params };
+    if (multiKey && variantValue !== undefined) p[multiKey] = variantValue;
+    const fd = new FormData();
+    fd.append("pod_id", podId);
+    fd.append("image", uploadFile);
+    fd.append("params", JSON.stringify(p));
+    fd.append("workflow_file", _selectedWorkflow || "");
     const r = await apiFetch("/api/generate", { method: "POST", body: fd });
     if (!r.ok) throw new Error((await r.text()) || r.statusText);
-    await r.json();
-    toast("Generation queued");
-    // Jump to Outputs, where the in-flight job now shows live progress.
-    const outSel = $("#out-pod");
-    if (outSel) outSel.value = podId;
-    setGenBadge(1);          // immediate feedback; refined by the next poll
-    startGenBadgePoll();     // keeps the badge live if the user navigates away
-  } catch (e) {
-    toast(e.message, true);
+    return r.json();
+  }
+
+  try {
+    const results = variants && variants.length > 1
+      ? await Promise.allSettled(variants.map(fireOne))
+      : await Promise.allSettled([fireOne(variants ? variants[0] : undefined)]);
+
+    const okCount = results.filter((r) => r.status === "fulfilled").length;
+    const failCount = results.length - okCount;
+
+    if (okCount > 0) {
+      toast(results.length > 1 ? `${okCount}/${results.length} generations queued` : "Generation queued");
+      // Jump to Outputs, where the in-flight job(s) now show live progress.
+      const outSel = $("#out-pod");
+      if (outSel) outSel.value = podId;
+      setGenBadge(okCount);    // immediate feedback; refined by the next poll
+      startGenBadgePoll();     // keeps the badge live if the user navigates away
+    }
+    if (failCount > 0) {
+      const firstErr = results.find((r) => r.status === "rejected")?.reason?.message || "unknown error";
+      toast(`${failCount} generation${failCount > 1 ? "s" : ""} failed: ${firstErr}`, true);
+    }
   } finally {
     btn.disabled = false;
     btn.textContent = "Generate";
@@ -2386,6 +2463,14 @@ $("#tpl-del").addEventListener("click", async () => {
 // ---- param helpers ---------------------------------------------------------
 function applyParams(params) {
   Object.entries(params).forEach(([key, val]) => {
+    if (key in _multiSelected) {
+      const arr = (Array.isArray(val) ? val : [val]).filter(Boolean);
+      // Keep the existing selection if the incoming value was empty — never
+      // leave zero chips selected.
+      if (arr.length) _multiSelected[key] = new Set(arr);
+      _renderMultiSelectChips(key);
+      return;
+    }
     const el = document.querySelector(`[data-key="${key}"]`);
     if (!el) return;
     if (el.type === "checkbox") el.checked = Boolean(val);
