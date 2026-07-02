@@ -856,27 +856,61 @@ async def list_saved():
 
 @app.post("/api/saved/backfill-scheduler")
 async def backfill_scheduler():
-    """One-time migration: fill in the `scheduler` field on saved videos that
-    predate it, from the generation params recorded at the time (falling back
-    to the legacy `scheduler_high` key). Idempotent — already-set entries are
-    left untouched. Params older than the last 500 generations (see
+    """One-time migration: fill in sampler-mode fields (workflow_file, and
+    sampler/scheduler or the TripleK/Clownshark pair fields) on saved videos
+    that predate a given feature, from the generation params recorded at the
+    time (falling back to the legacy `scheduler_high`/`sampler_high` keys).
+    Idempotent — any field already set on an entry is left untouched, so
+    re-running (e.g. after a later feature adds more fields, as happened
+    2026-07-02 with the 3-way sampler mode) is always safe and only fills in
+    what's still missing. Params older than the last 500 generations (see
     persistence._MAX_PARAMS) are no longer available, so those entries are
-    left without a scheduler and simply show no badge in the UI.
+    simply left without this data and show no mode/sampler badge in the UI.
     """
+    pair_fields = (
+        "sampler_base", "scheduler_base", "sampler_lightning", "scheduler_lightning",
+        "cs_sampler_h", "cs_scheduler_h", "cs_sampler_l", "cs_scheduler_l",
+    )
     updated = skipped = not_found = 0
     async with _saved_lock:
         saved = ps.get_saved()
         for item in saved:
-            if item.get("scheduler"):
-                skipped += 1
-                continue
             params = ps.get_params(item["prompt_id"]) or {}
-            scheduler = params.get("scheduler") or params.get("scheduler_high") or ""
-            if scheduler:
-                item["scheduler"] = scheduler
+            if not params:
+                not_found += 1
+                continue
+            changed = False
+            if not item.get("scheduler"):
+                v = params.get("scheduler") or params.get("scheduler_high") or ""
+                if v:
+                    item["scheduler"] = v
+                    changed = True
+            if not item.get("sampler"):
+                v = params.get("sampler") or params.get("sampler_high") or ""
+                if v:
+                    item["sampler"] = v
+                    changed = True
+            for key in pair_fields:
+                if not item.get(key):
+                    v = params.get(key) or ""
+                    if v:
+                        item[key] = v
+                        changed = True
+            if not item.get("workflow_file"):
+                v = params.get("workflow_file") or ""
+                if not v and (item.get("sampler") or item.get("sampler_base") or item.get("cs_sampler_h")):
+                    # Pre-3-way-mode generations only ever used the
+                    # Standard-shape workflow (bf16/GGUF both wrote to the
+                    # same KSamplerAdvanced node pair) — infer it so the mode
+                    # badge renders too.
+                    v = config.WF_STANDARD
+                if v:
+                    item["workflow_file"] = v
+                    changed = True
+            if changed:
                 updated += 1
             else:
-                not_found += 1
+                skipped += 1
         ps.save_saved(saved)
         try:
             await asyncio.to_thread(drive.upload_metadata, saved)
