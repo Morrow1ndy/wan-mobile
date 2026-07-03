@@ -265,9 +265,26 @@ by `_job_public()` (in-progress card), `pod_outputs()` (session/completed
 card), and `star_video()` (saved card) in `main.py` — same field names
 (`workflow_file`, `sampler`, `scheduler`, `sampler_base`, `scheduler_base`,
 `sampler_lightning`, `scheduler_lightning`, `cs_sampler_h`, `cs_scheduler_h`,
-`cs_sampler_l`, `cs_scheduler_l`) from all three, so `app.js`'s
-`samplerModeBadge()` / `samplerPairBadges()` render consistently across
-in-progress, session, and saved cards without special-casing any of them.
+`cs_sampler_l`, `cs_scheduler_l`, plus `steps` — see below) from all three, so
+`app.js`'s `samplerModeBadge()` / `samplerPairRows()` (grid tile) and
+`capSamplerHtml()` (expanded caption) render consistently across in-progress,
+session, and saved cards without special-casing any of them.
+
+**Total steps field**: `_compute_steps(params)` (`main.py`) returns
+`steps_on` if `lightx2v` was enabled for that generation, else `steps_off` —
+mirrors the toggle's own `when` condition in `PARAM_FIELDS`. Computed and
+returned as `"steps"` alongside the sampler fields above by all three
+surfacing points; `/api/saved/backfill-scheduler` backfills it for saved
+videos recorded before this field existed. Rendered as a "STEPS N" row on
+both the grid tile and the expanded caption; omitted when `null`.
+
+**Short mode labels**: `_shortModeLabel(fullLabel)` (`app.js`) strips a
+trailing `" Sampler"` (e.g. `"Standard Sampler"` → `"Standard"`,
+`"TripleKSampler"` → `"TripleK"`, `"Clownshark Sampler"` → `"Clownshark"`) —
+the single source of truth used by the grid-tile mode badge, the expanded
+caption, and the Generate tab's sampling-mode tab buttons
+(`_workflowTabsHtml()`), so all three stay in sync if `WORKFLOW_LABELS` in
+`config.py` ever changes. Replaces an earlier hardcoded per-label map.
 
 ---
 
