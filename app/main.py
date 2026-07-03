@@ -671,11 +671,16 @@ async def video(request: Request, prompt_id: str):
 
 
 @app.get("/api/pods/{pod_id}/outputs")
-async def pod_outputs(pod_id: str, limit: int = 30):
+async def pod_outputs(pod_id: str, limit: int = 10_000):
     """Videos from the pod's ComfyUI history, newest first.
 
     Reads straight from the pod (which holds the files on the network volume),
     so it survives the browser closing or this server restarting/sleeping.
+    `limit` defaults high (effectively unbounded) so Current Session shows
+    every clip generated on this pod for its whole lifetime rather than
+    silently dropping older ones once more than a handful pile up — it only
+    ever empties when the pod itself is replaced/terminated (a fresh pod has
+    no ComfyUI history of its own).
     """
     try:
         hist = await comfy.get_history_all(rp.comfy_url(pod_id), max_items=limit)

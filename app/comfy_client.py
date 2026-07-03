@@ -53,8 +53,14 @@ async def get_history(comfy: str, prompt_id: str) -> dict:
         return r.json()
 
 
-async def get_history_all(comfy: str, max_items: int = 64) -> dict:
-    """All prompts in ComfyUI's current-session history (chronological)."""
+async def get_history_all(comfy: str, max_items: int = 10_000) -> dict:
+    """All prompts in ComfyUI's current-session history (chronological).
+
+    max_items defaults high enough to never be the thing that truncates the
+    list — "Current Session" should show every clip generated on this pod for
+    its whole lifetime, not just the most recent few. ComfyUI's own history
+    dict is the real bound (cleared when the pod's ComfyUI process restarts).
+    """
     async with _client(comfy) as c:
         r = await c.get("/history", params={"max_items": max_items})
         r.raise_for_status()

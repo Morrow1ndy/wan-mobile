@@ -573,9 +573,40 @@ function selectGpu(card) {
 $("#ram-select").addEventListener("change", loadGpuGrid);
 $("#refresh-gpus").addEventListener("click", loadGpuGrid);
 
+// Deploying a new pod starts a fresh ComfyUI session on that pod — the
+// Current Session list for any already-running pod (unaffected by this
+// deploy) still shows fine, but if the user's workflow is to terminate the
+// old pod once the new one is up, any of its videos that were never
+// starred (★) would become unreachable. Warn before deploying if that's
+// the case, so it's a deliberate choice rather than a silent data loss.
+async function _unsavedSessionVideoCount() {
+  let pods;
+  try { pods = await getJSON("/api/pods"); } catch (_) { return 0; }
+  const running = pods.filter(isRunning);
+  const counts = await Promise.all(running.map(async (p) => {
+    try {
+      const items = await getJSON(`/api/pods/${p.id}/outputs`);
+      return items.filter((it) => !it.is_saved).length;
+    } catch (_) { return 0; }
+  }));
+  return counts.reduce((a, b) => a + b, 0);
+}
+
 $("#start-pod").addEventListener("click", async () => {
   if (!selectedGpu) return toast("Select a GPU first", true);
   const btn = $("#start-pod");
+
+  const unsaved = await _unsavedSessionVideoCount();
+  if (unsaved > 0) {
+    const ok = await showConfirm(
+      `You have ${unsaved} unsaved video${unsaved > 1 ? "s" : ""} in the current session. ` +
+      `Starting a new pod begins a new session — save (★) anything you want to keep first. ` +
+      `Deploy anyway?`,
+      { okText: "Deploy anyway", danger: true }
+    );
+    if (!ok) return;
+  }
+
   btn.disabled = true;
   btn.textContent = "Checking availability…";
 

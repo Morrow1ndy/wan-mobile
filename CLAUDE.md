@@ -507,6 +507,37 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-03 (Current Session no longer capped at 30 clips + double-confirm before deploying over unsaved videos)
+
+**Bugs fixed:**
+- **"Current Session" silently dropped older clips once more than 30 had been
+  generated on a pod**, even though the pod was still running. Root cause:
+  `pod_outputs()` read the pod's ComfyUI history via `get_history_all(...,
+  max_items=limit)` with `limit` defaulting to 30 — a real cap, not just a
+  page size. Both defaults (`pod_outputs`'s `limit` and
+  `get_history_all`'s `max_items`) bumped to 10,000 (effectively unbounded).
+  Current Session now shows every clip generated on a pod for its whole
+  lifetime; it only empties when that pod is replaced/terminated (a fresh
+  pod has no ComfyUI history of its own) — never from a count limit.
+
+**Features added:**
+- **Double-confirm before deploying a new pod if unsaved session videos
+  exist** — clicking "Deploy selected GPU" now checks every currently
+  running pod's Current Session for videos that haven't been starred (★).
+  If any exist, a confirm dialog names the count and asks to proceed before
+  the deploy request fires; cancelling blocks the deploy entirely. Already-
+  saved videos don't trigger it (they're safely in cloud storage already),
+  and if nothing is at risk the deploy proceeds with no interruption. New
+  `_unsavedSessionVideoCount()` helper in `app.js` (queries `/api/pods` for
+  running pods, then each one's `/api/pods/{id}/outputs`, summing entries
+  where `!is_saved`).
+- Verified both paths with a real headless-browser test: deploy blocked on
+  Cancel and proceeding on Confirm when unsaved videos exist, and deploying
+  immediately with no dialog when everything is already saved.
+- SW cache bumped to `wan-static-v51`.
+
+---
+
 ### 2026-07-03 ("Apply to Generate" ignored a legacy TripleK clip's sampler/scheduler)
 
 **Bugs fixed:**
