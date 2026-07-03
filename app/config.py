@@ -409,6 +409,12 @@ PARAM_FIELDS = [
     {"key": "cs_scheduler_l", "label": "Scheduler (Low)", "type": "select", "fmt": "str",
      "workflows": [WF_CLOWNSHARK], "choices": _CS_SCHEDULER_CHOICES, "default": "bong_tangent",
      "targets": [{"node_id": "210", "input": "scheduler"}]},
+    {"key": "cs_eta_h", "label": "Eta (High)", "type": "slider", "fmt": "float",
+     "workflows": [WF_CLOWNSHARK], "min": 0, "max": 2, "step": 0.01, "default": 0.5,
+     "targets": [{"node_id": "209", "input": "eta"}]},
+    {"key": "cs_eta_l", "label": "Eta (Low)", "type": "slider", "fmt": "float",
+     "workflows": [WF_CLOWNSHARK], "min": 0, "max": 2, "step": 0.01, "default": 0.5,
+     "targets": [{"node_id": "210", "input": "eta"}]},
 
     # ---- seed: 0 (or blank) = randomize each run; positive int = fixed seed ----
     {"key": "_seed", "label": "Seed", "type": "seed", "fmt": "seed", "default": 0,

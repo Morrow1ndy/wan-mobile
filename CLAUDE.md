@@ -220,10 +220,13 @@ enforce this:
   `select` (never multiselect). `sampler_name`/`scheduler` choices
   (`_CS_SAMPLER_CHOICES` — 119 entries / `_CS_SCHEDULER_CHOICES` — 11 entries)
   verified against a live pod's `/object_info/ClownsharKSampler_Beta` (a
-  different, RES4LYF-namespaced node from `KSamplerAdvanced`). Confirmed via
-  static graph inspection that `ClownOptions Detail Boost` (node `216`) is
-  **not wired into any of the three workflow files** — dead/unused input in
-  all of them, not just Clownshark.
+  different, RES4LYF-namespaced node from `KSamplerAdvanced`). Also
+  independent `cs_eta_h`/`cs_eta_l` sliders (→ node `209`/`210` `eta`, `min:
+  0, max: 2, step: 0.01, default: 0.5` — the node's real range is -100..100,
+  narrowed to a usable slider span). Confirmed via static graph inspection
+  that `ClownOptions Detail Boost` (node `216`) is **not wired into any of
+  the three workflow files** — dead/unused input in all of them, not just
+  Clownshark.
 
 ⚠️ **If you re-export any of the three workflows from ComfyUI, node IDs
 change** and every `node_id` in `PARAM_FIELDS` (plus `IMAGE_NODE` /
@@ -438,6 +441,23 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-07-03 (Clownshark eta sliders)
+
+**Features added:**
+- **Independent Eta (High)/Eta (Low) sliders for Clownshark Sampler** —
+  `cs_eta_h`/`cs_eta_l` write to node `209`/`210`'s (`ClownsharKSampler_Beta`)
+  `eta` input. Slider range `0–2` (step `0.01`, default `0.5` matching the
+  workflow's baked value) — the node's real range is `-100..100` per
+  `/object_info`, narrowed here to what's actually usable. Scoped to
+  `WF_CLOWNSHARK` only, same pattern as the other Clownshark-only fields; no
+  frontend changes needed since `renderField()`'s generic slider branch and
+  `_visibleFields()`'s workflow-scoping already handle any new `PARAM_FIELDS`
+  entry automatically. Verified with `build_workflow()` across a passed
+  value, the no-value default, and confirmed Standard/TripleK builds are
+  unaffected.
 
 ---
 
