@@ -1419,13 +1419,16 @@ function _samplerPairs(it) {
     ]);
   }
   // Legacy TripleK clips generated before the 2026-07-03 merge still have
-  // independent Base/Lightning values recorded — keep showing them as two
-  // labelled rows so old data doesn't silently lose information.
+  // independent Base/Lightning values recorded (rather than the current
+  // single "sampler"/"scheduler" pair) — display the Base value as a plain
+  // unlabeled pair, matching how new TripleK clips render, instead of the
+  // old two-row Base/Lightning display. The Lightning value (which could
+  // differ from Base) is dropped from the card/full-screen view but still
+  // available in Generation Details. Falls back to the Lightning value only
+  // if Base wasn't recorded at all.
   if (it.sampler_base || it.scheduler_base || it.sampler_lightning || it.scheduler_lightning) {
-    return pairRows([
-      ["Base", it.sampler_base, it.scheduler_base],
-      ["Lightning", it.sampler_lightning, it.scheduler_lightning],
-    ]);
+    return pairRows([[null, it.sampler_base || it.sampler_lightning,
+                       it.scheduler_base || it.scheduler_lightning]]);
   }
   if (it.sampler || it.scheduler) {
     return pairRows([[null, it.sampler, it.scheduler]]);

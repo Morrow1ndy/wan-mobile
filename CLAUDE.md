@@ -225,11 +225,15 @@ enforce this:
   it means a clip generated this way naturally renders through the existing
   single-pair (no Base/Lightning label) card path instead of needing new UI.
   Saved videos from before the merge still have the old `sampler_base`/
-  `scheduler_base`/`sampler_lightning`/`scheduler_lightning` fields recorded
-  and still render as two labelled Base/Lightning rows (`_samplerPairs()` in
-  `app.js` checks for these legacy fields before falling through to the
-  single-pair case) — old data isn't silently lost, it just isn't produced
-  by new generations anymore.
+  `scheduler_base`/`sampler_lightning`/`scheduler_lightning` fields recorded;
+  `_samplerPairs()` in `app.js` detects these legacy fields and displays the
+  **Base** value as a plain unlabeled pair (matching the new single-pair
+  look), dropping the Lightning value from the card/full-screen view (by
+  request, so old clips visually match new ones instead of keeping a
+  separate two-row Base/Lightning display) — the Lightning value isn't
+  deleted from storage, just not shown on the card; it's still visible via
+  Generation Details (`LEGACY_LABELS` keeps a "Sampler (Lightning)" label for
+  it there).
 - **Clownshark**: independent High (`cs_sampler_h`/`cs_scheduler_h` → node
   `209`) and Low (`cs_sampler_l`/`cs_scheduler_l` → node `210`) pairs, plain
   `select` (never multiselect). `sampler_name`/`scheduler` choices
@@ -500,6 +504,24 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-07-03 (legacy TripleK videos now match the new single-pair look)
+
+**Changes:**
+- **Existing (legacy) TripleK saved videos still showed the old two-row
+  Base/Lightning display** after the single-pair merge earlier today, since
+  `_samplerPairs()` deliberately preserved their old recorded values. By
+  request, changed this so legacy clips now display their **Base** sampler/
+  scheduler value as a plain unlabeled pair — visually identical to how new
+  TripleK clips render — instead of two labelled Base/Lightning rows. The
+  Lightning value (which could genuinely differ from Base) is no longer
+  shown on the card/full-screen view, but isn't deleted from storage — it's
+  still visible in Generation Details, which keeps a "Sampler (Lightning)"/
+  "Scheduler (Lightning)" label for it via `LEGACY_LABELS`. Falls back to
+  the Lightning value only if Base wasn't recorded at all.
+- SW cache bumped to `wan-static-v49`.
 
 ---
 
