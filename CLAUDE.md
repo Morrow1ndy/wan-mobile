@@ -444,6 +444,30 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-03 (blank seed no longer auto-fills on single generation)
+
+**Bugs fixed:**
+- **Leaving the seed blank auto-filled it with a random number immediately on
+  Generate, even for a single (non-fan-out) generation** — a regression from
+  the 2026-07-02 multi-select-scheduler feature. That feature needs every
+  fan-out request (one per selected scheduler) to share one seed, so it
+  resolves a random seed client-side and writes it into the seed box before
+  firing — but that resolution ran unconditionally on *every* Generate click,
+  not just when actually fanning out to 2+ variants. Fixed: the seed is now
+  only resolved+displayed client-side when `variants.length > 1`; a single
+  generation goes back to sending the seed as-is (blank/0), letting ComfyUI
+  randomise it server-side same as before that feature — the box stays blank,
+  and the actual seed used still surfaces afterward via Details / "Use this
+  seed" (`_backfill_seed()` in `main.py`, unchanged).
+
+**Features added:**
+- **✕ Clear button next to the seed field's 🎲 randomise button** — empties
+  the seed input in one tap (`.seed-clear`, delegated click handler
+  alongside the existing `.seed-rand` one in `init()`).
+- SW cache bumped to `wan-static-v38`.
+
+---
+
 ### 2026-07-03 (Clownshark eta sliders)
 
 **Features added:**

@@ -560,7 +560,7 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 /* ---- seed input row (input + randomize button) ---- */
 .seed-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .seed-row input { flex: 1; margin-top: 0; }
-.seed-rand { flex-shrink: 0; font-size: 16px; padding: 8px 10px; }
+.seed-rand, .seed-clear { flex-shrink: 0; font-size: 16px; padding: 8px 10px; }
 
 /* ---- prompt / params card heading row ---- */
 .card-h-row {

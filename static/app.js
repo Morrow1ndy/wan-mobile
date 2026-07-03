@@ -684,10 +684,17 @@ async function loadConfig() {
   // 🎲 randomise seed button — delegated on #params so it survives
   // renderParamFields() re-rendering the section's innerHTML on mode switch.
   $("#params").addEventListener("click", (e) => {
-    const btn = e.target.closest(".seed-rand");
-    if (!btn) return;
-    const inp = document.querySelector(`input[data-key="${btn.dataset.key}"]`);
-    if (inp) inp.value = Math.floor(Math.random() * 2 ** 32);
+    const randBtn = e.target.closest(".seed-rand");
+    if (randBtn) {
+      const inp = document.querySelector(`input[data-key="${randBtn.dataset.key}"]`);
+      if (inp) inp.value = Math.floor(Math.random() * 2 ** 32);
+      return;
+    }
+    const clearBtn = e.target.closest(".seed-clear");
+    if (clearBtn) {
+      const inp = document.querySelector(`input[data-key="${clearBtn.dataset.key}"]`);
+      if (inp) inp.value = "";
+    }
   });
   // ✕ clear prompt button
   document.addEventListener("click", (e) => {
@@ -733,6 +740,7 @@ function renderField(f) {
       <div class="seed-row">
         <input type="text" inputmode="numeric" data-key="${f.key}" value="" placeholder="Leave blank (or 0) to randomise each run" />
         <button type="button" class="ghost small seed-rand" data-key="${f.key}" title="Generate a random seed now">🎲</button>
+        <button type="button" class="ghost small seed-clear" data-key="${f.key}" title="Clear seed">✕</button>
       </div></label>`;
   } else {
     const step = f.step ?? 1;
@@ -941,13 +949,20 @@ $("#generate").addEventListener("click", async () => {
     ? params[multiKey]
     : null;
 
+  // A blank/0 seed is normally left as-is for ComfyUI to randomise per-run
+  // (the real value surfaces afterward via Details / "Use this seed" — see
+  // _backfill_seed() in main.py). Only when fanning out to more than one
+  // scheduler variant do we resolve the seed client-side and show it up
+  // front — a single generation should NOT visibly fill the seed box, or
+  // repeatedly hitting Generate with a blank seed would look like the seed
+  // never randomises even though the server picks a fresh one each time.
   const seedInput = document.querySelector('input[data-key="_seed"]');
   let seedVal = Number(params._seed);
-  if (!seedVal || seedVal <= 0) {
+  if (variants && variants.length > 1 && (!seedVal || seedVal <= 0)) {
     seedVal = Math.floor(Math.random() * 2 ** 32);
     if (seedInput) seedInput.value = seedVal;
+    params._seed = seedVal;
   }
-  params._seed = seedVal;
 
   const uploadFile = await downscaleImage(file);
 
