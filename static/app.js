@@ -2458,7 +2458,22 @@ async function showDetails(promptId) {
       _selectedWorkflow = params.workflow_file;
       renderParamFields();
     }
-    applyParams(params);
+    // Legacy TripleK clips (recorded before the 2026-07-03 single-pair merge)
+    // have sampler_base/scheduler_base instead of the current sampler/
+    // scheduler keys — applyParams() has no DOM element for "sampler_base"
+    // anymore (that field no longer exists), so applying one of these
+    // silently no-ops on the sampler/scheduler values and leaves the
+    // Generate tab showing TripleK's plain defaults instead of the clip's
+    // actual values. Fall back to the Base value (same choice already made
+    // for how these clips render on cards) when the current keys are absent.
+    const applyValues = { ...params };
+    if (!("sampler" in applyValues) && applyValues.sampler_base) {
+      applyValues.sampler = applyValues.sampler_base;
+    }
+    if (!("scheduler" in applyValues) && applyValues.scheduler_base) {
+      applyValues.scheduler = applyValues.scheduler_base;
+    }
+    applyParams(applyValues);
     switchTab("generate");
     toast("Params applied ✓");
   });

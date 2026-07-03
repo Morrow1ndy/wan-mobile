@@ -507,6 +507,33 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-03 ("Apply to Generate" ignored a legacy TripleK clip's sampler/scheduler)
+
+**Bugs fixed:**
+- **Applying a legacy TripleK video's Generation Details silently dropped its
+  sampler/scheduler values**, leaving the Generate tab showing TripleK's
+  plain defaults (`euler`/`simple`) instead of the clip's actual recorded
+  values. Root cause: today's earlier single-pair merge changed the current
+  TripleK fields to the `sampler`/`scheduler` keys (same as Standard), but
+  clips generated *before* that merge have their values stored under the old
+  `sampler_base`/`scheduler_base`/`sampler_lightning`/`scheduler_lightning`
+  keys — `applyParams()` only writes a value to the DOM element matching its
+  own key, and there's no longer a `sampler_base` field to write to, so the
+  value silently no-opped instead of erroring.
+  Fixed: the `.details-apply` handler now falls back to the Base value
+  (`sampler_base`/`scheduler_base`) when the current `sampler`/`scheduler`
+  keys aren't present on the saved params — consistent with the earlier
+  choice to display the Base value on legacy TripleK cards. New-style
+  TripleK clips, Standard, and Clownshark were verified unaffected by this
+  bug (their saved params already use the same keys as their current
+  Generate-tab fields).
+- Verified with a real headless-browser test driving the actual
+  `showDetails()`/`applyParams()` code against mocked params for all four
+  cases (Standard, new-style TripleK, legacy TripleK, Clownshark).
+- SW cache bumped to `wan-static-v50`.
+
+---
+
 ### 2026-07-03 (legacy TripleK videos now match the new single-pair look)
 
 **Changes:**
