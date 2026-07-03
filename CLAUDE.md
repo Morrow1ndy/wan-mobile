@@ -277,7 +277,7 @@ in-progress, session, and saved cards without special-casing any of them.
 
 **Custom dialogs:** `showConfirm(msg, {okText, danger})` and `showPrompt(msg, default)` — styled overlays replacing all `confirm()` / `window.prompt()` system dialogs.
 
-**Tabs:** Pod / Generate / Outputs. Sticky bottom bars (no `backdrop-filter` — iOS WebKit bug).
+**Tabs:** Pod / Generate / Outputs. Sticky bottom bars (no `backdrop-filter` — iOS WebKit bug). All three `.tab` sections are plain `display:none`/`block` toggles sharing **one page-level scroll** — there is no independent scroll container per tab. `switchTab()` explicitly saves `window.scrollY` for the outgoing tab into `_tabScrollY` and restores the incoming tab's saved value at the end of the function (2026-07-03) — without this, switching to a shorter tab clamps the shared scroll position down, and nothing un-clamped it back on return.
 
 **Undo system:** `captureUndo(label)` snapshots prompt + all params. `_undoStack` max 10. Captured at: template Use, preset Apply, details Apply-to-Generate, Generate. `↩ Undo (N)` button in Prompt card header.
 
@@ -465,6 +465,44 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-07-03 (fix scroll position lost every time you return to Generate)
+
+**Bugs fixed:**
+- **The Generate tab always jumped back to the top on revisiting it**, even
+  though Pod/Outputs usually kept their scroll position. Root cause: all
+  three `.tab` sections are plain `display:none`/`block` toggles sharing
+  **one page-level scroll** — there's no independent scroll container per
+  tab. Two compounding issues:
+  1. `switchTab("generate")` calls `resizeTextareas()`, which briefly sets
+     every textarea's height to `0` before measuring `scrollHeight` (to let
+     it shrink back down if content was deleted). That momentary shrink
+     reduces the page's scrollable height enough that the browser clamps
+     `window.scrollY` down to fit — and unlike a resize you trigger by
+     typing (where you're already looking at the tab, so scrollY can't
+     exceed its current height), this ran on *every visit* to Generate,
+     silently resetting the shared scroll position each time regardless of
+     where you'd left off.
+  2. More fundamentally, nothing ever explicitly remembered per-tab scroll
+     position in the first place — Pod "usually" kept its position purely
+     by luck (its content is normally tall enough that passing through a
+     shorter tab doesn't clamp it away), not because it was actually
+     tracked. Any switch to a shorter tab and back could equally have lost
+     Pod's or Outputs' position too.
+  Fixed: `switchTab()` now explicitly saves `window.scrollY` for the
+  outgoing tab into a `_tabScrollY` map before switching, and restores the
+  incoming tab's saved value (default `0` for a never-visited tab) at the
+  end of the function — after `resizeTextareas()` runs, so the restore is
+  the last word. This makes scroll memory deterministic for all three tabs,
+  not just "usually" for Pod.
+- Verified with a real headless-browser test (mocked `/api/config` and
+  friends, no real backend): Pod surviving a trip through Generate,
+  Generate surviving a trip through Pod (the reported bug, with a long
+  prompt to make the page tall), Generate surviving a trip through Outputs,
+  and Generate surviving 3 repeated round-trips — all pass.
+- SW cache bumped to `wan-static-v43`.
 
 ---
 

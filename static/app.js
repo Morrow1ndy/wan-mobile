@@ -174,12 +174,26 @@ function resizeTextareas() {
 }
 
 // ---- tabs ------------------------------------------------------------------
+// Last-known scroll position per tab. All three .tab sections are plain
+// display:none/block toggles sharing ONE page-level scroll (no independent
+// per-tab scroll container) — so switching to a shorter tab clamps
+// window.scrollY down to fit it, and nothing un-clamps it back on return.
+// Pod happening to "remember" its position was really just luck (its
+// content is usually tall enough to not get clamped by whatever else was
+// visible); Generate additionally got hit by resizeTextareas() (see below)
+// clamping it on *every* visit regardless. Explicit save/restore fixes both.
+const _tabScrollY = {};
+
 function switchTab(tab) {
   // Always collapse any expanded video tile before switching — if the user
   // navigates away via a tab button instead of ← Back, collapseTile() would
   // never be called and body.overflow stays "hidden", locking page scroll.
   const expanded = document.querySelector(".out-card.expanded");
   if (expanded) collapseTile(expanded);
+
+  const outgoing = $(".tabs button.active")?.dataset.tab;
+  if (outgoing) _tabScrollY[outgoing] = window.scrollY;
+
   $$(".tabs button").forEach((x) => x.classList.toggle("active", x.dataset.tab === tab));
   $$(".tab").forEach((x) => x.classList.remove("active"));
   $("#tab-" + tab).classList.add("active");
@@ -190,6 +204,9 @@ function switchTab(tab) {
   if (tab === "outputs") loadOutputs();
   else { stopOutTimer(); if (_selectMode) exitSelectMode(); }
   if (tab === "generate") {
+    // resizeTextareas() briefly sets height:0 before measuring scrollHeight,
+    // which would clamp window.scrollY again right after we just restored
+    // it below — do it now, before the restore, so the final scrollTo wins.
     resizeTextareas();
     // Re-sync workflow tab active states — on iOS touching other elements
     // can make the button look unselected even though the class is still set.
@@ -198,6 +215,7 @@ function switchTab(tab) {
     );
   }
   if (tab === "generate") loadStorage(); // outputs loads it via loadOutputs()
+  window.scrollTo(0, _tabScrollY[tab] || 0);
 }
 $$(".tabs button").forEach((b) =>
   b.addEventListener("click", () => switchTab(b.dataset.tab))
