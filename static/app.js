@@ -2363,6 +2363,20 @@ async function showDetails(promptId) {
   overlay.querySelector(".details-apply").addEventListener("click", () => {
     overlay.remove();
     captureUndo("before applying generation details");
+    // Switch to whichever sampling mode actually produced this clip BEFORE
+    // applying its params. Without this, applyParams() only finds DOM
+    // elements for whatever mode happens to be currently selected in the
+    // Generate tab — e.g. applying a Clownshark-generated video's details
+    // while Standard mode is showing silently drops cs_sampler_h/
+    // cs_scheduler_h/etc. (no matching input exists yet) and never
+    // switches the mode tab, so the video's actual sampler settings never
+    // get applied at all. Falls back to leaving the mode alone if the
+    // clip predates workflow_file being recorded.
+    if (params.workflow_file && CFG.workflows?.includes(params.workflow_file)
+        && params.workflow_file !== _selectedWorkflow) {
+      _selectedWorkflow = params.workflow_file;
+      renderParamFields();
+    }
     applyParams(params);
     switchTab("generate");
     toast("Params applied ✓");

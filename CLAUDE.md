@@ -418,6 +418,7 @@ or dynamic content inside a fixed-width container.** Already applied to
 - **`active_jobs.json` on stale pod**: if a pod was terminated mid-generation, the restored watcher polls for 15 min before erroring out. Low priority.
 - **No saved video count limit**: volume could fill over time. The storage meter makes this visible, but there's no auto-eviction.
 - **Fly deploy WARNING "not listening on expected address"**: benign — Fly's smoke check snapshots the instant before Python finishes importing heavy libraries on cold boot. App reaches good state seconds later.
+- **Param presets/templates don't carry `workflow_file`**: unlike Generation Details' "Apply to Generate" (fixed 2026-07-03, switches to the clip's actual sampling mode first), `collectParams()` — what presets/templates are saved from — never included `workflow_file` in the first place (it's tracked separately via `_selectedWorkflow`, not a real `PARAM_FIELDS` input). So applying a preset/template saved while e.g. Clownshark was active, while a different mode is currently selected, silently drops its `cs_*` fields (no matching DOM element for the wrong mode) without switching modes either. Not yet fixed — would need deciding whether presets/templates should even be mode-specific to begin with.
 
 ---
 
@@ -465,6 +466,38 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-07-03 ("Apply to Generate" didn't switch to the clip's actual sampling mode)
+
+**Bugs fixed:**
+- **Generation Details' "Apply to Generate" silently dropped the sampler
+  mode's own fields** whenever a different mode was currently selected in
+  the Generate tab — e.g. opening Details for a Clownshark-generated clip
+  while Standard mode was showing, then hitting Apply, never switched to
+  Clownshark and never applied `cs_sampler_h`/`cs_scheduler_h`/`cs_eta_h`/
+  etc. at all. Root cause: `applyParams()` only sets values on DOM elements
+  that already exist for whichever mode is *currently* rendered — it never
+  switched `_selectedWorkflow` first, so a different mode's fields (which
+  don't exist in the DOM at all until that mode is selected) were silently
+  no-ops. Shared fields (prompt, steps, cfg, loras, seed) still applied
+  correctly, masking the bug unless you specifically checked the sampler
+  values afterward.
+  Fixed: the `.details-apply` click handler now switches `_selectedWorkflow`
+  to `params.workflow_file` and calls `renderParamFields()` *before*
+  `applyParams()`, when that mode differs from the current one (falls back
+  to leaving the mode alone for a clip that predates `workflow_file` being
+  recorded).
+- Verified with a real headless-browser test: applying a Clownshark clip's
+  details while Standard mode was active (mode switches + all 6 Clownshark
+  fields + shared fields all land correctly), applying a same-mode clip
+  (no regression), and applying a legacy clip with no `workflow_file` (no
+  crash, applies against whatever mode is current).
+- **Known related gap, not fixed here**: param presets/templates don't
+  carry `workflow_file` at all (see Known Remaining Issues) — only
+  Generation Details had a real value to switch to.
+- SW cache bumped to `wan-static-v44`.
 
 ---
 
