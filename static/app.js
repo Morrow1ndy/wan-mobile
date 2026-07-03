@@ -2787,6 +2787,18 @@ $("#preset-apply").addEventListener("click", () => {
   const preset = _presets[Number(sel.value)];
   if (!preset) return;
   captureUndo(`before applying "${preset.name}"`);
+  // Switch to the preset's own sampling mode first, same reasoning as
+  // Generation Details' "Apply to Generate" (see 2026-07-03 changelog):
+  // applyParams() only finds DOM elements for whichever mode is currently
+  // selected, so a preset saved under a different mode would otherwise
+  // silently drop its mode-specific fields (cs_sampler_h, etc.) without
+  // ever switching modes. Presets saved before this fix have no
+  // workflow_file recorded, so they just apply against the current mode.
+  const wf = preset.params?.workflow_file;
+  if (wf && CFG.workflows?.includes(wf) && wf !== _selectedWorkflow) {
+    _selectedWorkflow = wf;
+    renderParamFields();
+  }
   applyParams(preset.params);
   toast(`"${preset.name}" applied`);
 });
@@ -2795,7 +2807,8 @@ $("#preset-save").addEventListener("click", async () => {
   const name = await showPrompt("Preset name", "My preset");
   if (!name) return;
   try {
-    _presets = await postJSON("/api/param-presets", { name, params: collectParams() });
+    _presets = await postJSON("/api/param-presets",
+      { name, params: { ...collectParams(), workflow_file: _selectedWorkflow } });
     renderPresetSelect();
     $("#preset-select").value = String(_presets.length - 1);
     toast("Preset saved");
@@ -2810,7 +2823,8 @@ $("#preset-update").addEventListener("click", async () => {
   if (!name) return;
   const oldParams = _presets[idx]?.params;
   try {
-    _presets = await putJSON(`/api/param-presets/${idx}`, { name, params: collectParams() });
+    _presets = await putJSON(`/api/param-presets/${idx}`,
+      { name, params: { ...collectParams(), workflow_file: _selectedWorkflow } });
     renderPresetSelect();
     sel.value = String(idx);
     toastUndo(`"${name}" updated`, async () => {

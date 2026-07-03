@@ -418,7 +418,6 @@ or dynamic content inside a fixed-width container.** Already applied to
 - **`active_jobs.json` on stale pod**: if a pod was terminated mid-generation, the restored watcher polls for 15 min before erroring out. Low priority.
 - **No saved video count limit**: volume could fill over time. The storage meter makes this visible, but there's no auto-eviction.
 - **Fly deploy WARNING "not listening on expected address"**: benign — Fly's smoke check snapshots the instant before Python finishes importing heavy libraries on cold boot. App reaches good state seconds later.
-- **Param presets/templates don't carry `workflow_file`**: unlike Generation Details' "Apply to Generate" (fixed 2026-07-03, switches to the clip's actual sampling mode first), `collectParams()` — what presets/templates are saved from — never included `workflow_file` in the first place (it's tracked separately via `_selectedWorkflow`, not a real `PARAM_FIELDS` input). So applying a preset/template saved while e.g. Clownshark was active, while a different mode is currently selected, silently drops its `cs_*` fields (no matching DOM element for the wrong mode) without switching modes either. Not yet fixed — would need deciding whether presets/templates should even be mode-specific to begin with.
 
 ---
 
@@ -466,6 +465,42 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-07-03 (param presets now carry sampling mode too)
+
+**Bugs fixed:**
+- **Applying a param preset had the same "wrong sampling mode" bug as
+  Generation Details' "Apply to Generate"** (fixed earlier the same day) —
+  `#preset-apply` called `applyParams(preset.params)` directly with no
+  mode-switch, so a preset saved while e.g. Clownshark was active would
+  silently drop its `cs_sampler_h`/`cs_scheduler_h`/`cs_eta_h`/etc. values
+  (no matching DOM input exists until that mode is selected) if a different
+  mode was currently showing, without ever switching to Clownshark either.
+  Root cause was one step earlier than Details' version of this bug though:
+  presets never even *recorded* which mode they were saved under —
+  `collectParams()` (what `#preset-save`/`#preset-update` send) doesn't
+  include `workflow_file` at all, since it's tracked separately via the
+  `_selectedWorkflow` JS variable, not a real `PARAM_FIELDS` DOM input.
+  Fixed: `#preset-save`/`#preset-update` now stamp `workflow_file:
+  _selectedWorkflow` onto the saved params (the `/api/param-presets`
+  storage is a schema-less JSON blob, so no backend change needed), and
+  `#preset-apply` switches `_selectedWorkflow` + re-renders the fields
+  first when the preset's mode differs from the current one — same pattern
+  as the Details fix. Presets saved before this fix have no `workflow_file`
+  recorded and just apply against whichever mode is currently selected, as
+  before.
+  **Correction to the earlier entry**: that entry's "known related gap"
+  note lumped templates in with presets — templates (`#tpl-*`) are prompt-
+  text-only snippets (`{name, text}`, just writes the Prompt textarea) and
+  were never affected by this class of bug in the first place; only
+  presets (`{name, params}`, a full field snapshot) were.
+- Verified with a real headless-browser test: saved a preset while
+  Clownshark mode was active with distinctive sampler/scheduler/eta values,
+  switched to Standard mode, applied the preset, and confirmed it switched
+  back to Clownshark with all values restored correctly.
+- SW cache bumped to `wan-static-v45`.
 
 ---
 
