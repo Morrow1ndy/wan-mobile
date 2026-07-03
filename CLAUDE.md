@@ -81,9 +81,15 @@ wan-mobile/
 │   ├── generation_durations.json
 │   └── last_params.json
 ├── workflows/
-│   ├── YAW_2.2.json       # Wan 2.2 i2v workflow (ComfyUI API format)
-│   ├── YAW_2.2_bf16.json  # bf16 variant — the ACTIVE one (WORKFLOW_FILE default)
-│   └── ram_clear.json     # ComfyUI workflow for clearing VRAM
+│   ├── YAW_2.2_bf16.json            # Standard Sampler mode (WORKFLOW_FILE default)
+│   ├── YAW_2.2_bf16_TripleK.json    # TripleKSampler mode
+│   ├── YAW_2.2_bf16_Clownshark.json # Clownshark Sampler mode
+│   └── ram_clear.json               # ComfyUI workflow for clearing VRAM
+│   ⚠️ Filenames still say "bf16" but as of 2026-07-03 all three actually load
+│   **fp16** UNET weights (`wan22-i2v-14b-fp16-{high,low}.safetensors`) — the
+│   name is legacy/kept for backward compat with saved videos' `workflow_file`
+│   field (see Workflow ↔ UI parameter map below). Don't infer precision from
+│   the filename.
 ├── .env                 # ⚠️ local config — CURRENTLY COMMITTED (see Security)
 ├── .env.example         # template for .env
 ├── fly.toml             # Fly.io config (512MB RAM, sin region, auto-stop)
@@ -158,7 +164,7 @@ value wins over anything in a baked-in `.env`.
 the workflow JSON files. Three **sampler-mode** workflows are available; the
 user picks one via the workflow tab in the Generate UI. Each mode is a
 genuinely different node graph (ComfyUI's API-format export only serializes
-whichever sampler branch is active), sharing 56 common nodes plus its own
+whichever sampler branch is active), sharing 57 common nodes plus its own
 sampler node(s):
 
 | File (`WF_*` in `config.py`) | Sampler node(s) | Mode label (`WORKFLOW_LABELS`) | Default? |
@@ -167,7 +173,16 @@ sampler node(s):
 | `workflows/YAW_2.2_bf16_TripleK.json` (`WF_TRIPLEK`) | `290` `TripleKSamplerWan22LightningAdvanced` | TripleKSampler | selectable in UI |
 | `workflows/YAW_2.2_bf16_Clownshark.json` (`WF_CLOWNSHARK`) | `209`/`210` `ClownsharKSampler_Beta` (High/Low) | Clownshark Sampler | selectable in UI |
 
-The GGUF workflow/toggle was removed — bf16 only, in all three modes.
+The GGUF workflow/toggle was removed earlier — all three modes load one model
+precision. **⚠️ As of 2026-07-03 that precision is fp16, not bf16** — the user
+swapped `UNETLoader` nodes 177/178 to
+`wan22-i2v-14b-fp16-{high,low}.safetensors` in all three files (was
+`Wan2_2-I2V-A14B-{HIGH,LOW}_bf16.safetensors`). **The filenames
+(`YAW_2.2_bf16*.json`) were deliberately left unchanged** — renaming them
+would silently break the `workflow_file` string already stored on every
+saved video (used to look up `WORKFLOW_LABELS` for the mode badge), plus
+`WORKFLOW_FILE`/`WF_STANDARD` etc. Don't infer model precision from these
+filenames; check node `177`/`178`'s `unet_name` in the actual JSON if it matters.
 
 **Shared nodes** (`IMAGE_NODE` / `OUTPUT_NODE_ID`, identical across all three
 files, no conditional logic needed):
@@ -178,6 +193,14 @@ files, no conditional logic needed):
 - The `lightx2v` toggle (distill LoRA) selects between two value sets and
   enables/disables the LoRA by setting strength (0 = off). CFG is forced to 1 when on.
 - Seed is auto-randomized every run (`_seed` field → node `158`).
+- **Width/height widget (2026-07-03)**: the old fixed node `169` ("Width and
+  height from aspect ratio 🪴", baked `aspect_ratio: "9:16", target_size: 480`)
+  was replaced by node `364` (`SimpleSwitch`, reads the loaded input image) →
+  node `365` (`WanResolutions`, `aspect_ratio: "2:3"`,
+  `resolution: "Preview — 512×768"`), still feeding the same `292`/`293` Width/
+  Height Switch nodes. Not exposed in `PARAM_FIELDS` (no UI control either
+  before or after) — purely a workflow-graph-internal change, verified to have
+  zero effect on any `config.py` node reference.
 
 **Per-mode fields** are scoped with a `"workflows": [WF_*]` key on the
 `PARAM_FIELDS` entry — both `workflow.py`'s `build_workflow()` (skips any
@@ -206,7 +229,7 @@ enforce this:
 change** and every `node_id` in `PARAM_FIELDS` (plus `IMAGE_NODE` /
 `OUTPUT_NODE_ID`) must be updated or generation silently breaks.
 `workflow.py` builds the final prompt from this map. Re-check **all three**
-files if you update node IDs — the 56 shared nodes must stay in sync.
+files if you update node IDs — the 57 shared nodes must stay in sync.
 
 **Sampler-mode + sampler/scheduler labels on video cards**: every
 prompt_id's chosen `workflow_file` and sampler/scheduler value(s) are
@@ -415,6 +438,37 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-07-03 (model swapped bf16 → fp16, new width/height widget)
+
+**Changes:**
+- **All three sampler-mode workflows now load fp16 UNET weights**, not bf16 —
+  the user re-exported all three (`YAW_2.2_bf16.json`,
+  `YAW_2.2_bf16_TripleK.json`, `YAW_2.2_bf16_Clownshark.json`) with nodes
+  `177`/`178` (`UNETLoader`) pointed at
+  `wan22-i2v-14b-fp16-{high,low}.safetensors` (was
+  `Wan2_2-I2V-A14B-{HIGH,LOW}_bf16.safetensors`). **The repo filenames were
+  deliberately left unchanged** — renaming them would break the `workflow_file`
+  string already persisted on every saved video (used for the mode badge
+  lookup) and the `WORKFLOW_FILE`/`WF_STANDARD` config defaults; see the
+  Workflow ↔ UI parameter map section above for the full explanation. No
+  `config.py`/`workflow.py` changes were needed: every node ID + input key
+  `PARAM_FIELDS` references (plus `IMAGE_NODE`/`OUTPUT_NODE_ID`) was verified
+  present and unchanged across all three new files before swapping them in.
+- **Width/height is now image-driven instead of a fixed 9:16/480 baked
+  value** — node `169` ("Width and height from aspect ratio 🪴") was replaced
+  by node `364` (`SimpleSwitch`, reads the loaded input image) → node `365`
+  (`WanResolutions`, `aspect_ratio: "2:3"`, `resolution: "Preview — 512×768"`),
+  still feeding the same downstream Width/Height Switch nodes (`292`/`293`).
+  Not exposed in the mobile UI before or after this change (no `PARAM_FIELDS`
+  entry), so this is purely a workflow-graph-internal change.
+- Net effect: shared-node count between the three modes went from 56 to 57
+  (removed `169`, added `364` + `365`). Verified via a standalone
+  `build_workflow()` test across all three modes (Standard/TripleK/Clownshark)
+  with the new files — no `KeyError`s, correct image/prompt/seed/sampler
+  injection, correct fp16 filenames in the built prompt JSON.
 
 ---
 

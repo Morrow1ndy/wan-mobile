@@ -55,6 +55,16 @@ Fill in `.env`:
 
 ## 2. Point it at your real workflow
 
+> **Note:** this section predates the current 3-way sampler mode (Standard /
+> TripleKSampler / Clownshark — see `CLAUDE.md`'s "Workflow ↔ UI parameter
+> map" section for the authoritative, actively-maintained reference).
+> `workflows/YAW_2.2.json` mentioned below no longer exists; the active files
+> are `workflows/YAW_2.2_bf16.json`, `YAW_2.2_bf16_TripleK.json`, and
+> `YAW_2.2_bf16_Clownshark.json`. **⚠️ As of 2026-07-03 all three actually
+> load fp16 UNET weights, not bf16** — the filenames were kept as-is to avoid
+> breaking the `workflow_file` value already saved on existing videos; see
+> CLAUDE.md for why.
+
 `workflows/YAW_2.2.json` is a real working workflow and is ready to use
 out of the box. If you want to swap in a different workflow:
 

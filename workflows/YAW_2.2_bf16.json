@@ -297,7 +297,7 @@
     "inputs": {
       "frame_rate": 16,
       "loop_count": 0,
-      "filename_prefix": "WANT2V/2026-07-02/152600_",
+      "filename_prefix": "WANT2V/2026-07-03/111359_",
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 19,
@@ -322,7 +322,7 @@
         0
       ],
       "loop_count": 0,
-      "filename_prefix": "output_2026-07-02/152600_IN",
+      "filename_prefix": "output_2026-07-03/111359_IN",
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 19,
@@ -351,7 +351,7 @@
   },
   "158": {
     "inputs": {
-      "seed": 1060826981677734
+      "seed": -1
     },
     "class_type": "Seed (rgthree)",
     "_meta": {
@@ -409,7 +409,7 @@
   },
   "166": {
     "inputs": {
-      "image": "429154407_913344670242095_52449854403438683_n.jpg"
+      "image": "default.jpg"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -431,20 +431,9 @@
       "title": "PlaySound 🐍"
     }
   },
-  "169": {
-    "inputs": {
-      "aspect_ratio": "9:16",
-      "target_size": 480,
-      "multiple_of": 128
-    },
-    "class_type": "Width and height from aspect ratio 🪴",
-    "_meta": {
-      "title": "Width and height from aspect ratio 🪴"
-    }
-  },
   "177": {
     "inputs": {
-      "unet_name": "Wan2_2-I2V-A14B-HIGH_bf16.safetensors",
+      "unet_name": "wan22-i2v-14b-fp16-high.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
@@ -454,7 +443,7 @@
   },
   "178": {
     "inputs": {
-      "unet_name": "Wan2_2-I2V-A14B-LOW_bf16.safetensors",
+      "unet_name": "wan22-i2v-14b-fp16-low.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
@@ -508,7 +497,7 @@
       "mode": "none",
       "eta": 0.5,
       "start_step": 2,
-      "end_step": 5
+      "end_step": 15
     },
     "class_type": "ClownOptions_DetailBoost_Beta",
     "_meta": {
@@ -581,8 +570,8 @@
   },
   "292": {
     "inputs": {
-      "input02": [
-        "169",
+      "input01": [
+        "365",
         0
       ]
     },
@@ -593,8 +582,8 @@
   },
   "293": {
     "inputs": {
-      "input02": [
-        "169",
+      "input01": [
+        "365",
         1
       ]
     },
@@ -901,6 +890,33 @@
     "class_type": "FilmGrainLTXV",
     "_meta": {
       "title": "🌾 FilmGrainLTXV"
+    }
+  },
+  "364": {
+    "inputs": {
+      "input01": [
+        "166",
+        0
+      ]
+    },
+    "class_type": "SimpleSwitch",
+    "_meta": {
+      "title": "Image for Size Switch"
+    }
+  },
+  "365": {
+    "inputs": {
+      "aspect_ratio": "2:3",
+      "resolution": "Preview — 512×768",
+      "official_only": false,
+      "image": [
+        "364",
+        0
+      ]
+    },
+    "class_type": "WanResolutions",
+    "_meta": {
+      "title": "Width and height from aspect ratio 🪴"
     }
   }
 }
