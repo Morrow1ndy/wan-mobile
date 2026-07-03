@@ -507,6 +507,22 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-03 (Saved section collapsed by default on Outputs tab)
+
+**Changes:**
+- **The ⭐ Saved section on the Outputs tab now starts collapsed** instead of
+  expanded — matches the collapse/expand mechanism `#session-toggle`/
+  `#saved-toggle` already use (`list.style.display === "none"` = collapsed).
+  `static/index.html` now sets `#saved-list`'s initial `style="display:none"`
+  and its chevron to `▸` (was `▾`/expanded); `📹 Current Session` is
+  unaffected and still starts expanded. `loadSaved()` never touches
+  `list.style.display` on refresh, so this is purely a default-state change —
+  manually expanding/collapsing still works exactly as before and survives
+  refreshes.
+- SW cache bumped to `wan-static-v52`.
+
+---
+
 ### 2026-07-03 (Current Session no longer capped at 30 clips + double-confirm before deploying over unsaved videos)
 
 **Bugs fixed:**
