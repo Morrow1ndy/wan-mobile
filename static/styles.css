@@ -191,10 +191,9 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .tile-foot .sched-row-label { min-width: 28px; font-size: 7.5px; color: rgba(255,255,255,0.55); }
 .tile-foot .sched-row-val { color: rgba(255,255,255,0.92); word-break: break-word; }
 
-/* ---- sampler-mode badge (Standard/TripleKSampler/Clownshark Sampler) ----
-   Shown on grid tiles (compact, single line, shortened via TILE_MODE_LABELS)
-   AND above the sampler/scheduler detail rows in the expanded caption below
-   (full name there). ---- */
+/* ---- sampler-mode badge — grid tile only (compact pill, shortened label
+   via _shortModeLabel()). The expanded caption uses .cap-mode-name instead
+   (plain colored text, no pill — see below). ---- */
 .mode-badge {
   display: inline-flex; align-items: center;
   font-size: 10px; font-weight: 700; letter-spacing: .02em;
@@ -202,14 +201,14 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
   color: var(--accent); background: rgba(110,139,255,0.16);
 }
-.tile-foot .mode-badge { color: #fff; background: rgba(0,0,0,0.4); }
+.tile-foot .mode-badge { color: #fff; background: rgba(0,0,0,0.4); font-size: 8px; padding: 1px 5px; }
 
 /* ---- tile caption: hidden in grid, shown in expanded ---- */
 .out-card:not(.expanded) .out-cap { display: none; }
 .out-cap {
-  display: flex; flex-direction: column; gap: 10px;
+  display: flex; flex-direction: column; gap: 6px;
   background: var(--surface); border-top: 1px solid var(--line);
-  padding: 14px 16px max(16px, env(safe-area-inset-bottom));
+  padding: 10px 14px max(10px, env(safe-area-inset-bottom));
 }
 .cap-row { display: flex; align-items: center; gap: 10px; }
 .cap-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
@@ -221,16 +220,30 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
    home for what won't fit on a grid tile. Label/value rows instead of pills
    so long sampler names wrap onto a second line instead of truncating.
    Omitted entirely by the caller (not just empty) when a clip has no
-   sampler-mode data (pre-feature videos). ---- */
-.cap-sampler { display: flex; flex-direction: column; gap: 5px; }
-.sched-row { display: flex; gap: 8px; font-size: 12px; line-height: 1.4; }
+   sampler-mode data (pre-feature videos). Kept compact (small font, tight
+   gaps) since this whole bottom sheet competes with the video for height —
+   .out-cover is flex:1, so every px trimmed here is a px handed back to the
+   video (2026-07-03). ---- */
+.cap-sampler { display: flex; flex-direction: column; gap: 3px; }
+.sched-row { display: flex; align-items: baseline; gap: 8px; font-size: 11px; line-height: 1.3; }
 .sched-row-label {
-  flex-shrink: 0; min-width: 62px;
-  color: var(--muted); font-weight: 600; font-size: 11px;
+  flex-shrink: 0; min-width: 56px;
+  color: var(--muted); font-weight: 600; font-size: 10px;
   text-transform: uppercase; letter-spacing: .03em;
-  padding-top: 1px;
 }
 .sched-row-val { color: var(--text); word-break: break-word; }
+
+/* Sampling mode name, merged onto the same row as its first sampler+
+   scheduler pair (no pill/background — just colored text, unlike the grid
+   tile's .mode-badge). A second row for a two-pair mode's other pair
+   (TripleK Base/Lightning, Clownshark High/Low) gets .cap-mode-spacer
+   instead — same width, invisible — so both rows still line up under one
+   visual "mode" column rather than repeating the name. */
+.cap-mode-name {
+  flex-shrink: 0; min-width: 56px;
+  color: var(--accent); font-weight: 700; font-size: 11px; letter-spacing: .02em;
+}
+.cap-mode-name.cap-mode-spacer { visibility: hidden; }
 .out-cap .dl {
   display: inline-flex; align-items: center; gap: 4px;
   background: var(--surface-2); border: 1px solid var(--line-2);

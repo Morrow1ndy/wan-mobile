@@ -747,10 +747,11 @@ function _workflowTabsHtml() {
   const workflows = CFG.workflows || [];
   if (workflows.length < 2) return "";
   const labels = CFG.workflow_labels || {};
-  const buttons = workflows.map((wf) =>
-    `<button type="button" class="img-mode-tab${wf === _selectedWorkflow ? " active" : ""}"
-             data-workflow="${esc(wf)}">${esc(labels[wf] || _workflowLabel(wf))}</button>`
-  ).join("");
+  const buttons = workflows.map((wf) => {
+    const full = labels[wf] || _workflowLabel(wf);
+    return `<button type="button" class="img-mode-tab${wf === _selectedWorkflow ? " active" : ""}"
+             data-workflow="${esc(wf)}">${esc(_shortModeLabel(full))}</button>`;
+  }).join("");
   return `<div class="field" data-fkey="_workflow_tabs">
     <label>Sampling Mode
       <div id="workflow-tabs" class="img-mode-tabs" style="margin-top:8px">${buttons}</div>
@@ -1402,50 +1403,90 @@ function fmtSchedulerLabel(s) {
 // it is, so it skips the label and shows only the value; two independent
 // pairs (TripleK's Base/Lightning, Clownshark's High/Low) keep their stage
 // label since that's the only way to tell them apart.
-function samplerPairRows(it) {
+// Shared by samplerPairRows() (tile) and capSamplerHtml() (expanded caption)
+// so both stay in sync on which fields make up a "pair" for each mode.
+function _samplerPairs(it) {
   const pairRows = (pairs) => pairs
     .filter(([, s, sch]) => s || sch)
     .map(([label, s, sch]) => [label, [s, sch].filter(Boolean).map(fmtSchedulerLabel).join(" / ")]);
 
-  let rows;
   if (it.cs_sampler_h || it.cs_scheduler_h || it.cs_sampler_l || it.cs_scheduler_l) {
-    rows = pairRows([
+    return pairRows([
       ["High", it.cs_sampler_h, it.cs_scheduler_h],
       ["Low", it.cs_sampler_l, it.cs_scheduler_l],
     ]);
-  } else if (it.sampler_base || it.scheduler_base || it.sampler_lightning || it.scheduler_lightning) {
-    rows = pairRows([
+  }
+  if (it.sampler_base || it.scheduler_base || it.sampler_lightning || it.scheduler_lightning) {
+    return pairRows([
       ["Base", it.sampler_base, it.scheduler_base],
       ["Lightning", it.sampler_lightning, it.scheduler_lightning],
     ]);
-  } else if (it.sampler || it.scheduler) {
-    rows = pairRows([[null, it.sampler, it.scheduler]]);
-  } else {
-    rows = [];
   }
-  return rows.map(([label, val]) => `<div class="sched-row">
+  if (it.sampler || it.scheduler) {
+    return pairRows([[null, it.sampler, it.scheduler]]);
+  }
+  return [];
+}
+
+function samplerPairRows(it) {
+  return _samplerPairs(it).map(([label, val]) => `<div class="sched-row">
     ${label ? `<span class="sched-row-label">${esc(label)}</span>` : ""}<span class="sched-row-val">${esc(val)}</span>
   </div>`).join("");
 }
 
-// Shortened mode names for the ~110px grid tile, where "Standard Sampler" /
-// "Clownshark Sampler" don't fit even at 10px without ellipsis-truncating.
-// The full name is used everywhere else (expanded caption).
-const TILE_MODE_LABELS = {
-  "Standard Sampler": "Standard",
-  "TripleKSampler": "TripleK",
-  "Clownshark Sampler": "Clownshark",
-};
+// Short mode name everywhere it's shown (grid tile, expanded caption, and the
+// Generate tab's own mode-switch tabs) — "Standard Sampler" -> "Standard",
+// "TripleKSampler" -> "TripleK", "Clownshark Sampler" -> "Clownshark". Just
+// strips a trailing "Sampler" (with or without a preceding space) rather
+// than a hardcoded per-label map, so it stays correct if WORKFLOW_LABELS
+// ever changes.
+function _shortModeLabel(fullLabel) {
+  return fullLabel.replace(/\s*Sampler$/i, "") || fullLabel;
+}
 
-// "Sampler mode" badge (Standard Sampler / TripleKSampler / Clownshark
-// Sampler), shown above the sampler+scheduler pair. Derived from which
-// workflow file produced the clip — absent for clips generated before this
-// feature (no badge shown, matching the existing "no data, no badge" pattern).
+// "Sampler mode" name, shown above the sampler+scheduler pair. Derived from
+// which workflow file produced the clip — absent for clips generated before
+// this feature (no badge shown, matching the existing "no data, no badge"
+// pattern).
 function samplerModeBadge(it, cls) {
   const fullLabel = (CFG.workflow_labels || {})[it.workflow_file];
   if (!fullLabel) return "";
-  const label = cls === "tile-sched" ? (TILE_MODE_LABELS[fullLabel] || fullLabel) : fullLabel;
+  const label = _shortModeLabel(fullLabel);
   return `<span class="mode-badge${cls ? " " + cls : ""}">${esc(label)}</span>`;
+}
+
+// Expanded/full-screen caption: sampling mode name (blue text, no pill/
+// background) merged onto the same row as its first sampler+scheduler pair,
+// plus a Steps row. Two-pair modes (TripleK's Base/Lightning, Clownshark's
+// High/Low) get a second row for the other pair with an invisible
+// same-width spacer where the mode name would repeat, so both rows still
+// line up under one visual "mode" column instead of repeating the name.
+function capSamplerHtml(it) {
+  const fullLabel = (CFG.workflow_labels || {})[it.workflow_file];
+  const modeLabel = fullLabel ? _shortModeLabel(fullLabel) : "";
+  const pairs = _samplerPairs(it);
+  const rows = [];
+
+  if (pairs.length) {
+    pairs.forEach(([label, val], i) => {
+      const modeCell = modeLabel
+        ? `<span class="cap-mode-name${i === 0 ? "" : " cap-mode-spacer"}">${esc(modeLabel)}</span>`
+        : "";
+      rows.push(`<div class="sched-row cap-sched-row">
+        ${modeCell}${label ? `<span class="sched-row-label">${esc(label)}</span>` : ""}<span class="sched-row-val">${esc(val)}</span>
+      </div>`);
+    });
+  } else if (modeLabel) {
+    rows.push(`<div class="sched-row cap-sched-row"><span class="cap-mode-name">${esc(modeLabel)}</span></div>`);
+  }
+
+  if (it.steps != null && it.steps !== "") {
+    rows.push(`<div class="sched-row cap-sched-row">
+      <span class="sched-row-label">Steps</span><span class="sched-row-val">${esc(it.steps)}</span>
+    </div>`);
+  }
+
+  return rows.join("");
 }
 
 // Build a /view URL for the uploaded input image (its name may carry a subfolder).
@@ -1647,9 +1688,12 @@ function renderSavedOutput(it) {
   const dtFull = fmtDatetimeFull(it.completed_at);
   const durText = it.duration_secs != null ? fmtElapsed(it.duration_secs) : null;
   const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
-  const modeBadge = samplerModeBadge(it);
   const schedRows = samplerPairRows(it);
-  const samplerBlock = (modeBadge || schedRows) ? `<div class="cap-sampler">${modeBadge}${schedRows}</div>` : "";
+  const stepsRow = it.steps != null && it.steps !== ""
+    ? `<div class="sched-row"><span class="sched-row-label">Steps</span><span class="sched-row-val">${esc(it.steps)}</span></div>`
+    : "";
+  const capSampler = capSamplerHtml(it);
+  const samplerBlock = capSampler ? `<div class="cap-sampler">${capSampler}</div>` : "";
   return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
               data-pid="${esc(it.prompt_id)}" data-pod="${esc(it.pod_id||"")}">
     <div class="out-cover">
@@ -1660,6 +1704,7 @@ function renderSavedOutput(it) {
         ${name}
         ${samplerModeBadge(it, "tile-sched")}
         ${schedRows}
+        ${stepsRow}
         ${durText ? `<span class="tile-gentime">${esc(durText)}</span>` : ""}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
       </div>
@@ -1701,9 +1746,12 @@ function renderOutput(podId, it) {
   const durText = it.duration_secs != null ? fmtElapsed(it.duration_secs) : null;
   const starred = it.is_saved;
   const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
-  const modeBadge = samplerModeBadge(it);
   const schedRows = samplerPairRows(it);
-  const samplerBlock = (modeBadge || schedRows) ? `<div class="cap-sampler">${modeBadge}${schedRows}</div>` : "";
+  const stepsRow = it.steps != null && it.steps !== ""
+    ? `<div class="sched-row"><span class="sched-row-label">Steps</span><span class="sched-row-val">${esc(it.steps)}</span></div>`
+    : "";
+  const capSampler = capSamplerHtml(it);
+  const samplerBlock = capSampler ? `<div class="cap-sampler">${capSampler}</div>` : "";
   return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
               data-pid="${esc(it.prompt_id)}" data-pod="${esc(podId)}"
               data-file="${esc(it.filename)}" data-sub="${esc(it.subfolder||"")}" data-ftype="${esc(it.type||"output")}">
@@ -1715,6 +1763,7 @@ function renderOutput(podId, it) {
         ${name}
         ${samplerModeBadge(it, "tile-sched")}
         ${schedRows}
+        ${stepsRow}
         ${durText ? `<span class="tile-gentime">${esc(durText)}</span>` : ""}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
       </div>

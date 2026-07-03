@@ -509,6 +509,14 @@ def _node_titles(workflow: dict) -> dict:
     return titles
 
 
+def _compute_steps(params: dict):
+    """Total steps actually used: steps_on when lightx2v was enabled for this
+    generation, steps_off otherwise (mirrors the toggle's own condition in
+    PARAM_FIELDS). Returns None if neither was recorded."""
+    key = "steps_on" if params.get("lightx2v") else "steps_off"
+    return params.get(key)
+
+
 def _job_public(prompt_id: str, job: dict) -> dict:
     """JSON-safe view of a job (omits raw preview bytes + the titles map)."""
     params = ps.get_params(prompt_id) or {}
@@ -539,6 +547,7 @@ def _job_public(prompt_id: str, job: dict) -> dict:
         "cs_scheduler_h": params.get("cs_scheduler_h", ""),
         "cs_sampler_l": params.get("cs_sampler_l", ""),
         "cs_scheduler_l": params.get("cs_scheduler_l", ""),
+        "steps": _compute_steps(params),
     }
 
 
@@ -663,6 +672,7 @@ async def pod_outputs(pod_id: str, limit: int = 30):
                 "cs_scheduler_h": params.get("cs_scheduler_h", ""),
                 "cs_sampler_l": params.get("cs_sampler_l", ""),
                 "cs_scheduler_l": params.get("cs_scheduler_l", ""),
+                "steps": _compute_steps(params),
                 **vid,
             })
     items.reverse()  # history is chronological -> newest first
@@ -826,6 +836,7 @@ async def star_video(pod_id: str, prompt_id: str, payload: dict = Body(default={
         "cs_scheduler_h": params.get("cs_scheduler_h", ""),
         "cs_sampler_l": params.get("cs_sampler_l", ""),
         "cs_scheduler_l": params.get("cs_scheduler_l", ""),
+        "steps": _compute_steps(params),
         # Pod the clip was generated on — lets a permanent "Delete" also purge it
         # from the pod's ComfyUI history (so it can't reappear in the session).
         "pod_id": pod_id,
@@ -906,6 +917,11 @@ async def backfill_scheduler():
                     v = config.WF_STANDARD
                 if v:
                     item["workflow_file"] = v
+                    changed = True
+            if item.get("steps") is None:
+                v = _compute_steps(params)
+                if v is not None:
+                    item["steps"] = v
                     changed = True
             if changed:
                 updated += 1

@@ -468,6 +468,43 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-03 (compact sampler labels + total steps + shorter player info panel)
+
+**Changes:**
+- **Sampling-mode badge shrunk on grid tiles** — `.tile-foot .mode-badge` dropped
+  to 8px font / tighter padding (was inheriting the base 10px pill).
+- **Total steps now shown on every card** — new `_compute_steps(params)` helper
+  in `main.py` picks `steps_on` when `lightx2v` was enabled for that generation,
+  else `steps_off` (mirrors the toggle's own `PARAM_FIELDS` condition). Returned
+  as `"steps"` from `_job_public()` (in-progress card), `pod_outputs()`
+  (session/completed card), and `star_video()` (saved card) meta, and backfilled
+  for existing saved videos via `/api/saved/backfill-scheduler`. Rendered as a
+  plain "STEPS N" row — grid tile (below the sampler/scheduler rows) and
+  expanded caption (below the sampler block). Omitted when not recorded.
+- **Full-screen player: mode name is now plain blue text merged onto the
+  sampler/scheduler row, not a separate pill/stripe** — new `_shortModeLabel()`
+  (regex-strips a trailing " Sampler", e.g. "Standard Sampler" → "Standard")
+  replaces the old hardcoded `TILE_MODE_LABELS` map and is now used
+  consistently in three places: the grid-tile mode badge, the new expanded-
+  caption renderer `capSamplerHtml()`, and the Generate tab's sampling-mode
+  tab buttons (`_workflowTabsHtml()`) — all three now show "Standard"/
+  "TripleK"/"Clownshark" instead of the full label. `capSamplerHtml()` puts the
+  mode name (`.cap-mode-name`, blue, no background) on the same row as the
+  first sampler/scheduler pair; a second pair (TripleK Base/Lightning,
+  Clownshark High/Low) gets an invisible same-width `.cap-mode-name.cap-mode-
+  spacer` instead of repeating the name, so both rows stay aligned under one
+  visual column.
+- **Expanded player's bottom info panel made noticeably shorter**, handing that
+  space back to the video (`.out-cover` is `flex:1`, so anything trimmed off
+  `.out-cap` grows the video) — tightened `.out-cap` padding/gaps and
+  `.sched-row`/`.sched-row-label` font-sizes. Measured via a Playwright
+  before/after height comparison: **Standard 142px → 119px, Clownshark
+  164px → 136px** (~16–17% shorter), despite adding the new Steps row, since
+  merging the mode name onto the pair row (round 2) roughly offset it (round 1).
+- SW cache bumped to `wan-static-v46`.
+
+---
+
 ### 2026-07-03 (param presets now carry sampling mode too)
 
 **Bugs fixed:**
