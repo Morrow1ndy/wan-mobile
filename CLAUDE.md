@@ -468,6 +468,27 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-03 (Favourite GPUs sometimes showed a lower-RAM card)
+
+**Bugs fixed:**
+- **Favourite GPUs section (5090/4090) occasionally didn't show the
+  highest-RAM config** — it reused whatever GPU list the *main grid* had
+  just fetched, which is filtered by the RAM dropdown. The backend's
+  "pick the highest-available-RAM tier" merge (2026-07-01) only runs when
+  `min_memory` is omitted entirely (RAM filter = "Any"); if the user had the
+  main grid's RAM filter set to anything else (e.g. 8/16/24GB), that single-
+  tier query's own price-tied config won instead — reintroducing the exact
+  bug that merge was built to avoid. Confirmed live: `min_memory=8` returned
+  RTX 5090 capped at 60GB RAM even though a same-price 92GB config
+  (`min_memory` omitted) was in stock at the same time.
+  Fixed: `loadGpuGrid()` now fetches the Favourite GPUs section from its own
+  always-unfiltered-by-RAM request whenever the main grid's filter isn't
+  already "Any" (an extra request only in that case; reuses the main list
+  when the filter already is "Any", no added cost in the common case).
+- SW cache bumped to `wan-static-v42`.
+
+---
+
 ### 2026-07-03 (generation time back on video cards)
 
 **Changes:**

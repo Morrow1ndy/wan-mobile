@@ -484,7 +484,23 @@ async function loadGpuGrid() {
     grid.innerHTML = `<div class="muted">Could not load GPUs: ${e.message}</div>`;
     return;
   }
-  renderFavGpus(gpus);
+
+  // Favourite GPUs must always reflect the true highest-RAM config for
+  // 5090/4090, independent of whatever RAM tier the main grid is currently
+  // filtered to. The backend only does its "pick the highest available RAM
+  // tier" merge when min_memory is omitted entirely — passing any specific
+  // tier (as the main grid does whenever the RAM filter isn't "Any") makes
+  // it return that tier's own price-tied config instead, which silently
+  // reintroduces the "shows the lowest-RAM tie" bug this section exists to
+  // avoid (e.g. filtering to 8GB previously showed a 5090 card capped at
+  // 60GB here, even though a same-price 92GB config was in stock). So this
+  // section gets its own request, always unfiltered by RAM, whenever the
+  // main grid's filter isn't already "Any" — otherwise the same list is reused.
+  const favGpus = min
+    ? await getJSON("/api/gpu-availability" + (cudaParam() ? `?${cudaParam()}` : "")).catch(() => gpus)
+    : gpus;
+  renderFavGpus(favGpus);
+
   grid.innerHTML = gpus.length
     ? gpus.map(renderGpu).join("")
     : `<div class="muted">No GPUs match.</div>`;
