@@ -485,6 +485,40 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-03 (lightx2 High:Low ratio on cards + auto-backfill on boot)
+
+**Features added:**
+- **lightx2/ning distill-LoRA High:Low strength ratio now shown on every
+  card** — e.g. `2:1`, or `2:0.8` if the strengths were tuned unevenly (raw
+  values preserved, not rounded to a fixed scale). New `_compute_lx_ratio(params)`
+  in `main.py` returns `f"{high}:{low}"` from `lx_high`/`lx_low` only when
+  `lightx2v` was on for that generation (the LoRA strengths are forced to 0
+  when it's off, so a ratio isn't meaningful then — returns `None`). New
+  `_fmt_ratio_num()` helper strips trailing `.0` (`2.0` → `"2"`) without
+  rounding real decimals (`0.8` stays `"0.8"`). Wired into the same three
+  surfacing points as `steps` (`_job_public()`, `pod_outputs()`,
+  `star_video()`) as a new `"lx_ratio"` field.
+- **Rendered on the same row as Steps, styled the same way** — "lightx2" is
+  its own `.sched-row-label` (uppercase, muted — identical styling to
+  "Steps"), not folded into the value text. `app.js`'s `_stepsLxRowHtml(it)`
+  (replaces the earlier plain-text `_stepsLxText`) builds
+  `STEPS 10  LIGHTX2 2:1` as two label/value pairs on one row; used by both
+  the grid tile and the expanded/full-screen caption (`capSamplerHtml()`).
+  Omits the lightx2 part entirely when `lx_ratio` is `null` (lightx2v was off,
+  or the clip predates this field).
+- **Existing saved videos now auto-backfilled on every boot** — the
+  `/api/saved/backfill-scheduler` migration (previously POST-only, and never
+  actually invoked against production data after being added, which is why
+  `steps` never appeared on existing saved videos) is now also called from
+  `_startup()` via a new `_backfill_after_sync()` task, after the GCS sync
+  completes. Idempotent (skips any field already set), so this runs safely
+  on every boot at ~no cost once caught up — no manual API call needed
+  whenever a future field is added to this migration. Extended the migration
+  itself to also fill in `lx_ratio` (alongside the existing `steps` fill-in).
+- SW cache bumped to `wan-static-v47`.
+
+---
+
 ### 2026-07-03 (compact sampler labels + total steps + shorter player info panel)
 
 **Changes:**

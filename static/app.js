@@ -1434,6 +1434,24 @@ function samplerPairRows(it) {
   </div>`).join("");
 }
 
+// Steps + lightx2 High:Low ratio, shown together on one row (grid tile and
+// expanded caption both call this) — each as its own label/value pair, so
+// "lightx2" is styled identically to "Steps" (same .sched-row-label class),
+// not folded into the value text. The ratio only exists when lightx2v was on
+// for that generation — it's None from the backend otherwise (LoRA strength
+// is forced to 0 when off, so a ratio isn't meaningful).
+function _stepsLxRowHtml(it) {
+  const hasSteps = it.steps != null && it.steps !== "";
+  if (!hasSteps && !it.lx_ratio) return "";
+  const stepsPart = hasSteps
+    ? `<span class="sched-row-label">Steps</span><span class="sched-row-val">${esc(it.steps)}</span>`
+    : "";
+  const lxPart = it.lx_ratio
+    ? `<span class="sched-row-label">lightx2</span><span class="sched-row-val">${esc(it.lx_ratio)}</span>`
+    : "";
+  return `${stepsPart}${lxPart}`;
+}
+
 // Short mode name everywhere it's shown (grid tile, expanded caption, and the
 // Generate tab's own mode-switch tabs) — "Standard Sampler" -> "Standard",
 // "TripleKSampler" -> "TripleK", "Clownshark Sampler" -> "Clownshark". Just
@@ -1480,10 +1498,9 @@ function capSamplerHtml(it) {
     rows.push(`<div class="sched-row cap-sched-row"><span class="cap-mode-name">${esc(modeLabel)}</span></div>`);
   }
 
-  if (it.steps != null && it.steps !== "") {
-    rows.push(`<div class="sched-row cap-sched-row">
-      <span class="sched-row-label">Steps</span><span class="sched-row-val">${esc(it.steps)}</span>
-    </div>`);
+  const stepsLxHtml = _stepsLxRowHtml(it);
+  if (stepsLxHtml) {
+    rows.push(`<div class="sched-row cap-sched-row">${stepsLxHtml}</div>`);
   }
 
   return rows.join("");
@@ -1689,8 +1706,8 @@ function renderSavedOutput(it) {
   const durText = it.duration_secs != null ? fmtElapsed(it.duration_secs) : null;
   const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
   const schedRows = samplerPairRows(it);
-  const stepsRow = it.steps != null && it.steps !== ""
-    ? `<div class="sched-row"><span class="sched-row-label">Steps</span><span class="sched-row-val">${esc(it.steps)}</span></div>`
+  const stepsRow = _stepsLxRowHtml(it)
+    ? `<div class="sched-row">${_stepsLxRowHtml(it)}</div>`
     : "";
   const capSampler = capSamplerHtml(it);
   const samplerBlock = capSampler ? `<div class="cap-sampler">${capSampler}</div>` : "";
@@ -1747,8 +1764,8 @@ function renderOutput(podId, it) {
   const starred = it.is_saved;
   const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
   const schedRows = samplerPairRows(it);
-  const stepsRow = it.steps != null && it.steps !== ""
-    ? `<div class="sched-row"><span class="sched-row-label">Steps</span><span class="sched-row-val">${esc(it.steps)}</span></div>`
+  const stepsRow = _stepsLxRowHtml(it)
+    ? `<div class="sched-row">${_stepsLxRowHtml(it)}</div>`
     : "";
   const capSampler = capSamplerHtml(it);
   const samplerBlock = capSampler ? `<div class="cap-sampler">${capSampler}</div>` : "";

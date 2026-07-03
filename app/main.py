@@ -51,6 +51,27 @@ async def _startup():
     # though _watch() is actively polling RunPod. The self-ping counts as
     # inbound traffic and prevents auto-stop until all jobs complete.
     asyncio.create_task(_keepalive_loop())
+    # Backfill sampler-mode/steps/lightx2-ratio fields onto saved videos that
+    # predate those fields. backfill_scheduler() is idempotent (skips any
+    # field already set), so running it on every boot is safe/cheap and means
+    # a newly added field (like lx_ratio) reaches existing saved videos
+    # automatically on next deploy — no manual POST to the endpoint needed.
+    # Runs after the GCS sync so it operates on the synced local metadata.
+    backfill_task = asyncio.create_task(_backfill_after_sync(task))
+    _TASKS.add(backfill_task)
+    backfill_task.add_done_callback(_TASKS.discard)
+
+
+async def _backfill_after_sync(sync_task: asyncio.Task):
+    try:
+        await sync_task
+    except Exception:
+        pass
+    try:
+        result = await backfill_scheduler()
+        print(f"[backfill] saved-video metadata backfill on boot: {result}")
+    except Exception as e:
+        print(f"[backfill] startup backfill failed: {e}")
 
 
 async def _keepalive_loop():
@@ -517,6 +538,28 @@ def _compute_steps(params: dict):
     return params.get(key)
 
 
+def _fmt_ratio_num(x) -> str:
+    """Format a ratio component, keeping its original value (2.0 -> "2",
+    0.8 -> "0.8") rather than rounding to a fixed decimal count."""
+    r = round(float(x), 4)
+    if r == int(r):
+        return str(int(r))
+    return f"{r:g}"
+
+
+def _compute_lx_ratio(params: dict):
+    """lightx2/ning distill-LoRA High:Low strength ratio (e.g. "2:1", "2:0.8"),
+    only when lightx2v was enabled for this generation — the strengths are
+    forced to 0 when it's off, so a ratio isn't meaningful then. Returns None
+    if not applicable or not recorded."""
+    if not params.get("lightx2v"):
+        return None
+    high, low = params.get("lx_high"), params.get("lx_low")
+    if high is None or low is None:
+        return None
+    return f"{_fmt_ratio_num(high)}:{_fmt_ratio_num(low)}"
+
+
 def _job_public(prompt_id: str, job: dict) -> dict:
     """JSON-safe view of a job (omits raw preview bytes + the titles map)."""
     params = ps.get_params(prompt_id) or {}
@@ -548,6 +591,7 @@ def _job_public(prompt_id: str, job: dict) -> dict:
         "cs_sampler_l": params.get("cs_sampler_l", ""),
         "cs_scheduler_l": params.get("cs_scheduler_l", ""),
         "steps": _compute_steps(params),
+        "lx_ratio": _compute_lx_ratio(params),
     }
 
 
@@ -673,6 +717,7 @@ async def pod_outputs(pod_id: str, limit: int = 30):
                 "cs_sampler_l": params.get("cs_sampler_l", ""),
                 "cs_scheduler_l": params.get("cs_scheduler_l", ""),
                 "steps": _compute_steps(params),
+                "lx_ratio": _compute_lx_ratio(params),
                 **vid,
             })
     items.reverse()  # history is chronological -> newest first
@@ -837,6 +882,7 @@ async def star_video(pod_id: str, prompt_id: str, payload: dict = Body(default={
         "cs_sampler_l": params.get("cs_sampler_l", ""),
         "cs_scheduler_l": params.get("cs_scheduler_l", ""),
         "steps": _compute_steps(params),
+        "lx_ratio": _compute_lx_ratio(params),
         # Pod the clip was generated on — lets a permanent "Delete" also purge it
         # from the pod's ComfyUI history (so it can't reappear in the session).
         "pod_id": pod_id,
@@ -867,14 +913,18 @@ async def list_saved():
 
 @app.post("/api/saved/backfill-scheduler")
 async def backfill_scheduler():
-    """One-time migration: fill in sampler-mode fields (workflow_file, and
-    sampler/scheduler or the TripleK/Clownshark pair fields) on saved videos
-    that predate a given feature, from the generation params recorded at the
-    time (falling back to the legacy `scheduler_high`/`sampler_high` keys).
-    Idempotent — any field already set on an entry is left untouched, so
-    re-running (e.g. after a later feature adds more fields, as happened
-    2026-07-02 with the 3-way sampler mode) is always safe and only fills in
-    what's still missing. Params older than the last 500 generations (see
+    """Migration: fill in sampler-mode fields (workflow_file, and
+    sampler/scheduler or the TripleK/Clownshark pair fields, steps, lx_ratio)
+    on saved videos that predate a given feature, from the generation params
+    recorded at the time (falling back to the legacy `scheduler_high`/
+    `sampler_high` keys). Idempotent — any field already set on an entry is
+    left untouched, so re-running (e.g. after a later feature adds more
+    fields, as happened 2026-07-02 with the 3-way sampler mode, and
+    2026-07-03 with steps/lx_ratio) is always safe and only fills in what's
+    still missing. Also called once from `_startup()` on every boot (see
+    `_backfill_after_sync`) so newly added fields reach existing saved videos
+    automatically on the next deploy, without a manual POST to this endpoint.
+    Params older than the last 500 generations (see
     persistence._MAX_PARAMS) are no longer available, so those entries are
     simply left without this data and show no mode/sampler badge in the UI.
     """
@@ -922,6 +972,11 @@ async def backfill_scheduler():
                 v = _compute_steps(params)
                 if v is not None:
                     item["steps"] = v
+                    changed = True
+            if item.get("lx_ratio") is None:
+                v = _compute_lx_ratio(params)
+                if v is not None:
+                    item["lx_ratio"] = v
                     changed = True
             if changed:
                 updated += 1
