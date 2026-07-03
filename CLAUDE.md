@@ -210,11 +210,26 @@ node that doesn't exist in that graph) and the frontend's `_visibleFields()`
 enforce this:
 - **Standard**: `sampler`/`scheduler` → both `128` and `129`. `scheduler` is
   `multiselect` (fires one generation per selected scheduler, same seed).
-- **TripleKSampler**: independent `sampler_base`/`scheduler_base` (→ node
-  `290` `base_sampler`/`base_scheduler`) and `sampler_lightning`/
-  `scheduler_lightning` (→ `lightning_sampler`/`lightning_scheduler`). Only
-  `scheduler_base` is `multiselect` — Lightning stays single-select (avoids
-  an N×M cross-product fan-out).
+- **TripleKSampler**: a single `sampler`/`scheduler` pair drives **both**
+  Base and Lightning together (→ node `290`'s `base_sampler`+
+  `lightning_sampler` / `base_scheduler`+`lightning_scheduler` — one
+  `PARAM_FIELDS` entry per key, each with two `targets`). `scheduler` is
+  `multiselect`, same as Standard. **Changed 2026-07-03** — this used to be
+  two fully independent pairs (`sampler_base`/`scheduler_base` and
+  `sampler_lightning`/`scheduler_lightning`, only the Base scheduler
+  multiselect) with their own Base/Lightning UI labels; merged into one pair
+  by request, deliberately reusing the same `sampler`/`scheduler` keys
+  Standard already uses. This is safe because `PARAM_FIELDS` entries are
+  scoped per-mode via `"workflows"` — only one of the two same-keyed entries
+  is ever visible/collected at a time (`_visibleFields()` in `app.js`) — and
+  it means a clip generated this way naturally renders through the existing
+  single-pair (no Base/Lightning label) card path instead of needing new UI.
+  Saved videos from before the merge still have the old `sampler_base`/
+  `scheduler_base`/`sampler_lightning`/`scheduler_lightning` fields recorded
+  and still render as two labelled Base/Lightning rows (`_samplerPairs()` in
+  `app.js` checks for these legacy fields before falling through to the
+  single-pair case) — old data isn't silently lost, it just isn't produced
+  by new generations anymore.
 - **Clownshark**: independent High (`cs_sampler_h`/`cs_scheduler_h` → node
   `209`) and Low (`cs_sampler_l`/`cs_scheduler_l` → node `210`) pairs, plain
   `select` (never multiselect). `sampler_name`/`scheduler` choices
@@ -263,12 +278,15 @@ prompt_id's chosen `workflow_file` and sampler/scheduler value(s) are
 persisted via `ps.save_params()` at generate time and surfaced identically
 by `_job_public()` (in-progress card), `pod_outputs()` (session/completed
 card), and `star_video()` (saved card) in `main.py` — same field names
-(`workflow_file`, `sampler`, `scheduler`, `sampler_base`, `scheduler_base`,
-`sampler_lightning`, `scheduler_lightning`, `cs_sampler_h`, `cs_scheduler_h`,
-`cs_sampler_l`, `cs_scheduler_l`, plus `steps` — see below) from all three, so
-`app.js`'s `samplerModeBadge()` / `samplerPairRows()` (grid tile) and
-`capSamplerHtml()` (expanded caption) render consistently across in-progress,
-session, and saved cards without special-casing any of them.
+(`workflow_file`, `sampler`, `scheduler`, `cs_sampler_h`, `cs_scheduler_h`,
+`cs_sampler_l`, `cs_scheduler_l`, plus `steps`/`lx_ratio` — see below) from
+all three, so `app.js`'s `samplerModeBadge()` / `samplerPairRows()` (grid
+tile) and `capSamplerHtml()` (expanded caption) render consistently across
+in-progress, session, and saved cards without special-casing any of them.
+`sampler_base`/`scheduler_base`/`sampler_lightning`/`scheduler_lightning` are
+still surfaced too, but only ever populated on **legacy** TripleK saved
+videos from before the 2026-07-03 single-pair merge (see the TripleKSampler
+entry above) — new generations never write them.
 
 **Total steps field**: `_compute_steps(params)` (`main.py`) returns
 `steps_on` if `lightx2v` was enabled for that generation, else `steps_off` —
@@ -482,6 +500,42 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-07-03 (TripleK: single sampler/scheduler pair + in-progress card parity)
+
+**Changes:**
+- **TripleKSampler's independent Base/Lightning sampler+scheduler pair
+  merged into one pair that drives both simultaneously** — the Generate tab
+  now shows a single "Sampler"/"Scheduler" control for TripleK (matching
+  Standard), instead of four separate Base/Lightning fields. `config.py`'s
+  `PARAM_FIELDS` now has TripleK reuse the same `sampler`/`scheduler` keys
+  as Standard, each with two `targets` (node `290`'s `base_sampler`+
+  `lightning_sampler`, and `base_scheduler`+`lightning_scheduler`), so one
+  selection writes to both stages. Safe to share keys with Standard's
+  entries because `PARAM_FIELDS` fields are scoped per-mode via
+  `"workflows"` — only one of the two same-keyed entries is ever
+  visible/collected at a time. `scheduler` stays `multiselect` (fires one
+  generation per selected scheduler, same as Standard).
+  - New TripleK generations now render as a single unlabeled sampler/
+    scheduler pair everywhere (grid tile, full-screen player, in-progress
+    card) via the existing single-pair fallback in `_samplerPairs()` —
+    no new rendering code needed.
+  - **Legacy TripleK saved videos** (generated before this merge) still have
+    the old independent `sampler_base`/`scheduler_base`/`sampler_lightning`/
+    `scheduler_lightning` fields recorded and still render as two labelled
+    Base/Lightning rows — `_samplerPairs()` checks for these legacy fields
+    before falling through to the single-pair case, so old data isn't lost.
+    Generation Details also keeps clean "Sampler (Base)"/"Sampler
+    (Lightning)" labels for these via a `LEGACY_LABELS` entry, since they no
+    longer have a matching `PARAM_FIELDS` entry to pull a label from.
+- **In-progress "generating" card now shows the same info as a completed
+  card** — it was missing the Steps + lightx2 ratio row added earlier today.
+  `upsertActiveCard()` now also renders `_stepsLxRowHtml()`, so the card is
+  visually consistent from the moment a video starts generating through to
+  the finished/saved card.
+- SW cache bumped to `wan-static-v48`.
 
 ---
 

@@ -361,11 +361,11 @@ PARAM_FIELDS = [
      "targets": [{"node_id": "128", "input": "sampler_name"},
                  {"node_id": "129", "input": "sampler_name"}]},
 
-    # Scheduler is multi-selectable (Standard + TripleKSampler's Base scheduler
-    # only — see below): the frontend fires one /api/generate request per
-    # selected scheduler (all sharing the same resolved seed), so each
-    # individual request still carries a single plain scheduler string —
-    # "multiselect" only changes how the Generate-tab UI renders/collects it.
+    # Scheduler is multi-selectable (Standard + TripleKSampler — see below):
+    # the frontend fires one /api/generate request per selected scheduler
+    # (all sharing the same resolved seed), so each individual request still
+    # carries a single plain scheduler string — "multiselect" only changes
+    # how the Generate-tab UI renders/collects it.
     {"key": "scheduler", "label": "Scheduler", "type": "multiselect", "fmt": "str",
      "workflows": [WF_STANDARD],
      "choices": _SCHEDULER_CHOICES,
@@ -373,21 +373,23 @@ PARAM_FIELDS = [
      "targets": [{"node_id": "128", "input": "scheduler"},
                  {"node_id": "129", "input": "scheduler"}]},
 
-    # TripleKSampler (node 290) — two INDEPENDENT pairs (Base / Lightning, its
-    # own terminology — not a High/Low split). Only Base's scheduler is
-    # multi-selectable; Lightning's sampler+scheduler are single-select.
-    {"key": "sampler_base", "label": "Sampler (Base)", "type": "select", "fmt": "str",
+    # TripleKSampler (node 290) — a SINGLE sampler/scheduler pair drives both
+    # its Base and Lightning stages together (used to be two independent
+    # pairs with their own Base/Lightning labels; merged 2026-07-03 — see
+    # that changelog entry). Deliberately reuses the same "sampler"/
+    # "scheduler" keys as Standard Sampler above: PARAM_FIELDS entries are
+    # scoped per-mode via "workflows", so only one of the two same-named
+    # entries is ever visible/collected at a time (see _visibleFields() in
+    # app.js) — this also means a clip generated this way naturally reuses
+    # Standard's existing single-pair (no Base/Lightning label) card display.
+    {"key": "sampler", "label": "Sampler", "type": "select", "fmt": "str",
      "workflows": [WF_TRIPLEK], "choices": _SAMPLER_CHOICES, "default": "euler",
-     "targets": [{"node_id": "290", "input": "base_sampler"}]},
-    {"key": "scheduler_base", "label": "Scheduler (Base)", "type": "multiselect", "fmt": "str",
+     "targets": [{"node_id": "290", "input": "base_sampler"},
+                 {"node_id": "290", "input": "lightning_sampler"}]},
+    {"key": "scheduler", "label": "Scheduler", "type": "multiselect", "fmt": "str",
      "workflows": [WF_TRIPLEK], "choices": _SCHEDULER_CHOICES, "default": "simple",
-     "targets": [{"node_id": "290", "input": "base_scheduler"}]},
-    {"key": "sampler_lightning", "label": "Sampler (Lightning)", "type": "select", "fmt": "str",
-     "workflows": [WF_TRIPLEK], "choices": _SAMPLER_CHOICES, "default": "euler",
-     "targets": [{"node_id": "290", "input": "lightning_sampler"}]},
-    {"key": "scheduler_lightning", "label": "Scheduler (Lightning)", "type": "select", "fmt": "str",
-     "workflows": [WF_TRIPLEK], "choices": _SCHEDULER_CHOICES, "default": "simple",
-     "targets": [{"node_id": "290", "input": "lightning_scheduler"}]},
+     "targets": [{"node_id": "290", "input": "base_scheduler"},
+                 {"node_id": "290", "input": "lightning_scheduler"}]},
 
     # Clownshark Sampler (ClownsharKSampler_Beta, nodes 209 High / 210 Low) —
     # genuinely independent High/Low pair, and NOT multi-selectable (per

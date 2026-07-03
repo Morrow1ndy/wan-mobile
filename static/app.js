@@ -656,7 +656,7 @@ function renderParamFields() {
   $("#prompt-field").innerHTML = promptField ? renderField(promptField) : "";
 
   // The sampling-mode tabs sit between the LoRA section and the
-  // sampler/scheduler section. Per-mode fields (sampler, scheduler_base,
+  // sampler/scheduler section. Per-mode fields (sampler, scheduler,
   // cs_sampler_h, etc.) all carry a "workflows" scoping key; shared fields
   // (steps/cfg/loras/seed/etc.) don't — so the first field with a
   // "workflows" key marks the start of the sampler/scheduler block. This
@@ -1390,19 +1390,21 @@ function fmtSchedulerLabel(s) {
   return last.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
-// Sampler+scheduler detail rows. Standard shows one row ("Sampler"); TripleK
-// and Clownshark each show two independent rows (Base/Lightning and
-// High/Low respectively — different stage names, same "two rows" shape). No
-// colour-coding — every mode uses the same neutral row style.
+// Sampler+scheduler detail rows. Standard and TripleK both show one row
+// ("Sampler"/"Scheduler" — TripleK merged its old independent Base/Lightning
+// pair into a single one driving both on 2026-07-03, see that changelog
+// entry); Clownshark still shows two independent rows (High/Low — its
+// sampler node genuinely has two independent stages). No colour-coding —
+// every mode uses the same neutral row style.
 //
 // Rendered as label/value rows (not pills) so long values — Clownshark's
 // RES4LYF sampler names run up to 30+ chars — can wrap onto a second line
 // instead of ellipsis-truncating. Shown on both the grid tile (compact) and
-// the expanded caption (roomier). A single pair (Standard, or a legacy
-// pre-mode video with just "scheduler") has no ambiguity about which stage
-// it is, so it skips the label and shows only the value; two independent
-// pairs (TripleK's Base/Lightning, Clownshark's High/Low) keep their stage
-// label since that's the only way to tell them apart.
+// the expanded caption (roomier). A single pair (Standard, TripleK, or a
+// legacy pre-mode video with just "scheduler") has no ambiguity about which
+// stage it is, so it skips the label and shows only the value; Clownshark's
+// two independent rows keep their High/Low stage label since that's the
+// only way to tell them apart.
 // Shared by samplerPairRows() (tile) and capSamplerHtml() (expanded caption)
 // so both stay in sync on which fields make up a "pair" for each mode.
 function _samplerPairs(it) {
@@ -1416,6 +1418,9 @@ function _samplerPairs(it) {
       ["Low", it.cs_sampler_l, it.cs_scheduler_l],
     ]);
   }
+  // Legacy TripleK clips generated before the 2026-07-03 merge still have
+  // independent Base/Lightning values recorded — keep showing them as two
+  // labelled rows so old data doesn't silently lose information.
   if (it.sampler_base || it.scheduler_base || it.sampler_lightning || it.scheduler_lightning) {
     return pairRows([
       ["Base", it.sampler_base, it.scheduler_base],
@@ -2348,8 +2353,15 @@ async function showDetails(promptId) {
 
   const fields = CFG.fields || [];
 
-  // Label aliases for legacy (pre-combined) sampler/scheduler keys
-  const LEGACY_LABELS = { sampler_high: "Sampler", scheduler_high: "Scheduler" };
+  // Label aliases for legacy (pre-combined) sampler/scheduler keys — includes
+  // TripleK's old independent Base/Lightning pair (merged into a single
+  // pair 2026-07-03; no longer in PARAM_FIELDS, so these need an explicit
+  // label here to avoid falling back to the raw "sampler base" key text).
+  const LEGACY_LABELS = {
+    sampler_high: "Sampler", scheduler_high: "Scheduler",
+    sampler_base: "Sampler (Base)", scheduler_base: "Scheduler (Base)",
+    sampler_lightning: "Sampler (Lightning)", scheduler_lightning: "Scheduler (Lightning)",
+  };
   // Keys to always hide in details (redundant, internal, or metadata-only)
   const HIDDEN_KEYS = new Set(["sampler_low", "scheduler_low", "video_name", "workflow_file"]);
 
@@ -2631,6 +2643,9 @@ function upsertActiveCard(podId, j) {
   if (!card) {
     const thumb = inputThumbUrl(podId, j.input_image);
     const nameHtml = j.video_name ? `<span class="tile-dur">${esc(j.video_name)}</span>` : "";
+    const stepsRow = _stepsLxRowHtml(j)
+      ? `<div class="sched-row">${_stepsLxRowHtml(j)}</div>`
+      : "";
     $("#out-active").insertAdjacentHTML("afterbegin", `
       <div class="out-card out-card-active" id="${activeCardId(j.prompt_id)}"
            data-pid="${esc(j.prompt_id)}">
@@ -2642,6 +2657,7 @@ function upsertActiveCard(podId, j) {
             ${nameHtml}
             ${samplerModeBadge(j, "tile-sched")}
             ${samplerPairRows(j)}
+            ${stepsRow}
             <span class="elapsed tile-dt">queued</span>
             <span class="step tile-dt"></span>
           </div>
