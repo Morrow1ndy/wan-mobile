@@ -444,6 +444,26 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-03 (drop Clownshark's sampler namespace prefix from cards/Details)
+
+**Changes:**
+- **Clownshark's namespaced sampler values** (e.g. `multistep/res_2m`,
+  `exponential/res_3s_non-monotonic`) **now show only the part after the
+  last `/`** on video cards (in-progress, session, and saved — all go
+  through `samplerPairRows()`) and in the Generation Details overlay. The
+  Generate tab's own sampler dropdown is unaffected (it renders raw
+  `_CS_SAMPLER_CHOICES` values directly, not through `fmtSchedulerLabel()`).
+  - `fmtSchedulerLabel()`: now takes only the segment after the last `/`
+    before title-casing (was joining every segment with `" · "` — e.g.
+    `multistep/res_2m` rendered as `Multistep · Res 2m`; now just `Res 2m`).
+  - `showDetails()`'s `buildRow()`: `cs_sampler_h`/`cs_sampler_l` now strip
+    the prefix too, but **keep the raw suffix casing** (`res_2m`, not
+    `Res 2m`) — Details shows every other value unformatted, so this only
+    removes the noisy namespace rather than introducing new formatting.
+- SW cache bumped to `wan-static-v39`.
+
+---
+
 ### 2026-07-03 (blank seed no longer auto-fills on single generation)
 
 **Bugs fixed:**

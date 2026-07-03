@@ -1280,12 +1280,13 @@ function fmtDatetimeFull(ts) {
 // ---- sampler-mode + sampler/scheduler badges (replaces the old ⏱ duration
 // display on cards) --------------------------------------------------------
 function fmtSchedulerLabel(s) {
-  // Clownshark's RES4LYF sampler names are namespaced ("multistep/res_2m");
-  // render the "/" as a visual separator too, not just "_", so long names
-  // read as short capitalized chunks instead of one run-on word.
-  return String(s).split("/")
-    .map((part) => part.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" "))
-    .join(" · ");
+  // Clownshark's RES4LYF sampler names are namespaced ("multistep/res_2m").
+  // The namespace is only useful in the Generate-tab dropdown (which shows
+  // the raw value directly, not through this function); on cards and in
+  // Generation Details it's just noise, so only the part after the last "/"
+  // is shown.
+  const last = String(s).split("/").pop();
+  return last.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
 // Sampler+scheduler detail rows. Standard shows one row ("Sampler"); TripleK
@@ -2197,12 +2198,18 @@ async function showDetails(promptId) {
     }
     return true;
   }
+  // Clownshark's RES4LYF sampler values are namespaced ("multistep/res_2m");
+  // the namespace is noise here (same reasoning as fmtSchedulerLabel above,
+  // but Details keeps every other value raw/unformatted, so this only strips
+  // the prefix rather than also title-casing).
+  const SAMPLER_NAMESPACE_KEYS = new Set(["cs_sampler_h", "cs_sampler_l"]);
   function buildRow([key, val]) {
     const field = fields.find((f) => f.key === key);
     const label = LEGACY_LABELS[key] || (field ? field.label : key.replace(/_/g, " "));
     const isSeed = key === "_seed";
     const seedNum = isSeed ? Number(val) : 0;
-    const display = isSeed && seedNum <= 0 ? "— (not captured)" : esc(String(val));
+    const shownVal = SAMPLER_NAMESPACE_KEYS.has(key) ? String(val).split("/").pop() : val;
+    const display = isSeed && seedNum <= 0 ? "— (not captured)" : esc(String(shownVal));
     const useBtn = isSeed && seedNum > 0
       ? `<button class="ghost small detail-use-seed" data-seed="${seedNum}" style="margin-top:6px;font-size:12px">↑ Use this seed</button>`
       : "";
