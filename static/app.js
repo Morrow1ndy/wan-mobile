@@ -588,6 +588,14 @@ $("#start-pod").addEventListener("click", async () => {
 let FIELDS = [];
 let CFG = {};
 let _selectedWorkflow = ""; // always reset to server default (bf16) on each session
+// Last-used sampler/scheduler/eta values, per sampling mode — { workflowFile:
+// { fieldKey: value } }. Populated from /api/last-params's "_perMode" key on
+// load (see restoreLastParams()) and updated whenever a mode is switched away
+// from or a generation fires (see _rememberModeValues()). Unlike the
+// existing flat last-params blob (whatever fields were in the DOM at the
+// last save — only ever one mode's worth), this survives switching between
+// modes and persists across reloads independently per mode.
+let _perModeValues = {};
 
 // Convert filename to a short display label: "YAW_2.2_bf16_TripleK.json" → "TRIPLEK"
 // (fallback only — CFG.workflow_labels normally provides the real label).
@@ -612,7 +620,22 @@ function renderParamFields() {
   const visible = _visibleFields();
   const promptField = visible.find((f) => f.key === "positive");
   $("#prompt-field").innerHTML = promptField ? renderField(promptField) : "";
-  $("#params").innerHTML = visible.filter((f) => f.key !== "positive").map(renderField).join("");
+
+  // The sampling-mode tabs sit between the LoRA section and the
+  // sampler/scheduler section. Per-mode fields (sampler, scheduler_base,
+  // cs_sampler_h, etc.) all carry a "workflows" scoping key; shared fields
+  // (steps/cfg/loras/seed/etc.) don't — so the first field with a
+  // "workflows" key marks the start of the sampler/scheduler block. This
+  // stays correct even if fields are reordered/added in config.py, as long
+  // as per-mode fields remain contiguous.
+  const rest = visible.filter((f) => f.key !== "positive");
+  const splitAt = rest.findIndex((f) => f.workflows);
+  const before = splitAt === -1 ? rest : rest.slice(0, splitAt);
+  const after = splitAt === -1 ? [] : rest.slice(splitAt);
+  $("#params").innerHTML =
+    before.map(renderField).join("") +
+    _workflowTabsHtml() +
+    after.map(renderField).join("");
   // live value labels for sliders
   $$('input[type="range"]').forEach((r) => {
     const out = $("#val-" + r.dataset.key);
@@ -643,46 +666,75 @@ function renderParamFields() {
   }
 }
 
-function renderWorkflowTabs(workflows, defaultWorkflow) {
-  const container = $("#workflow-tabs");
-  if (!container || workflows.length < 2) {
-    if (container) container.hidden = true;
-    return;
-  }
-  // Restore saved selection or fall back to default
+// Restore saved selection or fall back to the server default. Must run
+// before the first renderParamFields() call, since _visibleFields() (and
+// therefore the field split in renderParamFields()) depends on
+// _selectedWorkflow.
+function _initSelectedWorkflow(workflows, defaultWorkflow) {
   if (!_selectedWorkflow || !workflows.includes(_selectedWorkflow)) {
     _selectedWorkflow = defaultWorkflow || workflows[0];
   }
+}
+
+// Snapshot workflowFile's own sampler/scheduler/eta fields out of an already-
+// collected params object (e.g. from collectParams()) into _perModeValues,
+// then push both the flat params and the updated per-mode map to the server
+// via the existing last-params endpoint so they survive a reload. Always
+// posts (matching the old unconditional postJSON call this replaced), even
+// for a workflowFile with no per-mode fields.
+function _rememberModeValues(workflowFile, collectedParams) {
+  const modeFields = workflowFile
+    ? FIELDS.filter((f) => f.workflows && f.workflows.includes(workflowFile))
+    : [];
+  if (modeFields.length) {
+    const snapshot = {};
+    for (const f of modeFields) {
+      if (f.key in collectedParams) snapshot[f.key] = collectedParams[f.key];
+    }
+    _perModeValues[workflowFile] = snapshot;
+  }
+  postJSON("/api/last-params", { ...collectedParams, _perMode: _perModeValues }).catch(() => {});
+}
+
+// The last-remembered sampler/scheduler/eta values for workflowFile, or {}
+// if none have been recorded yet (fresh install, or a mode never visited).
+function _recallModeValues(workflowFile) {
+  return _perModeValues[workflowFile] || {};
+}
+
+// Sampling-mode tab buttons, rendered inline inside #params (between the
+// LoRA section and the sampler/scheduler section — see renderParamFields()).
+// Returns "" when there's nothing to switch between. Rebuilt fresh on every
+// renderParamFields() call, so "active" always reflects current
+// _selectedWorkflow; clicks are handled by a delegated listener on #params
+// (see the click handler in loadConfig()) rather than a per-button one,
+// since this markup gets replaced on every render.
+function _workflowTabsHtml() {
+  const workflows = CFG.workflows || [];
+  if (workflows.length < 2) return "";
   const labels = CFG.workflow_labels || {};
-  container.innerHTML = workflows.map((wf) =>
-    `<button class="img-mode-tab${wf === _selectedWorkflow ? " active" : ""}"
+  const buttons = workflows.map((wf) =>
+    `<button type="button" class="img-mode-tab${wf === _selectedWorkflow ? " active" : ""}"
              data-workflow="${esc(wf)}">${esc(labels[wf] || _workflowLabel(wf))}</button>`
   ).join("");
-  container.querySelectorAll(".img-mode-tab").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (btn.dataset.workflow === _selectedWorkflow) return;
-      // Preserve values for fields shared across modes (steps/cfg/loras/seed/
-      // prompt/etc.) instead of resetting the whole form on a mode switch.
-      const carryOver = collectParams();
-      _selectedWorkflow = btn.dataset.workflow;
-      container.querySelectorAll(".img-mode-tab").forEach(
-        (b) => b.classList.toggle("active", b === btn)
-      );
-      renderParamFields();
-      applyParams(carryOver);
-    });
-  });
+  return `<div class="field" data-fkey="_workflow_tabs">
+    <label>Sampling Mode
+      <div id="workflow-tabs" class="img-mode-tabs" style="margin-top:8px">${buttons}</div>
+    </label>
+  </div>`;
 }
 
 async function loadConfig() {
   const cfg = await getJSON("/api/config");
   CFG = cfg;
   FIELDS = cfg.fields || [];
-  renderWorkflowTabs(cfg.workflows || [], cfg.default_workflow || "");
+  _initSelectedWorkflow(cfg.workflows || [], cfg.default_workflow || "");
   renderPodFilters();
   renderParamFields();
-  // 🎲 randomise seed button — delegated on #params so it survives
-  // renderParamFields() re-rendering the section's innerHTML on mode switch.
+  // 🎲 randomise seed / ✕ clear seed / sampling-mode tab — all delegated on
+  // #params so they survive renderParamFields() re-rendering the section's
+  // innerHTML on mode switch (the mode tabs live inside #params now, see
+  // _workflowTabsHtml()).
   $("#params").addEventListener("click", (e) => {
     const randBtn = e.target.closest(".seed-rand");
     if (randBtn) {
@@ -694,6 +746,20 @@ async function loadConfig() {
     if (clearBtn) {
       const inp = document.querySelector(`input[data-key="${clearBtn.dataset.key}"]`);
       if (inp) inp.value = "";
+      return;
+    }
+    const modeBtn = e.target.closest(".img-mode-tab[data-workflow]");
+    if (modeBtn) {
+      if (modeBtn.dataset.workflow === _selectedWorkflow) return;
+      // Preserve values for fields shared across modes (steps/cfg/loras/
+      // seed/prompt/etc.) instead of resetting the whole form on a mode
+      // switch. See the follow-up "remember last-used values per mode"
+      // feature below for per-mode persistence beyond just this carry-over.
+      const carryOver = collectParams();
+      _rememberModeValues(_selectedWorkflow, carryOver);
+      _selectedWorkflow = modeBtn.dataset.workflow;
+      renderParamFields();
+      applyParams({ ...carryOver, ..._recallModeValues(_selectedWorkflow) });
     }
   });
   // ✕ clear prompt button
@@ -934,7 +1000,7 @@ $("#generate").addEventListener("click", async () => {
 
   captureUndo("before this generation");
   const params = collectParams();
-  postJSON("/api/last-params", params).catch(() => {});
+  _rememberModeValues(_selectedWorkflow, params); // also posts to /api/last-params
 
   // A multi-select field (currently just "scheduler", Standard/TripleK only —
   // Clownshark has no multiselect field so this is naturally a no-op there)
@@ -2633,6 +2699,14 @@ async function restoreLastParams() {
     const saved = await getJSON("/api/last-params");
     if (!saved || !Object.keys(saved).length) return;
     applyParams(saved);
+    // saved._perMode holds each sampling mode's own last-used sampler/
+    // scheduler/eta values (see _rememberModeValues()). applyParams(saved)
+    // above only restores whichever single mode was active at the last
+    // save — layer the CURRENT mode's own remembered values on top so
+    // switching to/reopening on a different mode still shows its own
+    // last-used values instead of the workflow's baked defaults.
+    _perModeValues = saved._perMode || {};
+    applyParams(_recallModeValues(_selectedWorkflow));
   } catch (_) {}
 }
 

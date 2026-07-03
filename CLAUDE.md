@@ -228,6 +228,30 @@ enforce this:
   the three workflow files** — dead/unused input in all of them, not just
   Clownshark.
 
+**Sampling Mode tab placement + per-mode value memory (2026-07-03)**: the
+mode tabs (`_workflowTabsHtml()` in `app.js`) render *inline inside* `#params`
+between the LoRA fields and the sampler/scheduler fields — not as a separate
+static element. `renderParamFields()` finds this boundary by splitting
+`_visibleFields()` at the first field carrying a `workflows` key (i.e. the
+first per-mode field), so it stays correct even if fields are
+reordered/added, as long as per-mode fields remain contiguous. Mode-tab
+clicks are handled by a delegated listener on `#params` (alongside the seed
+buttons) rather than one listener per button, since this markup is rebuilt
+on every `renderParamFields()` call.
+
+Each mode's own sampler/scheduler/eta values are remembered independently
+(`_perModeValues`, `_rememberModeValues()`/`_recallModeValues()`) — captured
+whenever you switch away from a mode or hit Generate, and persisted via the
+existing `/api/last-params` endpoint (opaque JSON, no backend schema
+changes needed) under a `_perMode` key alongside the flat last-used-params
+blob that endpoint already stored. `restoreLastParams()` loads `_perMode` on
+boot and layers the *currently selected* mode's remembered values on top of
+the flat blob (which only ever reflects whichever single mode was active at
+the last save). `_selectedWorkflow` itself still always resets to the
+server default each session (unchanged, deliberate — see the 2026-06-26
+changelog entry on why) — only the field *values* persist per mode, not
+which mode is active on reload.
+
 ⚠️ **If you re-export any of the three workflows from ComfyUI, node IDs
 change** and every `node_id` in `PARAM_FIELDS` (plus `IMAGE_NODE` /
 `OUTPUT_NODE_ID`) must be updated or generation silently breaks.
@@ -441,6 +465,43 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-07-03 (Sampling Mode moved into params, per-mode value memory)
+
+**Changes:**
+- **Sampling Mode tabs moved from the Pod card to between the LoRA fields
+  and the Sampler/Scheduler fields** in the Generate tab's Parameters
+  section. Previously a static element near the top (Pod dropdown area);
+  now rendered inline inside `#params` by `_workflowTabsHtml()`, positioned
+  by `renderParamFields()` at the first field carrying a `workflows` key
+  (the boundary between shared fields and per-mode fields). Mode-tab clicks
+  now go through a delegated listener on `#params` (alongside the seed
+  buttons) instead of one listener per button, since this markup rebuilds
+  on every render.
+
+**Features added:**
+- **Each sampling mode now remembers its own last-used sampler/scheduler/eta
+  values independently**, surviving both switching between modes in the
+  same session and closing/reopening the app. New `_perModeValues` map +
+  `_rememberModeValues()`/`_recallModeValues()` helpers, captured on every
+  mode switch and Generate click, persisted via the existing
+  `/api/last-params` endpoint (already schema-less JSON storage, so no
+  backend changes) under a new `_perMode` key alongside its existing flat
+  blob. `restoreLastParams()` layers the current mode's remembered values on
+  top of that flat blob on load, since the flat blob alone only ever
+  reflects whichever single mode was active at the last save. The
+  currently-*selected* mode still always resets to the server default each
+  session (unchanged from 2026-06-26) — only the field values persist per
+  mode.
+- Verified end-to-end with a real headless-browser test (mocked
+  `/api/config`/`/api/last-params`, no real backend): confirmed the tab
+  position sits exactly between the last LoRA field and the first sampler
+  field, confirmed a Clownshark eta value set then carried through a
+  same-session mode round-trip, and confirmed it's correctly recalled in a
+  **fresh browser context** simulating a full close-and-reopen.
+- SW cache bumped to `wan-static-v40`.
 
 ---
 
