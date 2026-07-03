@@ -468,6 +468,29 @@ Entries are newest-first. Each entry should be added at the **top** of this list
 
 ---
 
+### 2026-07-03 (generation time back on video cards)
+
+**Changes:**
+- **Generation time restored to session/saved video cards** (grid tile and
+  expanded caption), reversing the 2026-07-02 decision to keep it
+  Details-only. Plain text via `fmtElapsed()` (e.g. `2m 56s`), no icon —
+  reuses `it.duration_secs`, which the backend (`pod_outputs()`/
+  `star_video()`) has returned all along even while the card UI ignored it.
+  - Grid tile: new `.tile-gentime` line (9px, muted) sits directly above the
+    date line — not the bottom-most row, so it doesn't need the ✕
+    delete-button's right-clearance padding and can use the tile's full width.
+  - Expanded caption: repurposed the existing (previously unused since
+    2026-07-01) `.out-dur` class, restyled down from 13px/accent to 11px/
+    muted to match "keep it small" — sits in `.cap-meta` right below the
+    full date, clear of the Details/Save/Delete action buttons.
+  - Renders nothing (no empty line) when `duration_secs` is null (older
+    videos recorded before `started_at` existed, or one that timed out).
+  - Verified with a rendered screenshot using the real `renderSavedOutput()`
+    code against representative Standard/Clownshark/no-duration items.
+- SW cache bumped to `wan-static-v41`.
+
+---
+
 ### 2026-07-03 (Sampling Mode moved into params, per-mode value memory)
 
 **Changes:**

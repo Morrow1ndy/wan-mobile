@@ -176,6 +176,13 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding-right: 24px; box-sizing: border-box;
 }
+/* generation time (plain text, no icon) — sits just above the date line, so
+   it's never under the ✕ delete button's right-clearance zone. */
+.tile-gentime {
+  display: block; font-size: 9px; color: rgba(255,255,255,0.5);
+  font-variant-numeric: tabular-nums;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* compact sampler+scheduler rows on the grid tile itself (smaller than the
    expanded-caption version below, since the tile is only ~110px wide) —
@@ -207,7 +214,7 @@ button, .primary, .filebtn { font-family: var(--f); font-size: 15px; border: non
 .cap-row { display: flex; align-items: center; gap: 10px; }
 .cap-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .out-dt  { font-size: 13px; color: var(--muted); display: block; }
-.out-dur { font-size: 13px; color: var(--accent); display: block; font-variant-numeric: tabular-nums; }
+.out-dur { font-size: 11px; color: var(--muted); display: block; font-variant-numeric: tabular-nums; }
 .out-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
 /* ---- sampler+scheduler detail rows (expanded caption only) — the full-width

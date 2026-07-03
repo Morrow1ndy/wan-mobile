@@ -1611,6 +1611,7 @@ function renderSavedOutput(it) {
   const url = `/api/saved/file/${encodeURIComponent(it.filename)}`;
   const dt = fmtDateOnly(it.completed_at);
   const dtFull = fmtDatetimeFull(it.completed_at);
+  const durText = it.duration_secs != null ? fmtElapsed(it.duration_secs) : null;
   const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
   const modeBadge = samplerModeBadge(it);
   const schedRows = samplerPairRows(it);
@@ -1625,6 +1626,7 @@ function renderSavedOutput(it) {
         ${name}
         ${samplerModeBadge(it, "tile-sched")}
         ${schedRows}
+        ${durText ? `<span class="tile-gentime">${esc(durText)}</span>` : ""}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
       </div>
       <button class="zoom-back">← Back</button>
@@ -1638,6 +1640,7 @@ function renderSavedOutput(it) {
         <div class="cap-meta">
           ${name}
           ${dtFull ? `<span class="out-dt">${dtFull}</span>` : ""}
+          ${durText ? `<span class="out-dur">${esc(durText)}</span>` : ""}
         </div>
         <div class="out-actions">
           <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
@@ -1661,6 +1664,7 @@ function renderOutput(podId, it) {
     : `<video class="cover-img" preload="none" muted data-src="${url}#t=0.1"></video>`;
   const dt = fmtDateOnly(it.completed_at);
   const dtFull = fmtDatetimeFull(it.completed_at);
+  const durText = it.duration_secs != null ? fmtElapsed(it.duration_secs) : null;
   const starred = it.is_saved;
   const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
   const modeBadge = samplerModeBadge(it);
@@ -1677,6 +1681,7 @@ function renderOutput(podId, it) {
         ${name}
         ${samplerModeBadge(it, "tile-sched")}
         ${schedRows}
+        ${durText ? `<span class="tile-gentime">${esc(durText)}</span>` : ""}
         ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
       </div>
       <button class="zoom-back">← Back</button>
@@ -1691,6 +1696,7 @@ function renderOutput(podId, it) {
         <div class="cap-meta">
           ${name}
           ${dtFull ? `<span class="out-dt">${dtFull}</span>` : ""}
+          ${durText ? `<span class="out-dur">${esc(durText)}</span>` : ""}
         </div>
         <div class="out-actions">
           <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
