@@ -576,9 +576,9 @@ def _job_public(prompt_id: str, job: dict) -> dict:
         "video": job.get("video"),
         "error": job.get("error"),
         "video_name": job.get("video_name", ""),
-        # Same sampler-mode fields as pod_outputs()/star_video() so the
-        # in-progress card shows the same mode + sampler/scheduler badges as
-        # the completed/saved card once it lands.
+        # Same sampler-mode fields as _build_video_meta() so the in-progress
+        # card shows the same mode + sampler/scheduler badges as the
+        # completed/saved card once it lands.
         "workflow_file": job.get("workflow_file") or params.get("workflow_file", ""),
         "sampler": params.get("sampler", ""),
         "scheduler": scheduler,
