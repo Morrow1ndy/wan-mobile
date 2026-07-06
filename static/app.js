@@ -573,23 +573,16 @@ function selectGpu(card) {
 $("#ram-select").addEventListener("change", loadGpuGrid);
 $("#refresh-gpus").addEventListener("click", loadGpuGrid);
 
-// Deploying a new pod starts a fresh ComfyUI session on that pod — the
-// Current Session list for any already-running pod (unaffected by this
-// deploy) still shows fine, but if the user's workflow is to terminate the
-// old pod once the new one is up, any of its videos that were never
-// starred (★) would become unreachable. Warn before deploying if that's
-// the case, so it's a deliberate choice rather than a silent data loss.
+// Deploying a new pod starts a new session — Current Session is a persisted
+// list (survives pod termination on its own now), but it only gets CLEARED
+// when a new session explicitly starts. Warn before deploying if there are
+// still unsaved (not starred) clips from the current session, so clearing
+// them is a deliberate choice rather than a silent data loss.
 async function _unsavedSessionVideoCount() {
-  let pods;
-  try { pods = await getJSON("/api/pods"); } catch (_) { return 0; }
-  const running = pods.filter(isRunning);
-  const counts = await Promise.all(running.map(async (p) => {
-    try {
-      const items = await getJSON(`/api/pods/${p.id}/outputs`);
-      return items.filter((it) => !it.is_saved).length;
-    } catch (_) { return 0; }
-  }));
-  return counts.reduce((a, b) => a + b, 0);
+  try {
+    const items = await getJSON("/api/session/outputs");
+    return items.length;
+  } catch (_) { return 0; }
 }
 
 $("#start-pod").addEventListener("click", async () => {
@@ -597,14 +590,16 @@ $("#start-pod").addEventListener("click", async () => {
   const btn = $("#start-pod");
 
   const unsaved = await _unsavedSessionVideoCount();
+  let shouldClearSession = false;
   if (unsaved > 0) {
     const ok = await showConfirm(
       `You have ${unsaved} unsaved video${unsaved > 1 ? "s" : ""} in the current session. ` +
-      `Starting a new pod begins a new session — save (★) anything you want to keep first. ` +
-      `Deploy anyway?`,
+      `Starting a new pod begins a new session — those clips will be cleared ` +
+      `(save (★) anything you want to keep first). Deploy anyway?`,
       { okText: "Deploy anyway", danger: true }
     );
     if (!ok) return;
+    shouldClearSession = true;
   }
 
   btn.disabled = true;
@@ -639,6 +634,10 @@ $("#start-pod").addEventListener("click", async () => {
         : (selectedGpu.ram ? Number(selectedGpu.ram) : undefined),
       cuda_versions: selectedCuda.length ? selectedCuda : undefined,
     });
+    if (shouldClearSession) {
+      try { await postJSON("/api/session/clear", {}); } catch (_) {}
+      if (document.querySelector(".tabs button.active")?.dataset.tab === "outputs") loadDone();
+    }
     toast("Pod deploying — it will appear above");
     setTimeout(loadPods, 2000);
   } catch (e) {
@@ -1172,9 +1171,10 @@ function initSessionSortable() {
   _sessionSortable = new Sortable($("#out-list"), {
     ..._SORTABLE_OPTS,
     onEnd() {
-      if (!_outPodId) return;
+      // Current Session is a single persisted list now (not per-pod), so the
+      // order key isn't pod-scoped either.
       const ids = [...$$("#out-list .out-card[data-pid]")].map((c) => c.dataset.pid);
-      try { localStorage.setItem(`wan_session_order_${_outPodId}`, JSON.stringify(ids)); }
+      try { localStorage.setItem("wan_session_order", JSON.stringify(ids)); }
       catch (_) {}
     },
   });
@@ -1190,7 +1190,6 @@ let _jobStream = null; // EventSource for /api/pods/{id}/stream
 // re-fetches, but if the result is identical we skip the innerHTML rewrite so
 // the already-loaded video posters don't flash black and reload. See loadDone/
 // loadSaved.
-let _outLoadedPod = null;
 let _doneSig  = "";
 let _savedSig = "";
 
@@ -1223,7 +1222,7 @@ async function _applyJobsUpdate(jobs, podId) {
   const live = new Set();
   for (const j of jobs) {
     if (j.status === "done") {
-      if (!_seenDone.has(j.prompt_id)) { _seenDone.add(j.prompt_id); loadDone(podId); }
+      if (!_seenDone.has(j.prompt_id)) { _seenDone.add(j.prompt_id); loadDone(); }
       continue;
     }
     if (j.status === "error") {
@@ -1240,7 +1239,7 @@ async function _applyJobsUpdate(jobs, podId) {
     (c) => !live.has(c.dataset.pid)
   );
   orphaned.forEach((c) => c.remove());
-  if (orphaned.length > 0) loadDone(podId);
+  if (orphaned.length > 0) loadDone();
   _outActivePoll = live.size > 0;
   setGenBadge(live.size);
   if (live.size === 0) stopGenBadgePoll();
@@ -1333,15 +1332,11 @@ $("#bulk-star").addEventListener("click", async () => {
     const card = document.querySelector(`#out-list .out-card[data-pid="${pid}"]`);
     if (!card) continue;
     try {
-      await postJSON(`/api/saved/${card.dataset.pod}/${pid}`, {
-        filename: card.dataset.file, subfolder: card.dataset.sub, type: card.dataset.ftype,
-      });
-      const s = card.querySelector(".star-btn");
-      if (s) { s.classList.add("starred"); s.textContent = "★"; s.title = "Unstar"; }
+      await postJSON(`/api/saved/${pid}/star`, {});
       done++;
     } catch (_) {}
   }
-  await loadSaved();
+  await Promise.all([loadDone(), loadSaved()]);
   toast(`${done} video${done !== 1 ? "s" : ""} saved ✓`);
   btn.textContent = "★ Save";
   exitSelectMode();
@@ -1349,7 +1344,7 @@ $("#bulk-star").addEventListener("click", async () => {
 
 $("#bulk-delete").addEventListener("click", async () => {
   const n = _selected.size;
-  if (!await showConfirm(`Delete ${n} video${n !== 1 ? "s" : ""}?`, { okText: "Delete", danger: true })) return;
+  if (!await showConfirm(`Delete ${n} video${n !== 1 ? "s" : ""}? This can't be undone.`, { okText: "Delete", danger: true })) return;
   const btn = $("#bulk-delete");
   btn.disabled = true; btn.textContent = "Deleting…";
   let done = 0;
@@ -1357,7 +1352,7 @@ $("#bulk-delete").addEventListener("click", async () => {
     const card = document.querySelector(`#out-list .out-card[data-pid="${pid}"]`);
     if (!card) continue;
     try {
-      await deleteJSON(`/api/pods/${card.dataset.pod}/outputs/${pid}`);
+      await deleteJSON(`/api/saved/${pid}`);
       removeCard(card); done++;
     } catch (_) {}
   }
@@ -1557,31 +1552,29 @@ function inputThumbUrl(podId, inputImage) {
 
 async function loadOutputs() {
   const podId = $("#out-pod").value;
-  // Revisit = re-entering the tab for the same pod with cards already on screen.
-  // In that case we do a silent refresh instead of tearing the DOM down (which
-  // would reload every video and flash the whole gallery black).
-  const revisit = !!podId && podId === _outLoadedPod &&
-                  !!$("#out-list").querySelector(".out-card");
   _outPodId = podId;
   stopOutTimer();
   disconnectJobStream();
   loadSaved();
-  const list = $("#out-list");
-  if (!podId) {
-    _outLoadedPod = null; _doneSig = "";
-    list.innerHTML = `<div class="card muted">No running pod. Start one on the Pod tab.</div>`;
-    return;
-  }
+  // Current Session is no longer tied to which pod is selected (it's a
+  // persisted list that survives the originating pod being terminated — see
+  // the backend's "video storage" section) — it loads regardless of podId.
+  // Revisit = cards already on screen from a prior load, so we do a silent
+  // refresh instead of tearing the DOM down (which would reload every video
+  // and flash the whole gallery black).
+  const revisit = !!$("#out-list").querySelector(".out-card");
   if (!revisit) {
     _seenDone = new Set();
     $("#out-active").innerHTML = "";
-    list.innerHTML = `<div class="card muted">Loading outputs…</div>`;
+    $("#out-list").innerHTML = `<div class="card muted">Loading outputs…</div>`;
   }
-  await loadDone(podId, revisit);
-  connectJobStream(podId); // SSE delivers live job state; auto-reconnects on foreground
+  await loadDone();
+  // In-progress job tracking is still pod-specific (a job only ever runs on
+  // one pod) — only connect the SSE stream when a pod is actually selected.
+  if (podId) connectJobStream(podId);
 }
 
-async function loadDone(podId, silent) {
+async function loadDone(silent = true) {
   const list = $("#out-list");
   // Collapse any expanded card before rebuilding to avoid leaving body.overflow
   // locked when a generation completes while the user is previewing a video.
@@ -1589,7 +1582,7 @@ async function loadDone(podId, silent) {
   if (expanded) collapseTile(expanded);
   let items;
   try {
-    items = await getJSON(`/api/pods/${podId}/outputs`);
+    items = await getJSON("/api/session/outputs");
   } catch (e) {
     list.innerHTML = `<div class="card muted">Could not load outputs: ${esc(e.message)}</div>`;
     return;
@@ -1598,14 +1591,13 @@ async function loadDone(podId, silent) {
     const activeCard = document.getElementById(activeCardId(it.prompt_id));
     if (activeCard) { removeCard(activeCard); _seenDone.add(it.prompt_id); }
   }
-  const unsaved = items.filter((it) => !it.is_saved);
   // Apply user-defined session order (persisted in localStorage after drag).
   // New clips not yet in the stored order go to the top.
   try {
-    const stored = JSON.parse(localStorage.getItem(`wan_session_order_${podId}`) || "null");
+    const stored = JSON.parse(localStorage.getItem("wan_session_order") || "null");
     if (stored && stored.length) {
       const rank = new Map(stored.map((id, i) => [id, i]));
-      unsaved.sort((a, b) => {
+      items.sort((a, b) => {
         const ai = rank.has(a.prompt_id) ? rank.get(a.prompt_id) : -1;
         const bi = rank.has(b.prompt_id) ? rank.get(b.prompt_id) : -1;
         if (ai === -1 && bi === -1) return 0;
@@ -1615,16 +1607,14 @@ async function loadDone(podId, silent) {
       });
     }
   } catch (_) {}
-  // Skip the rewrite when nothing changed (same clips, order, saved-state) so a
-  // silent revisit doesn't reload every poster. Signature covers pid + order +
-  // is_saved + video_name.
-  const sig = unsaved.map((it) => `${it.prompt_id}|${it.is_saved ? 1 : 0}|${it.video_name || ""}`).join(",");
-  _outLoadedPod = podId;
+  // Skip the rewrite when nothing changed (same clips, order, video_name) so a
+  // silent revisit doesn't reload every poster.
+  const sig = items.map((it) => `${it.prompt_id}|${it.video_name || ""}`).join(",");
   if (silent && sig === _doneSig && list.querySelector(".out-card")) return;
   _doneSig = sig;
-  list.innerHTML = unsaved.length
-    ? unsaved.map((it) => renderOutput(podId, it)).join("")
-    : `<div class="card muted">No videos yet on this pod.</div>`;
+  list.innerHTML = items.length
+    ? items.map(renderOutput).join("")
+    : `<div class="card muted">No videos in the current session yet.</div>`;
   observeLazyCovers(list);
   initSessionSortable();
 }
@@ -1642,7 +1632,7 @@ async function loadSaved() {
   const sig = items.map((it) => `${it.prompt_id}|${it.video_name || ""}`).join(",");
   if (sig === _savedSig && list.querySelector(".out-card")) { loadStorage(); return; }
   _savedSig = sig;
-  list.innerHTML = items.map(renderSavedOutput).join("");
+  list.innerHTML = items.map(renderOutput).join("");
   observeLazyCovers(list);
   initSavedSortable();
   loadStorage();
@@ -1738,11 +1728,18 @@ async function saveVideoFile(url, filename, btn) {
   }
 }
 
-function renderSavedOutput(it) {
+// Renders a video card — used for BOTH Current Session and Saved. Both
+// sections are views over the same persisted list (see the backend's
+// "video storage" section), differing only by is_saved, so one render
+// function covers both: the star icon/title reflect it.is_saved, and the
+// video is always served from local/GCS storage (/api/saved/file/...), not
+// proxied through a pod — it survives the originating pod being terminated.
+function renderOutput(it) {
   const url = `/api/saved/file/${encodeURIComponent(it.filename)}`;
   const dt = fmtDateOnly(it.completed_at);
   const dtFull = fmtDatetimeFull(it.completed_at);
   const durText = it.duration_secs != null ? fmtElapsed(it.duration_secs) : null;
+  const starred = it.is_saved;
   const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
   const schedRows = samplerPairRows(it);
   const stepsRow = _stepsLxRowHtml(it)
@@ -1767,67 +1764,8 @@ function renderSavedOutput(it) {
       <button class="zoom-back">← Back</button>
       <span class="sel-check"></span>
       <button class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">${GRIP_SVG}</button>
-      <button class="star-btn starred" data-pid="${esc(it.prompt_id)}" title="Unstar — return to current session">★</button>
-      <button class="tile-del-btn" data-pid="${esc(it.prompt_id)}" title="Delete from cloud">✕</button>
-    </div>
-    <div class="out-cap">
-      <div class="cap-row">
-        <div class="cap-meta">
-          ${name}
-          ${dtFull ? `<span class="out-dt">${dtFull}</span>` : ""}
-          ${durText ? `<span class="out-dur">${esc(durText)}</span>` : ""}
-        </div>
-        <div class="out-actions">
-          <button class="info-btn ghost small" data-pid="${esc(it.prompt_id)}">Details</button>
-          <button class="dl" data-url="${url}" data-filename="${esc(it.filename)}">↓ Save</button>
-          <button class="del-btn ghost small" data-pid="${esc(it.prompt_id)}">Delete</button>
-        </div>
-      </div>
-      ${samplerBlock}
-    </div>
-  </div>`;
-}
-
-function renderOutput(podId, it) {
-  const q = new URLSearchParams({
-    filename: it.filename, subfolder: it.subfolder || "", type: it.type || "output",
-  });
-  const url = `/api/pods/${podId}/view?${q}`;
-  const thumb = inputThumbUrl(podId, it.input_image);
-  const cover = thumb
-    ? `<img class="cover-img" src="${thumb}" alt="" loading="lazy" />`
-    : `<video class="cover-img" preload="none" muted data-src="${url}#t=0.1"></video>`;
-  const dt = fmtDateOnly(it.completed_at);
-  const dtFull = fmtDatetimeFull(it.completed_at);
-  const durText = it.duration_secs != null ? fmtElapsed(it.duration_secs) : null;
-  const starred = it.is_saved;
-  const name = it.video_name ? `<span class="out-name">${esc(it.video_name)}</span>` : "";
-  const schedRows = samplerPairRows(it);
-  const stepsRow = _stepsLxRowHtml(it)
-    ? `<div class="sched-row">${_stepsLxRowHtml(it)}</div>`
-    : "";
-  const capSampler = capSamplerHtml(it);
-  const samplerBlock = capSampler ? `<div class="cap-sampler">${capSampler}</div>` : "";
-  return `<div class="out-card" data-url="${url}" data-name="${esc(it.filename)}"
-              data-pid="${esc(it.prompt_id)}" data-pod="${esc(podId)}"
-              data-file="${esc(it.filename)}" data-sub="${esc(it.subfolder||"")}" data-ftype="${esc(it.type||"output")}">
-    <div class="out-cover">
-      ${cover}
-      <span class="play-badge">${PLAY_SVG}</span>
-      <video class="tile-video" data-src="${url}" playsinline preload="none"></video>
-      <div class="tile-foot">
-        ${name}
-        ${samplerModeBadge(it, "tile-sched")}
-        ${schedRows}
-        ${stepsRow}
-        ${durText ? `<span class="tile-gentime">${esc(durText)}</span>` : ""}
-        ${dt ? `<span class="tile-dt">${dt}</span>` : ""}
-      </div>
-      <button class="zoom-back">← Back</button>
-      <span class="sel-check"></span>
-      <button class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">${GRIP_SVG}</button>
       <button class="star-btn${starred ? " starred" : ""}" data-pid="${esc(it.prompt_id)}"
-              title="${starred ? "Saved" : "Save to cloud"}">${starred ? "★" : "☆"}</button>
+              title="${starred ? "Unstar — return to current session" : "Save to cloud"}">${starred ? "★" : "☆"}</button>
       <button class="tile-del-btn" data-pid="${esc(it.prompt_id)}" title="Delete">✕</button>
     </div>
     <div class="out-cap">
@@ -2539,56 +2477,45 @@ $("#out-list").addEventListener("click", async (e) => {
   }
   const dlBtn = e.target.closest(".dl");
   if (dlBtn) { saveVideoFile(dlBtn.dataset.url, dlBtn.dataset.filename, dlBtn); return; }
-  // delete
-  const delBtn = e.target.closest(".del-btn");
+  // delete (both the expanded "Delete" button and the tile's quick ✕) —
+  // permanently removes the video (file + GCS + metadata), whether it's a
+  // session or starred clip. Same endpoint/behaviour for both lists now that
+  // they're views over the same persisted storage.
+  const delBtn = e.target.closest(".del-btn, .tile-del-btn");
   if (delBtn) {
-    if (!await showConfirm("Delete this video from history?", { okText: "Delete", danger: true })) return;
+    if (!await showConfirm("Delete this video permanently? This can't be undone.", { okText: "Delete", danger: true })) return;
     const card = delBtn.closest(".out-card");
+    const pid = card.dataset.pid;
     delBtn.disabled = true;
     try {
-      await deleteJSON(`/api/pods/${card.dataset.pod}/outputs/${card.dataset.pid}`);
+      await deleteJSON(`/api/saved/${pid}`);
       removeCard(card);
       toast("Deleted");
     } catch (err) { toast(err.message, true); delBtn.disabled = false; }
     return;
   }
-  // quick-delete tile button
-  const tileDelBtn = e.target.closest(".tile-del-btn");
-  if (tileDelBtn) {
-    if (!await showConfirm("Delete this video from history?", { okText: "Delete", danger: true })) return;
-    const card = tileDelBtn.closest(".out-card");
-    tileDelBtn.disabled = true;
-    try {
-      await deleteJSON(`/api/pods/${card.dataset.pod}/outputs/${card.dataset.pid}`);
-      removeCard(card);
-      toast("Deleted");
-    } catch (err) { toast(err.message, true); tileDelBtn.disabled = false; }
-    return;
-  }
   // details
   const infoBtn = e.target.closest(".info-btn");
   if (infoBtn) { showDetails(infoBtn.dataset.pid); return; }
-  // star
+  // star / unstar
   const starBtn = e.target.closest(".star-btn");
   if (starBtn) {
     const card = starBtn.closest(".out-card");
+    const pid = starBtn.dataset.pid;
     const starred = starBtn.classList.contains("starred");
+    if (starred && !await showConfirm("Unstar this video? It returns to the current session.", { okText: "Unstar" })) return;
     starBtn.disabled = true;
     try {
       if (starred) {
-        await deleteJSON(`/api/saved/${starBtn.dataset.pid}`);
-        await loadSaved();
-        if (_outPodId) await loadDone(_outPodId);
+        await postJSON(`/api/saved/${pid}/unstar`, {});
+        toast("Returned to current session");
       } else {
-        await postJSON(`/api/saved/${card.dataset.pod}/${starBtn.dataset.pid}`, {
-          filename: card.dataset.file, subfolder: card.dataset.sub, type: card.dataset.ftype,
-        });
-        removeCard(card);
-        await loadSaved();
+        await postJSON(`/api/saved/${pid}/star`, {});
         toast("Saved ✓");
       }
-    } catch (err) { toast(err.message, true); }
-    starBtn.disabled = false;
+      removeCard(card);
+      await Promise.all([loadDone(), loadSaved()]);
+    } catch (err) { toast(err.message, true); starBtn.disabled = false; }
     return;
   }
   // tap cover → expand, or toggle play/pause if already expanded
@@ -2602,6 +2529,10 @@ $("#out-list").addEventListener("click", async (e) => {
 });
 
 // ---- saved-list: tap cover to expand; star to unstar -------------------------
+// Shares the same button semantics as #out-list (same list.addEventListener
+// body below is intentionally identical — both sections render the same
+// card markup and act on the same persisted storage) except for the select
+// mode flag/toggle, which are section-specific.
 $("#saved-list").addEventListener("click", async (e) => {
   if (_savedSelectMode) {
     const card = e.target.closest(".out-card");
@@ -2617,25 +2548,16 @@ $("#saved-list").addEventListener("click", async (e) => {
   if (dlBtn2) { saveVideoFile(dlBtn2.dataset.url, dlBtn2.dataset.filename, dlBtn2); return; }
   const infoBtn = e.target.closest(".info-btn");
   if (infoBtn) { showDetails(infoBtn.dataset.pid); return; }
-  // Permanent delete (✕ on the tile, or "Delete" in the expanded actions):
-  // remove the saved copy AND purge it from the pod's history so it's gone for
-  // good — unlike Unstar, which just returns it to the current session.
   const delBtn = e.target.closest(".tile-del-btn, .del-btn");
   if (delBtn) {
-    if (!await showConfirm("Delete this video permanently from the cloud?", { okText: "Delete", danger: true })) return;
+    if (!await showConfirm("Delete this video permanently? This can't be undone.", { okText: "Delete", danger: true })) return;
     const card = delBtn.closest(".out-card");
     const pid = card.dataset.pid;
     delBtn.disabled = true;
     try {
       await deleteJSON(`/api/saved/${pid}`);
-      // Also drop it from the pod's ComfyUI history so it can't reappear in the
-      // session. Best-effort: the pod may be gone, which is fine.
-      if (card.dataset.pod) {
-        try { await deleteJSON(`/api/pods/${card.dataset.pod}/outputs/${pid}`); } catch (_) {}
-      }
       removeCard(card);
       if (!$("#saved-list .out-card")) $("#saved-section").hidden = true;
-      if (_outPodId) await loadDone(_outPodId);
       toast("Deleted");
     } catch (err) { toast(err.message, true); delBtn.disabled = false; }
     return;
@@ -2646,10 +2568,10 @@ $("#saved-list").addEventListener("click", async (e) => {
     const pid = starBtn.dataset.pid;
     starBtn.disabled = true;
     try {
-      await deleteJSON(`/api/saved/${pid}`);
+      await postJSON(`/api/saved/${pid}/unstar`, {});
       removeCard(starBtn.closest(".out-card"));
       if (!$("#saved-list .out-card")) $("#saved-section").hidden = true;
-      if (_outPodId) await loadDone(_outPodId);
+      await loadDone();
       toast("Returned to current session");
     } catch (err) { toast(err.message, true); starBtn.disabled = false; }
     return;
@@ -3430,13 +3352,13 @@ $("#saved-bulk-cancel").addEventListener("click", exitSavedSelectMode);
 
 $("#saved-bulk-unstar").addEventListener("click", async () => {
   const n = _savedSelected.size;
-  if (!await showConfirm(`Remove ${n} video${n !== 1 ? "s" : ""} from saved?`, { okText: "Remove", danger: true })) return;
+  if (!await showConfirm(`Remove ${n} video${n !== 1 ? "s" : ""} from saved? They return to the current session.`, { okText: "Remove", danger: true })) return;
   const btn = $("#saved-bulk-unstar");
   btn.disabled = true; btn.textContent = "Removing…";
   let done = 0;
   for (const pid of [..._savedSelected]) {
     try {
-      await deleteJSON(`/api/saved/${pid}`);
+      await postJSON(`/api/saved/${pid}/unstar`, {});
       removeCard(document.querySelector(`#saved-list .out-card[data-pid="${pid}"]`));
       done++;
     } catch (_) {}
@@ -3445,7 +3367,7 @@ $("#saved-bulk-unstar").addEventListener("click", async () => {
   btn.textContent = "☆ Unstar";
   exitSavedSelectMode();
   if (!$("#saved-list .out-card")) $("#saved-section").hidden = true;
-  if (_outPodId) loadDone(_outPodId);
+  loadDone();
   loadStorage();
 });
 
@@ -3494,13 +3416,14 @@ function resumePolls() {
   // Re-arm pod metrics (paused while hidden) by reloading the pod list.
   if (document.querySelector("#pods-list .pod")) loadPods();
   const activeTab = document.querySelector(".tabs button.active")?.dataset.tab;
-  if (activeTab === "outputs" && _outPodId) {
-    // Refresh the completed list and do one immediate job fetch while the
-    // SSE stream reconnects (EventSource retries automatically). Silent: only
-    // re-render if something actually changed, so returning to the foreground
-    // doesn't flash the whole gallery black.
-    loadDone(_outPodId, true);
-    tickActive();
+  if (activeTab === "outputs") {
+    // Refresh the completed list (pod-independent now) and, if a pod is
+    // selected, do one immediate in-flight-job fetch while the SSE stream
+    // reconnects (EventSource retries automatically). Silent: only re-render
+    // if something actually changed, so returning to the foreground doesn't
+    // flash the whole gallery black.
+    loadDone();
+    if (_outPodId) tickActive();
   } else {
     if (activeTab === "generate") onGenPodChange(); // re-check readiness
     // Keep the Outputs-tab badge truthful for a job still running off-tab

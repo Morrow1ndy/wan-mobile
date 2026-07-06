@@ -53,20 +53,6 @@ async def get_history(comfy: str, prompt_id: str) -> dict:
         return r.json()
 
 
-async def get_history_all(comfy: str, max_items: int = 10_000) -> dict:
-    """All prompts in ComfyUI's current-session history (chronological).
-
-    max_items defaults high enough to never be the thing that truncates the
-    list — "Current Session" should show every clip generated on this pod for
-    its whole lifetime, not just the most recent few. ComfyUI's own history
-    dict is the real bound (cleared when the pod's ComfyUI process restarts).
-    """
-    async with _client(comfy) as c:
-        r = await c.get("/history", params={"max_items": max_items})
-        r.raise_for_status()
-        return r.json()
-
-
 async def cancel_queued(comfy: str, prompt_id: str):
     """Remove a not-yet-running prompt from ComfyUI's pending queue."""
     async with _client(comfy) as c:
@@ -81,11 +67,6 @@ async def interrupt(comfy: str):
         r.raise_for_status()
 
 
-async def delete_history(comfy: str, prompt_id: str):
-    """Remove a prompt from ComfyUI's history (hides it from outputs list)."""
-    async with _client(comfy) as c:
-        r = await c.post("/history", json={"delete": [prompt_id]})
-        r.raise_for_status()
 
 
 async def fetch_view(comfy: str, filename: str, subfolder: str = "",

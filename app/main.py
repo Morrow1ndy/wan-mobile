@@ -670,65 +670,6 @@ async def video(request: Request, prompt_id: str):
                              v.get("type", "output"), request.headers.get("range"))
 
 
-@app.get("/api/pods/{pod_id}/outputs")
-async def pod_outputs(pod_id: str, limit: int = 10_000):
-    """Videos from the pod's ComfyUI history, newest first.
-
-    Reads straight from the pod (which holds the files on the network volume),
-    so it survives the browser closing or this server restarting/sleeping.
-    `limit` defaults high (effectively unbounded) so Current Session shows
-    every clip generated on this pod for its whole lifetime rather than
-    silently dropping older ones once more than a handful pile up — it only
-    ever empties when the pod itself is replaced/terminated (a fresh pod has
-    no ComfyUI history of its own).
-    """
-    try:
-        hist = await comfy.get_history_all(rp.comfy_url(pod_id), max_items=limit)
-    except Exception:
-        return []
-    items = []
-    all_stats = ps.get_stats()
-    saved_ids = {s["prompt_id"] for s in ps.get_saved()}
-    for pid, entry in hist.items():
-        vid = _find_video(entry.get("outputs") or {})
-        if vid:
-            job = JOBS.get(pid)
-            s, f = (job or {}).get("started_at"), (job or {}).get("finished_at")
-            stat = all_stats.get(pid, {})
-            duration = round(f - s) if s and f else stat.get("secs")
-            completed_at = f or stat.get("at")
-            params = ps.get_params(pid) or {}
-            # video_name: try in-memory job first, then fall back to saved params
-            video_name = (job or {}).get("video_name") or params.get("video_name", "")
-            # scheduler: "scheduler" is the current combined field; "scheduler_high"
-            # is the legacy pre-merge key (see 2026-06-25 changelog entry)
-            scheduler = params.get("scheduler") or params.get("scheduler_high") or ""
-            items.append({
-                "prompt_id": pid, "input_image": _input_image(entry),
-                "duration_secs": duration, "completed_at": completed_at,
-                "is_saved": pid in saved_ids,
-                "video_name": video_name, "scheduler": scheduler,
-                # Which sampler-mode workflow produced this clip (Standard/
-                # TripleK/Clownshark), plus that mode's sampler+scheduler
-                # values — absent on videos generated before this feature.
-                "workflow_file": (job or {}).get("workflow_file") or params.get("workflow_file", ""),
-                "sampler": params.get("sampler", ""),
-                "sampler_base": params.get("sampler_base", ""),
-                "scheduler_base": params.get("scheduler_base", ""),
-                "sampler_lightning": params.get("sampler_lightning", ""),
-                "scheduler_lightning": params.get("scheduler_lightning", ""),
-                "cs_sampler_h": params.get("cs_sampler_h", ""),
-                "cs_scheduler_h": params.get("cs_scheduler_h", ""),
-                "cs_sampler_l": params.get("cs_sampler_l", ""),
-                "cs_scheduler_l": params.get("cs_scheduler_l", ""),
-                "steps": _compute_steps(params),
-                "lx_ratio": _compute_lx_ratio(params),
-                **vid,
-            })
-    items.reverse()  # history is chronological -> newest first
-    return items
-
-
 @app.get("/api/pods/{pod_id}/jobs")
 async def pod_jobs(pod_id: str):
     """In-flight (and just-finished) generations for this pod, newest first.
@@ -836,47 +777,41 @@ async def cancel_job(pod_id: str, prompt_id: str):
     return {"ok": True}
 
 
-@app.delete("/api/pods/{pod_id}/outputs/{prompt_id}")
-async def delete_output(pod_id: str, prompt_id: str):
-    url = rp.comfy_url(pod_id)
-    await comfy.delete_history(url, prompt_id)
-    log_event(pod_id, f"Output deleted: {prompt_id}")
-    return {"ok": True}
-
-
-# ----- saved (starred) videos ------------------------------------------------
-@app.post("/api/saved/{pod_id}/{prompt_id}")
-async def star_video(pod_id: str, prompt_id: str, payload: dict = Body(default={})):
-    """Download a video from the pod, store it locally, and upload to Drive."""
-    filename = payload.get("filename")
-    if not filename:
-        raise HTTPException(400, "filename required")
-    subfolder = payload.get("subfolder", "")
-    file_type = payload.get("type", "output")
-
-    content = await comfy.fetch_view(rp.comfy_url(pod_id), filename, subfolder, file_type)
-    ps.SAVED_DIR.mkdir(parents=True, exist_ok=True)
-    _job = JOBS.get(prompt_id) or {}
-    video_name = (_job.get("video_name") or "").strip()
-    # Sanitize display name: strip filesystem-unsafe chars, collapse spaces to _
-    safe_name = re.sub(r'[\\/:*?"<>|]', "", video_name).strip()
+# ----- video storage (current session + starred) -----------------------------
+# Both "Current Session" and "Saved" are views over the SAME persisted list
+# (ps.get_saved() / saved_videos.json + GCS), distinguished only by the
+# is_saved flag. Every completed generation is downloaded to permanent
+# storage as soon as it finishes (_persist_completed_video, called from
+# _watch()) — not just ones the user stars — so Current Session survives the
+# originating pod being stopped/terminated (previously it was a live query
+# against that pod's ComfyUI history, which disappears with the pod).
+# Starring/unstarring is therefore just a metadata flip, no re-download.
+def _make_local_filename(video_name: str) -> str:
+    """Sanitized display name + timestamp, e.g. beach_sunset_20260703_143022.mp4.
+    Falls back to a bare timestamp when no name was set."""
+    safe_name = re.sub(r'[\\/:*?"<>|]', "", (video_name or "").strip()).strip()
     safe_name = re.sub(r"\s+", "_", safe_name)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    local_name = f"{safe_name}_{ts}.mp4" if safe_name else f"{ts}.mp4"
-    (ps.SAVED_DIR / local_name).write_bytes(content)
+    return f"{safe_name}_{ts}.mp4" if safe_name else f"{ts}.mp4"
 
+
+def _build_video_meta(prompt_id: str, pod_id: str, local_name: str, is_saved: bool) -> dict:
+    """Metadata recorded for every completed video (session or starred) —
+    same shape regardless of is_saved, so cards render identically either way."""
+    job = JOBS.get(prompt_id) or {}
     stat = ps.get_stats().get(prompt_id, {})
     params = ps.get_params(prompt_id) or {}
     scheduler = params.get("scheduler") or params.get("scheduler_high") or ""
-    meta = {
+    return {
         "prompt_id": prompt_id,
         "filename": local_name,
-        "saved_at": round(time.time()),
+        "is_saved": is_saved,
+        "saved_at": round(time.time()) if is_saved else None,
         "completed_at": stat.get("at"),
         "duration_secs": stat.get("secs"),
-        "video_name": _job.get("video_name", ""),
+        "video_name": job.get("video_name", ""),
         "scheduler": scheduler,
-        "workflow_file": _job.get("workflow_file") or params.get("workflow_file", ""),
+        "workflow_file": job.get("workflow_file") or params.get("workflow_file", ""),
         "sampler": params.get("sampler", ""),
         "sampler_base": params.get("sampler_base", ""),
         "scheduler_base": params.get("scheduler_base", ""),
@@ -888,46 +823,146 @@ async def star_video(pod_id: str, prompt_id: str, payload: dict = Body(default={
         "cs_scheduler_l": params.get("cs_scheduler_l", ""),
         "steps": _compute_steps(params),
         "lx_ratio": _compute_lx_ratio(params),
-        # Pod the clip was generated on — lets a permanent "Delete" also purge it
-        # from the pod's ComfyUI history (so it can't reappear in the session).
+        # Pod the clip was generated on — informational only; playback and
+        # listing no longer depend on this pod still being alive.
         "pod_id": pod_id,
     }
+
+
+async def _persist_completed_video(prompt_id: str, job: dict):
+    """Download a just-finished generation's video to permanent storage (Fly
+    volume + GCS). Awaited from _watch() right when a job resolves to "done",
+    so by the time any client can see the completed status, the video is
+    already durable. Idempotent — skips if this prompt_id was already
+    persisted (e.g. _watch() re-resolving the same job after a restart).
+    """
+    vid = job.get("video")
+    if not vid:
+        return
+    if any(s["prompt_id"] == prompt_id for s in ps.get_saved()):
+        return
+    pod_id = job.get("pod_id", "")
+    try:
+        content = await comfy.fetch_view(
+            rp.comfy_url(pod_id), vid["filename"], vid.get("subfolder", ""), vid.get("type", "output")
+        )
+    except Exception as e:
+        log_event(pod_id, f"Session video download failed: {e}")
+        return
+    ps.SAVED_DIR.mkdir(parents=True, exist_ok=True)
+    local_name = _make_local_filename(job.get("video_name", ""))
+    (ps.SAVED_DIR / local_name).write_bytes(content)
+    meta = _build_video_meta(prompt_id, pod_id, local_name, is_saved=False)
 
     try:
         await asyncio.to_thread(drive.upload_video, local_name, content)
     except Exception as e:
         log_event(pod_id, f"GCS upload failed: {e}")
 
-    # Serialize the metadata read-modify-write + its GCS push so a concurrent
-    # star/unstar can't overwrite this change with a stale list.
     async with _saved_lock:
         ps.upsert_saved(meta)
         try:
             await asyncio.to_thread(drive.upload_metadata, ps.get_saved())
         except Exception:
             pass
+    log_event(pod_id, f"Video persisted: {local_name}")
 
-    log_event(pod_id, f"Video starred: {local_name}")
-    return meta
+
+@app.post("/api/saved/{prompt_id}/star")
+async def star_video(prompt_id: str):
+    """Mark an already-persisted session video as starred. The video was
+    already downloaded when the generation completed (_persist_completed_video),
+    so this is just a metadata flip — no re-download needed."""
+    async with _saved_lock:
+        saved = ps.get_saved()
+        item = next((s for s in saved if s["prompt_id"] == prompt_id), None)
+        if not item:
+            raise HTTPException(404, "Video not found yet — it may still be saving, try again shortly.")
+        item["is_saved"] = True
+        item["saved_at"] = round(time.time())
+        ps.save_saved(saved)
+        try:
+            await asyncio.to_thread(drive.upload_metadata, saved)
+        except Exception:
+            pass
+    log_event(item.get("pod_id") or "system", f"Video starred: {item['filename']}")
+    return item
+
+
+@app.post("/api/saved/{prompt_id}/unstar")
+async def unstar_video(prompt_id: str):
+    """Return a starred video to the current session — a metadata flip only;
+    the file stays in place (use DELETE to actually remove it)."""
+    async with _saved_lock:
+        saved = ps.get_saved()
+        item = next((s for s in saved if s["prompt_id"] == prompt_id), None)
+        if not item:
+            raise HTTPException(404, "Video not found")
+        item["is_saved"] = False
+        item["saved_at"] = None
+        ps.save_saved(saved)
+        try:
+            await asyncio.to_thread(drive.upload_metadata, saved)
+        except Exception:
+            pass
+    return item
 
 
 @app.get("/api/saved")
 async def list_saved():
-    return ps.get_saved()
+    return [s for s in ps.get_saved() if s.get("is_saved")]
+
+
+@app.get("/api/session/outputs")
+async def session_outputs():
+    """Completed videos in the current session (not yet starred) — persisted
+    locally as each generation finishes, so this survives the originating pod
+    being stopped/terminated. Only empties via POST /api/session/clear (when
+    starting a new pod session with leftovers)."""
+    return [s for s in ps.get_saved() if not s.get("is_saved")]
+
+
+@app.post("/api/session/clear")
+async def clear_session():
+    """Delete every not-yet-starred session video (file + GCS + metadata) —
+    called when the user confirms starting a new pod session despite having
+    leftover unsaved clips."""
+    async with _saved_lock:
+        saved = ps.get_saved()
+        keep = [s for s in saved if s.get("is_saved")]
+        drop = [s for s in saved if not s.get("is_saved")]
+        for item in drop:
+            try:
+                await asyncio.to_thread(drive.delete_video, item["filename"])
+            except Exception:
+                pass
+            p = ps.SAVED_DIR / item["filename"]
+            if p.exists():
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
+        ps.save_saved(keep)
+        try:
+            await asyncio.to_thread(drive.upload_metadata, keep)
+        except Exception:
+            pass
+    return {"cleared": len(drop)}
 
 
 @app.post("/api/saved/backfill-scheduler")
 async def backfill_scheduler():
     """Migration: fill in sampler-mode fields (workflow_file, and
     sampler/scheduler or the TripleK/Clownshark pair fields, steps, lx_ratio)
-    on saved videos that predate a given feature, from the generation params
-    recorded at the time (falling back to the legacy `scheduler_high`/
-    `sampler_high` keys). Idempotent — any field already set on an entry is
-    left untouched, so re-running (e.g. after a later feature adds more
-    fields, as happened 2026-07-02 with the 3-way sampler mode, and
+    on videos (both session and starred — ps.get_saved() holds both, see the
+    "video storage" section above) that predate a given feature, from the
+    generation params recorded at the time (falling back to the legacy
+    `scheduler_high`/`sampler_high` keys). Idempotent — any field already set
+    on an entry is left untouched, so re-running (e.g. after a later feature
+    adds more fields, as happened 2026-07-02 with the 3-way sampler mode, and
     2026-07-03 with steps/lx_ratio) is always safe and only fills in what's
     still missing. Also called once from `_startup()` on every boot (see
-    `_backfill_after_sync`) so newly added fields reach existing saved videos
+    `_backfill_after_sync`) so newly added fields reach existing videos
     automatically on the next deploy, without a manual POST to this endpoint.
     Params older than the last 500 generations (see
     persistence._MAX_PARAMS) are no longer available, so those entries are
@@ -997,7 +1032,9 @@ async def backfill_scheduler():
 
 
 @app.delete("/api/saved/{prompt_id}")
-async def unstar_video(prompt_id: str):
+async def delete_video(prompt_id: str):
+    """Permanently remove a video (session or starred) — file, GCS copy, and
+    metadata. Unlike unstar, this cannot be undone."""
     async with _saved_lock:
         item = ps.remove_saved(prompt_id)
         if item:
@@ -1096,10 +1133,12 @@ async def sysmetrics():
 # ----- storage usage ---------------------------------------------------------
 @app.get("/api/storage")
 async def storage_usage():
-    """Fly volume disk usage, plus how much the saved videos take.
+    """Fly volume disk usage, plus how much video storage takes.
 
     `total`/`used`/`free` are the whole volume (the filesystem mounted at
-    /app/data); `saved_bytes` is just the starred-video files.
+    /app/data); `saved_bytes` covers every persisted video file — both
+    current-session and starred (see the "video storage" section above) —
+    since both now live in SAVED_DIR.
     """
     data_dir = ps.SAVED_DIR.parent
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -1224,11 +1263,10 @@ async def _watch(url: str, client_id: str, prompt_id: str):
     # replays "execution_start"/"progress" for work that already happened —
     # so a prompt that had already finished while we were down would sit
     # marked "running" until the websocket happened to drop and fall through
-    # to the polling loop below, showing a stuck "queued" ghost card
-    # alongside the real completed card pod_outputs() finds independently by
-    # reading the pod's ComfyUI history directly. And a prompt still
-    # genuinely in progress would show "queued" (not "generating") forever,
-    # since started_at never gets backfilled without a fresh progress event.
+    # to the polling loop below, showing a stuck "queued" ghost card once its
+    # video is independently persisted below. And a prompt still genuinely in
+    # progress would show "queued" (not "generating") forever, since
+    # started_at never gets backfilled without a fresh progress event.
     try:
         entry = (await comfy.get_history(url, prompt_id)).get(prompt_id) or {}
     except Exception:
@@ -1251,6 +1289,7 @@ async def _watch(url: str, client_id: str, prompt_id: str):
                     if job.get("started_at") else None)
         ps.save_stat(prompt_id, duration, job["finished_at"])
         _backfill_seed(prompt_id, entry)
+        await _persist_completed_video(prompt_id, job)
         log_event(job["pod_id"],
                   "Video ready ✓" if job["video"] else "Finished (no video output)")
         _persist_jobs()
@@ -1332,6 +1371,7 @@ async def _watch(url: str, client_id: str, prompt_id: str):
                         if job.get("started_at") else None)
             ps.save_stat(prompt_id, duration, job["finished_at"])
             _backfill_seed(prompt_id, entry)
+            await _persist_completed_video(prompt_id, job)
             log_event(job["pod_id"],
                       "Video ready ✓" if job["video"] else "Finished (no video output)")
             _persist_jobs()
@@ -1385,22 +1425,6 @@ def _find_video(outputs: dict):
                         "type": it.get("type", "output"),
                         "content_type": _content_type(it)}
     return None
-
-
-def _input_image(entry: dict):
-    """The uploaded image fed to this generation, from its stored workflow.
-
-    History stores the queued prompt as [number, prompt_id, workflow, ...];
-    we read the LoadImage node's `image` input so the UI can show it as a
-    thumbnail for the resulting clip.
-    """
-    prompt = entry.get("prompt")
-    wf = prompt[2] if isinstance(prompt, list) and len(prompt) >= 3 else prompt
-    if not isinstance(wf, dict):
-        return None
-    node = wf.get(str(config.IMAGE_NODE["node_id"])) or {}
-    img = (node.get("inputs") or {}).get(config.IMAGE_NODE["input"])
-    return img if isinstance(img, str) else None
 
 
 def _content_type(item: dict) -> str:

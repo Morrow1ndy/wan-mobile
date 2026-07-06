@@ -72,8 +72,8 @@ wan-mobile/
 │   ├── sw.js            # Service worker — handles push events + notificationclick
 │   └── manifest.webmanifest  # PWA manifest (required for iOS Web Push)
 ├── data/                # Fly persistent volume mount point
-│   ├── saved_videos/    # MP4 files synced from GCS on startup
-│   ├── saved_videos.json
+│   ├── saved_videos/    # MP4s — BOTH current-session and starred (2026-07-03), synced from GCS on startup
+│   ├── saved_videos.json  # metadata for all of the above; is_saved distinguishes starred from session
 │   ├── active_jobs.json # In-flight generation state (survives auto-stop)
 │   ├── prompt_templates.json
 │   ├── param_presets.json
@@ -104,9 +104,10 @@ frontend build step — `static/` is served as-is.
 **Fly.io volume:** `wan_data` mounted at `/app/data`. Persists across restarts. The Dockerfile CMD conditionally seeds JSON files on first boot only.
 
 **GCS bucket:** `wan-mobile-videos` (Google Cloud Storage)
-- `saved_videos/` — starred output MP4 files
+- `saved_videos/` — output MP4 files; both current-session and starred clips
+  live here since 2026-07-03 (`is_saved` in the metadata distinguishes them)
 - `input_images/` — user's cloud image library (virtual folders via `.keep` blobs)
-- `wan_saved_videos.json` — saved video metadata (source of truth)
+- `wan_saved_videos.json` — video metadata for everything above (source of truth)
 
 **Auth:** HTTP Basic Auth via `WAN_AUTH_USER` / `WAN_AUTH_PASS` Fly secrets. The backend only protects `/api/*` routes (not static files), and returns plain 401 JSON (no `WWW-Authenticate` header) so the browser never shows its native dialog. The frontend handles auth with a custom login overlay.
 
@@ -280,12 +281,13 @@ files if you update node IDs — the 57 shared nodes must stay in sync.
 **Sampler-mode + sampler/scheduler labels on video cards**: every
 prompt_id's chosen `workflow_file` and sampler/scheduler value(s) are
 persisted via `ps.save_params()` at generate time and surfaced identically
-by `_job_public()` (in-progress card), `pod_outputs()` (session/completed
-card), and `star_video()` (saved card) in `main.py` — same field names
-(`workflow_file`, `sampler`, `scheduler`, `cs_sampler_h`, `cs_scheduler_h`,
-`cs_sampler_l`, `cs_scheduler_l`, plus `steps`/`lx_ratio` — see below) from
-all three, so `app.js`'s `samplerModeBadge()` / `samplerPairRows()` (grid
-tile) and `capSamplerHtml()` (expanded caption) render consistently across
+by `_job_public()` (in-progress card) and `_build_video_meta()` (session +
+saved card — see "Video storage" below, both now built from the same
+function) in `main.py` — same field names (`workflow_file`, `sampler`,
+`scheduler`, `cs_sampler_h`, `cs_scheduler_h`, `cs_sampler_l`,
+`cs_scheduler_l`, plus `steps`/`lx_ratio` — see below) from both, so
+`app.js`'s `samplerModeBadge()` / `samplerPairRows()` (grid tile) and
+`capSamplerHtml()` (expanded caption) render consistently across
 in-progress, session, and saved cards without special-casing any of them.
 `sampler_base`/`scheduler_base`/`sampler_lightning`/`scheduler_lightning` are
 still surfaced too, but only ever populated on **legacy** TripleK saved
@@ -330,6 +332,17 @@ drop (background/foreground, network blip), and the first message on every
 new connection carries current server state, so the card self-heals within
 ~1s of reconnecting. `tickActive()` (one-shot fetch of `/api/pods/{id}/jobs`)
 still exists only as an immediate fallback while the stream is reconnecting.
+This is still pod-scoped (a job only ever runs on one pod) — unlike Current
+Session below, which isn't.
+
+**Current Session is pod-independent (2026-07-03)**: `loadDone()` /
+`GET /api/session/outputs` no longer take or need a pod id — the list is a
+persisted store that survives the originating pod being stopped/terminated
+(see the backend's "Video storage" section). `_outPodId` still exists and is
+still used, but now purely for **in-progress** job tracking (`connectJobStream`,
+`tickActive`, `pollGenBadge`) — not for loading the completed-videos list.
+`loadOutputs()` always calls `loadDone()` regardless of whether a pod is
+selected; it only additionally opens the SSE stream when one is.
 
 **Key state variables:**
 ```js
@@ -337,7 +350,7 @@ _authHeader        // "Basic base64..." or null
 _currentImageFile  // File object (uploaded or fetched from library)
 _libPrefix         // current folder path in image library
 _undoStack         // [{prompt, params, label}] up to 10
-_outPodId          // currently selected pod in Outputs tab
+_outPodId          // currently selected pod — used for in-progress job tracking only
 JOBS               // in-memory job tracking (also persisted to active_jobs.json)
 _savedSelectMode   // bulk select for saved videos
 _libSelectMode     // bulk select for image library
@@ -362,12 +375,15 @@ it changed:
   `/history/{prompt_id}` check *before* touching the websocket. A fresh
   websocket only delivers *future* events, so without this check a prompt
   that already finished while the app was down would sit stuck as
-  `status=running` (duplicating the real completed clip that `pod_outputs()`
-  finds independently), and a prompt still genuinely running would show
+  `status=running`, and a prompt still genuinely running would show
   "queued" forever since `started_at` never gets set without a live progress
   event. The pre-check resolves an already-finished prompt immediately and
   backfills `started_at` for one still in progress. It's a no-op for a
   normal freshly-queued prompt (nothing in ComfyUI's history for it yet).
+- **On resolving to "done"**, `_watch()` `await`s `_persist_completed_video()`
+  (see "Video storage" below) *before* marking the job done in `JOBS` — so by
+  the time any client can see the completed status, the video is already
+  durably stored, not just referenced via a live pod query.
 - `active_jobs.json`: written at queue/start/terminal states via
   `_persist_jobs()`. `_restore_jobs()` on startup re-attaches `_watch()` to
   any `status=running` job. Jobs auto-expire from the file (only running +
@@ -380,9 +396,50 @@ it changed:
 - Client-side delivery is via SSE (`GET /api/pods/{pod_id}/stream`), see
   "Live job updates" under Frontend Architecture above — not polling.
 
-**Saved video concurrency** (`_saved_lock`): `asyncio.Lock()` serializes star/unstar metadata read-modify-write + GCS upload so concurrent operations don't clobber.
+**Video storage (2026-07-03 rearchitecture)** — "Current Session" and "Saved"
+are both views over the SAME persisted list (`ps.get_saved()` /
+`data/saved_videos.json` + GCS `saved_videos/` prefix), distinguished only by
+an `is_saved` flag on each entry:
+- `_persist_completed_video(prompt_id, job)` downloads the video (Fly volume +
+  GCS) as soon as a generation finishes — `await`ed from `_watch()`, not a
+  background fire-and-forget — with `is_saved: False`. This replaces the old
+  design where "Current Session" was a **live** query against the pod's
+  ComfyUI `/history` (via the now-removed `pod_outputs()` /
+  `comfy_client.get_history_all()`), which vanished the instant that specific
+  pod was stopped or terminated. Now every completed clip is durable
+  independent of any pod's lifecycle — only starred ones used to survive
+  termination; now *all* of them do, until explicitly deleted or the session
+  is cleared (see below). Idempotent (skips a prompt_id already persisted) so
+  `_watch()` re-resolving the same job after a restart doesn't re-download.
+- `_build_video_meta()` builds the metadata dict (sampler/scheduler/steps/
+  lx_ratio/etc. — same shape used by `_job_public()` for the in-progress
+  card) shared by both the auto-persist path and starring.
+- **Starring/unstarring is a metadata flip, not a file operation**:
+  `POST /api/saved/{prompt_id}/star` sets `is_saved: True` (video is already
+  downloaded); `POST /api/saved/{prompt_id}/unstar` sets it back to `False`.
+  Neither touches the file. `DELETE /api/saved/{prompt_id}` is the only
+  operation that actually removes it (file + GCS + metadata) — used by both
+  sections' "Delete" action now, since there's nothing pod-specific left to
+  purge.
+- `GET /api/session/outputs` returns `is_saved: False` entries (Current
+  Session); `GET /api/saved` returns `is_saved: True` entries (Saved). Both
+  are plain reads of the local JSON — no pod, no network call, no per-pod
+  scoping.
+- `POST /api/session/clear` deletes every `is_saved: False` entry (file + GCS
+  + metadata) — called by the frontend after the user confirms deploying a
+  new pod despite having unstarred session clips (see the Frontend
+  Architecture section's "Current Session" note). Starred entries are never
+  touched by this.
+- `GET /api/pods/{pod_id}/view` (pod-proxied) is still used, but now only for
+  the **in-progress** card's live sampling preview / input-image thumbnail —
+  anything already in Current Session or Saved is served from local/GCS
+  storage via `GET /api/saved/file/{filename}` instead, which is why
+  `renderOutput()` in `app.js` no longer takes a `podId` and both sections
+  share one render function.
 
-**Storage endpoint:** `GET /api/storage` — returns `shutil.disk_usage` of the volume + saved_bytes. Used by storage meter UI.
+**Saved video concurrency** (`_saved_lock`): `asyncio.Lock()` serializes read-modify-write of the shared session+saved metadata + its GCS upload so concurrent star/unstar/persist/clear calls don't clobber each other.
+
+**Storage endpoint:** `GET /api/storage` — returns `shutil.disk_usage` of the volume + `saved_bytes` (now covers every persisted video — session and starred alike, since both live in `SAVED_DIR`). Used by storage meter UI.
 
 **RAM endpoint:** `GET /api/sysmetrics` — reads from `/sys/fs/cgroup/memory.current` (Fly cgroup) or `/proc/meminfo`. Used by header RAM chip.
 
@@ -455,7 +512,7 @@ or dynamic content inside a fixed-width container.** Already applied to
 ## Known Remaining Issues
 
 - **`active_jobs.json` on stale pod**: if a pod was terminated mid-generation, the restored watcher polls for 15 min before erroring out. Low priority.
-- **No saved video count limit**: volume could fill over time. The storage meter makes this visible, but there's no auto-eviction.
+- **No video count/storage limit**: since 2026-07-03 *every* completed generation is auto-downloaded to permanent storage (not just starred ones — see "Video storage" above), so the volume/GCS fill faster than before. The storage meter makes usage visible, and `POST /api/session/clear` (fired when starting a new pod over leftover unsaved clips) is the only auto-eviction — there's still no cap or manual bulk-cleanup for old *starred* videos, or for session videos that were never cleared via a new pod deploy.
 - **Fly deploy WARNING "not listening on expected address"**: benign — Fly's smoke check snapshots the instant before Python finishes importing heavy libraries on cold boot. App reaches good state seconds later.
 
 ---
@@ -504,6 +561,57 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-07-03 (Current Session survives pod termination — unified video storage)
+
+**Bugs fixed:**
+- **"Current Session" videos were permanently lost the instant their pod was
+  terminated**, even though nothing warned about it. Root cause: Current
+  Session was a *live query* against the pod's own ComfyUI `/history` — the
+  instant that specific pod was terminated, there was no way to query it
+  anymore, so the whole list (not just in-progress jobs) vanished. Worse, the
+  earlier "double-confirm before deploying" safeguard (2026-07-03, previous
+  entry) only ever checked *currently-running* pods, so once the old pod was
+  already terminated there was nothing left to warn about — the exact
+  sequence (terminate, then later deploy) silently lost unsaved clips with
+  zero warning at either step.
+
+**Architecture change:**
+- **"Current Session" and "Saved" are now both views over the SAME persisted
+  list** (`data/saved_videos.json` + GCS `saved_videos/` prefix), distinguished
+  only by an `is_saved` flag — see the "Video storage" section above for the
+  full breakdown. In short:
+  - Every completed generation is now auto-downloaded to permanent storage
+    (Fly volume + GCS) the moment it finishes — not just starred ones —
+    via a new `_persist_completed_video()`, `await`ed inside `_watch()`
+    right when a job resolves to "done". This is independent of the pod's
+    lifecycle from that point on, including if the pod is later terminated.
+  - Starring/unstarring became a pure metadata flip (`POST
+    /api/saved/{id}/star` / `/unstar`) — no re-download needed, since the
+    video was already persisted when it completed.
+  - `DELETE /api/saved/{id}` is now the one real-deletion endpoint, shared by
+    both sections' "Delete" action.
+  - `GET /api/session/outputs` (new) / `GET /api/saved` are plain local
+    reads — no pod, no network call, no per-pod scoping. `renderOutput()` in
+    `app.js` no longer takes a `podId` and now covers both sections (was two
+    near-duplicate functions).
+  - The deploy-time unsaved-video check (`_unsavedSessionVideoCount()`) now
+    reads from `/api/session/outputs`, so it actually works regardless of
+    whether the old pod is still running — and on confirmation, a new
+    `POST /api/session/clear` deletes the leftover unstarred clips, so
+    starting a new pod genuinely starts a clean session as originally
+    intended.
+  - Removed the now-dead `pod_outputs()` (`GET /api/pods/{pod_id}/outputs`),
+    `_input_image()`, `DELETE /api/pods/{pod_id}/outputs/{prompt_id}`, and
+    `comfy_client.get_history_all()`/`delete_history()` — all superseded by
+    the persisted-list approach above.
+- Verified with backend unit tests (persist → star → unstar → delete,
+  idempotency on re-processing, session-clear preserving starred videos) and
+  Playwright UI tests (star/unstar/delete flows on both sections, and the
+  full deploy-with-leftovers warn-then-clear flow).
+- SW cache bumped to `wan-static-v53`.
 
 ---
 
