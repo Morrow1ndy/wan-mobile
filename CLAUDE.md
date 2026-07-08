@@ -68,7 +68,7 @@ wan-mobile/
 ├── static/
 │   ├── index.html       # Single-page app shell (all overlays/modals in here)
 │   ├── styles.css       # Dark mobile-first UI (CSS variables, no framework)
-│   ├── app.js           # All frontend logic (~2100 lines, vanilla JS)
+│   ├── app.js           # All frontend logic (~3500 lines, vanilla JS)
 │   ├── sw.js            # Service worker — handles push events + notificationclick
 │   └── manifest.webmanifest  # PWA manifest (required for iOS Web Push)
 ├── data/                # Fly persistent volume mount point
@@ -90,8 +90,8 @@ wan-mobile/
 │   name is legacy/kept for backward compat with saved videos' `workflow_file`
 │   field (see Workflow ↔ UI parameter map below). Don't infer precision from
 │   the filename.
-├── .env                 # ⚠️ local config — CURRENTLY COMMITTED (see Security)
-├── .env.example         # template for .env
+├── .env                 # local config — gitignored/untracked (see Security)
+├── .env.example         # template for .env (this one IS committed)
 ├── fly.toml             # Fly.io config (512MB RAM, sin region, auto-stop)
 ├── Dockerfile
 └── requirements.txt
@@ -497,13 +497,16 @@ or dynamic content inside a fixed-width container.** Already applied to
 
 ## Security
 
-- **⚠️ `.env` is currently committed to git** (tracked, not in `.gitignore`). It
-  contains `RUNPOD_API_KEY`, `WAN_AUTH_USER`, `WAN_AUTH_PASS`, and RunPod IDs.
-  This is convenient for the 2-machine workflow (config travels with the repo)
-  but exposes secrets to anyone with repo access and leaves them in git history.
-  If hardening: `git rm --cached .env`, add `.env` to `.gitignore`, **rotate the
-  RunPod key + login**, and rely on Fly secrets (already set on the server) +
-  `.env.example` for onboarding. Until then, **keep the repo private**.
+- **`.env` is NOT committed** (fixed 2026-07-01 when the repo went public —
+  see that changelog entry): it's in both `.gitignore` and `.dockerignore`,
+  the leaked `RUNPOD_API_KEY` / `WAN_AUTH_PASS` were **rotated** (old values
+  in git history are dead), and real secrets live in **Fly secrets**
+  (`fly secrets list` is the source of truth). `.env.example` is the only
+  env file tracked. Local dev uses an untracked `.env`.
+- Any NEW secret env var must be added via `fly secrets set`, not just
+  `.env` — a baked-in `.env` no longer exists in the image, so a var missing
+  from Fly secrets (or fly.toml `[env]` for non-secrets) is simply unset in
+  production.
 - Service account key (`*.json.key`) IS gitignored; it lives in the
   `GOOGLE_SERVICE_ACCOUNT_JSON` Fly secret.
 
@@ -544,9 +547,12 @@ python -m uvicorn app.main:app --reload --port 8000
 
 ## Workflow Notes
 
-- **Pushing code changes**: `git add -A && git commit -m "..." && git push && fly deploy`
-- **Pulling on new machine**: `git pull`. Fly secrets live on Fly (not git), so the
-  server is unaffected; `.env` currently travels with the repo (see Security).
+- **Pushing code changes**: `git add -A && git commit -m "..." && git push` —
+  GitHub Actions auto-deploys on push to `main` (do NOT run `fly deploy`
+  manually; see the Git & deploy rules at the top of this file).
+- **Pulling on new machine**: `git pull`. Fly secrets live on Fly (not git), so
+  the server is unaffected; recreate a local `.env` from `.env.example` if
+  running locally (`.env` is gitignored — see Security).
 - **`data/*.json`** (templates, presets, saved_videos.json, last_params, etc.) ARE
   **committed** — they're the seed data the Dockerfile copies onto the volume on
   first boot. Editing them in git changes the seed for fresh volumes.
@@ -561,6 +567,44 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-07-08 (CRITICAL: legacy starred videos misclassified as unsaved — audit fixes)
+
+**Bugs fixed:**
+- **⚠️ CRITICAL — every pre-rearchitecture starred video was misclassified as
+  an unsaved session clip** after the 2026-07-03 unified-storage deploy.
+  Metadata written by the old code has no `is_saved` key at all (the key was
+  only introduced in that rearchitecture), and every read treated a missing
+  key as falsy — so the user's previously-starred videos (which are, by
+  definition, the only entries the old model ever persisted) vanished from
+  the ⭐ Saved section, showed up under Current Session as unsaved, and —
+  worst — were eligible for **permanent deletion** by `clear_session()` on
+  the next confirmed pod deploy. Fixed in two layers: a new `_is_saved()`
+  helper defaults a MISSING key to `True` (fail-safe) in `list_saved()`/
+  `session_outputs()`/`clear_session()`, and the boot backfill now
+  materializes `is_saved: True` onto key-less entries — placed *before* the
+  missing-params skip, since the oldest starred videos are exactly the ones
+  whose params have aged out of the 500-entry cap. Verified with tests
+  reproducing the production state (legacy entries → correct sections,
+  `clear_session` deletes nothing, backfill materializes the key).
+- **Startup GCS sync could clobber a video persisted during boot** —
+  `_drive_startup_sync` blindly overwrote `saved_videos.json` with the GCS
+  snapshot, from a thread, without holding `_saved_lock`. A restored watcher
+  resolving a finished job seconds after boot (`_persist_completed_video`)
+  raced that overwrite and could get its metadata entry silently dropped,
+  orphaning the video file. Now async: metadata merge happens under
+  `_saved_lock`, and it MERGES (local-only entries — persisted after the
+  GCS snapshot — are kept and pushed back up) instead of overwriting.
+
+**Cleanup / docs:**
+- Removed dead `GET /api/video/{prompt_id}` (nothing calls it since playback
+  moved to `/api/saved/file/{filename}`).
+- Outputs-tab hint text updated ("Videos generated on this pod…" described
+  the pre-rearchitecture model); README's "Recovering videos" bullet
+  rewritten for the same reason; CLAUDE.md app.js line count corrected.
+- SW cache bumped to `wan-static-v54`.
 
 ---
 

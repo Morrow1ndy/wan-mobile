@@ -39,7 +39,7 @@ async def _startup():
     # Run the GCS sync in the background so uvicorn starts serving (and passes
     # Fly's health check) immediately. A slow/large sync must never block boot;
     # any video not yet on the volume is fetched on demand by serve_saved_file.
-    task = asyncio.create_task(asyncio.to_thread(_drive_startup_sync))
+    task = asyncio.create_task(_drive_startup_sync())
     _TASKS.add(task)
     task.add_done_callback(_TASKS.discard)
     # Re-attach to generations that were in flight when this process last
@@ -104,15 +104,24 @@ async def _keepalive_loop():
                 pass
 
 
-def _drive_startup_sync():
-    """Sync saved videos with GCS on startup.
+async def _drive_startup_sync():
+    """Sync videos with GCS on startup.
 
-    GCS is the source of truth. Updates local metadata and downloads any
-    video files missing from the local volume. Falls back to local cache
+    GCS is the source of truth for entries it knows about; local metadata and
+    missing video files are refreshed from it. Falls back to local cache
     silently if GCS is unreachable.
+
+    Async (blocking GCS calls pushed to threads) so the metadata write can
+    hold `_saved_lock`: a restored watcher can resolve a finished job and
+    `_persist_completed_video()` it within seconds of boot — i.e. WHILE this
+    sync is still downloading — and a blind unlocked overwrite here would
+    clobber that just-written entry out of the metadata, orphaning its file.
+    For the same reason this MERGES instead of overwriting: any local entry
+    the GCS snapshot doesn't know about was persisted after that snapshot
+    was taken, so it's kept (and pushed back up, so GCS converges too).
     """
     try:
-        gcs_meta = drive.download_metadata()
+        gcs_meta = await asyncio.to_thread(drive.download_metadata)
     except Exception as e:
         print(f"[GCS] startup sync skipped: {e}")
         return
@@ -120,14 +129,26 @@ def _drive_startup_sync():
     if gcs_meta is None:
         return  # nothing saved yet, local state is already empty
 
-    ps.save_saved(gcs_meta)
+    async with _saved_lock:
+        gcs_ids = {s["prompt_id"] for s in gcs_meta}
+        local_only = [s for s in ps.get_saved() if s["prompt_id"] not in gcs_ids]
+        merged = gcs_meta + local_only
+        ps.save_saved(merged)
+        if local_only:
+            print(f"[GCS] kept {len(local_only)} local-only video entr"
+                  f"{'y' if len(local_only) == 1 else 'ies'} not in the GCS snapshot")
+            try:
+                await asyncio.to_thread(drive.upload_metadata, merged)
+            except Exception:
+                pass
+
     ps.SAVED_DIR.mkdir(parents=True, exist_ok=True)
     downloaded = 0
-    for item in gcs_meta:
+    for item in merged:
         local_file = ps.SAVED_DIR / item["filename"]
         if not local_file.exists():
             try:
-                drive.download_video_to_file(item["filename"], local_file)
+                await asyncio.to_thread(drive.download_video_to_file, item["filename"], local_file)
                 downloaded += 1
             except Exception as e:
                 print(f"[GCS] failed to download {item['filename']}: {e}")
@@ -660,16 +681,6 @@ async def _proxy_view(pod_id: str, filename: str, subfolder: str,
     )
 
 
-@app.get("/api/video/{prompt_id}")
-async def video(request: Request, prompt_id: str):
-    job = JOBS.get(prompt_id)
-    if not job or not job.get("video"):
-        raise HTTPException(404, "no video for this job yet")
-    v = job["video"]
-    return await _proxy_view(job["pod_id"], v["filename"], v.get("subfolder", ""),
-                             v.get("type", "output"), request.headers.get("range"))
-
-
 @app.get("/api/pods/{pod_id}/jobs")
 async def pod_jobs(pod_id: str):
     """In-flight (and just-finished) generations for this pod, newest first.
@@ -908,9 +919,23 @@ async def unstar_video(prompt_id: str):
     return item
 
 
+# ⚠️ Every is_saved read below must default MISSING to True, not False.
+# Metadata written before the 2026-07-03 unified-storage rearchitecture has no
+# is_saved key at all — and those entries are, by definition, videos the user
+# explicitly STARRED under the old model (only starred videos were persisted
+# back then). Treating a missing key as falsy silently reclassified every
+# pre-rearchitecture starred video as an unsaved session clip: gone from the
+# ⭐ Saved section, shown in Current Session, and — worst — eligible for
+# permanent deletion by clear_session() on the next confirmed pod deploy.
+# The boot backfill also materializes the key (see backfill_scheduler), but
+# these reads must stay fail-safe regardless of whether it has run yet.
+def _is_saved(entry: dict) -> bool:
+    return bool(entry.get("is_saved", True))
+
+
 @app.get("/api/saved")
 async def list_saved():
-    return [s for s in ps.get_saved() if s.get("is_saved")]
+    return [s for s in ps.get_saved() if _is_saved(s)]
 
 
 @app.get("/api/session/outputs")
@@ -919,7 +944,7 @@ async def session_outputs():
     locally as each generation finishes, so this survives the originating pod
     being stopped/terminated. Only empties via POST /api/session/clear (when
     starting a new pod session with leftovers)."""
-    return [s for s in ps.get_saved() if not s.get("is_saved")]
+    return [s for s in ps.get_saved() if not _is_saved(s)]
 
 
 @app.post("/api/session/clear")
@@ -929,8 +954,8 @@ async def clear_session():
     leftover unsaved clips."""
     async with _saved_lock:
         saved = ps.get_saved()
-        keep = [s for s in saved if s.get("is_saved")]
-        drop = [s for s in saved if not s.get("is_saved")]
+        keep = [s for s in saved if _is_saved(s)]
+        drop = [s for s in saved if not _is_saved(s)]
         for item in drop:
             try:
                 await asyncio.to_thread(drive.delete_video, item["filename"])
@@ -976,11 +1001,22 @@ async def backfill_scheduler():
     async with _saved_lock:
         saved = ps.get_saved()
         for item in saved:
+            changed = False
+            # Materialize is_saved on pre-rearchitecture entries (no key at
+            # all = written by the old starred-only model, so True — see
+            # _is_saved above). MUST run before the missing-params skip
+            # below: the oldest starred videos are exactly the ones whose
+            # params have aged out of the 500-entry cap, and they need this
+            # key the most.
+            if "is_saved" not in item:
+                item["is_saved"] = True
+                changed = True
             params = ps.get_params(item["prompt_id"]) or {}
             if not params:
                 not_found += 1
+                if changed:
+                    updated += 1
                 continue
-            changed = False
             if not item.get("scheduler"):
                 v = params.get("scheduler") or params.get("scheduler_high") or ""
                 if v:

@@ -141,10 +141,12 @@ Notes:
   spin-up is fast; the app shows "warming up" until ComfyUI answers.
 - **Stop vs Terminate:** Stop keeps the disk (still small storage cost);
   Terminate destroys the pod. Both stop GPU billing.
-- **Recovering videos:** live progress is tracked in memory, so restarting (or a
-  Fly machine sleeping) forgets the in-flight job. Finished videos still live on
-  the pod — use the **Outputs** tab to list and download them from the pod's
-  ComfyUI history (works as long as the pod hasn't been restarted).
+- **Recovering videos:** in-flight jobs survive a server restart (re-attached
+  from `data/active_jobs.json`), and every **finished** video is automatically
+  downloaded to permanent storage (Fly volume + GCS) the moment it completes —
+  the Outputs tab lists them from that store, so they survive the pod being
+  stopped, restarted, or terminated. Only a job still mid-generation is lost
+  if its pod dies.
 - **Python 3.14:** if a dependency fails to install, use Python 3.12 instead
   (`py -3.12 -m venv .venv`).
 
