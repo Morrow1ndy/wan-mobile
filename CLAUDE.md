@@ -322,7 +322,7 @@ caption, and the Generate tab's sampling-mode tab buttons
 
 **Undo system:** `captureUndo(label)` snapshots prompt + all params. `_undoStack` max 10. Captured at: template Use, preset Apply, details Apply-to-Generate, Generate. `↩ Undo (N)` button in Prompt card header.
 
-**Image library state:** `_libPrefix`, `_libSelectMode`, `_libSelected` — library browser with folder navigation, select mode, bulk delete.
+**Image library state:** `_libPrefix`, `_libSelectMode`, `_libSelected` — library browser with folder navigation, select mode, bulk delete/copy/move, and bulk upload (2026-07-08) — a "+ Upload" button next to "Select" opens a multi-file picker and uploads every selected photo into `_libPrefix` (the currently-browsed folder), one `/api/images/save` call per file. Independent of the single-image "☆ Save to cloud" button on the Upload tab, which only ever saves `_currentImageFile`.
 
 **Live job updates:** `connectJobStream(podId)` opens an `EventSource` on
 `GET /api/pods/{pod_id}/stream` (SSE) — this is the only mechanism that
@@ -567,6 +567,27 @@ python -m uvicorn app.main:app --reload --port 8000
 ## Changelog
 
 Entries are newest-first. Each entry should be added at the **top** of this list.
+
+---
+
+### 2026-07-08 (bulk photo upload to cloud library)
+
+**Features added:**
+- **"+ Upload" button in the Library tab** (next to "Select") opens the
+  device's file picker with multi-select enabled (`<input type="file"
+  multiple>`) and uploads every selected photo straight into whichever
+  folder is currently browsed — one `POST /api/images/save` call per file
+  (sequential), with a running "Uploading N/M…" toast, then reloads the
+  library view to show the new files. No backend changes needed — reuses
+  the existing single-file endpoint per upload.
+- **Separate from the existing "☆ Save to cloud" button** (Upload tab) —
+  that one still only saves the single image currently loaded for
+  generation (`_currentImageFile`); untouched by this change. The two
+  flows just happen to share the same backend endpoint.
+- Verified with a Playwright test: 3 selected files all land under the
+  browsed folder path, the library view refreshes to show them, and the
+  old single-image save button is confirmed unaffected.
+- SW cache bumped to `wan-static-v55`.
 
 ---
 

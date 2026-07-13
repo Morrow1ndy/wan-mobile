@@ -3079,12 +3079,40 @@ function renderLibSelection() {
     $("#lib-bulk-copy").disabled = n === 0;
     $("#lib-bulk-move").disabled = n === 0;
   } else {
-    el.innerHTML = `<div style="flex:1"></div><button id="lib-sel-btn" class="ghost small">Select</button>`;
+    el.innerHTML = `<button id="lib-upload-btn" class="ghost small">+ Upload</button>
+      <div style="flex:1"></div>
+      <button id="lib-sel-btn" class="ghost small">Select</button>`;
     el.hidden = false;
+    el.querySelector("#lib-upload-btn").addEventListener("click", () => $("#lib-upload-input").click());
     el.querySelector("#lib-sel-btn").addEventListener("click", enterLibSelectMode);
     $("#lib-bulk-bar").hidden = true;
   }
 }
+
+// Upload one or more photos straight to the currently-browsed library folder
+// in one shot — a separate flow from the single-image "Save to cloud" button
+// above (which only ever saves the one image currently loaded for
+// generation). Uploads sequentially (simplest, matches the existing
+// bulk copy/move loop pattern) and reports progress via toast.
+$("#lib-upload-input").addEventListener("change", async (e) => {
+  const files = [...e.target.files];
+  e.target.value = ""; // allow re-selecting the same file(s) next time
+  if (!files.length) return;
+  let done = 0;
+  for (const file of files) {
+    toast(`Uploading ${done + 1}/${files.length}…`);
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    fd.append("path", _libPrefix + file.name);
+    try {
+      const r = await apiFetch("/api/images/save", { method: "POST", body: fd });
+      if (!r.ok) throw new Error((await r.text()) || r.statusText);
+      done++;
+    } catch (_) {}
+  }
+  toast(`${done}/${files.length} photo${files.length !== 1 ? "s" : ""} uploaded ✓`, done < files.length);
+  loadLibrary(_libPrefix);
+});
 
 async function useLibraryImage(path) {
   try {
